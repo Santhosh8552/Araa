@@ -465,7 +465,7 @@ class Bot:
                 # Add Top CoinDCX USDT Futures pairs (Priority for USD trading)
                 priority_order = [
                     "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "NEARUSDT", "BNBUSDT",
-                    "PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "SPELLUSDT", "SAPIENUSDT",
+                    "1000PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "SPELLUSDT", "SAPIENUSDT",
                     "USTCUSDT", "BANANAUSDT", "MOCAUSDT", "SONICUSDT", "DOLOUSDT", "MTLUSDT",
                     "GASUSDT", "BELUSDT", "ASTRUSDT", "ASRUSDT", "SANTOSUSDT", "BNTUSDT",
                     "1000000MOGUSDT", "JOEUSDT", "FRAXUSDT", "WAXPUSDT", "XVSUSDT"
@@ -1606,17 +1606,17 @@ class Bot:
             # Guarantee all primary CoinDCX USDT Futures pairs are present
             target_mt4_symbols.update({
                 "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "NEARUSDT", "BNBUSDT",
-                "PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "WAXPUSDT", "BANANAUSDT",
+                "1000PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "WAXPUSDT", "BANANAUSDT",
                 "SPELLUSDT", "SAPIENUSDT", "USTCUSDT", "MOCAUSDT", "SONICUSDT", "DOLOUSDT",
                 "MTLUSDT", "GASUSDT", "BELUSDT", "ASTRUSDT", "ASRUSDT", "SANTOSUSDT",
                 "BNTUSDT", "1000000MOGUSDT", "JOEUSDT", "FRAXUSDT", "XVSUSDT",
                 "B-BTC_USDT", "B-ETH_USDT", "B-SOL_USDT", "B-DOGE_USDT", "B-XRP_USDT",
-                "B-CARV_USDT", "B-WAXP_USDT", "B-BANANA_USDT", "B-YB_USDT", "B-PEPE_USDT"
+                "B-CARV_USDT", "B-WAXP_USDT", "B-BANANA_USDT", "B-YB_USDT", "B-1000PEPE_USDT"
             })
             if not target_mt4_symbols:
                 target_mt4_symbols = {
                     "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "NEARUSDT", "BNBUSDT",
-                    "PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "WAXPUSDT", "BANANAUSDT"
+                    "1000PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "WAXPUSDT", "BANANAUSDT"
                 }
         elif market_focus == "FOREX":
             target_mt4_symbols = EXNESS_FOREX
