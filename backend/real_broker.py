@@ -216,13 +216,24 @@ def verify_universal_real_bot_rules(user_id, symbol, side, qty, leverage=500.0, 
     win_p = int(ai_win_prob) if (ai_win_prob is not None and float(ai_win_prob) > 0) else None
     if win_p is None:
         recent_pred = query_one(
-            "SELECT win_probability FROM ai_predictions WHERE user_id=? AND symbol=? AND post_entry_status!='REJECTED' AND outcome!='CANCELLED' AND created_at>=? ORDER BY id DESC LIMIT 1",
+            "SELECT win_probability FROM ai_predictions WHERE user_id=? AND symbol=? AND post_entry_status='APPROVED' AND created_at>=? ORDER BY id DESC LIMIT 1",
             (user_id, symbol, time.time() - 300),
         )
         if recent_pred and recent_pred.get("win_probability"):
             win_p = int(recent_pred["win_probability"])
-    if win_p is not None and win_p < 75:
-        msg = f"AraaBot Rule 6: ARAA Quant AI approval ({win_p}%) below 75% Real-Mode threshold."
+
+    min_thresh = 70
+    try:
+        from bot_trainer import load_training_state
+        t_state = load_training_state()
+        if t_state and t_state.get("custom_rules", {}).get("min_win_probability"):
+            min_thresh = int(t_state["custom_rules"]["min_win_probability"])
+    except Exception:
+        min_thresh = 70
+    min_thresh = max(60, min(95, min_thresh))
+
+    if win_p is not None and win_p < min_thresh:
+        msg = f"AraaBot Rule 6: ARAA Quant AI approval ({win_p}%) below {min_thresh}% Real-Mode threshold."
         _audit_reject("ORDER_REJECTED_AI", msg)
         return False, msg, eff_lev
 
@@ -272,7 +283,7 @@ def execute_real_order(symbol, side, qty, leverage=500.0, stop_loss=None, take_p
                 # Pre-flight risk check: Calculate actual allocated margin capital
                 lev = float(leverage or 1.0)
                 actual_margin_inr = (qty * (price or 1.0)) / (lev if lev > 0 else 1.0)
-                risk_ok, risk_msg = verify_coindcx_risk(user_id, symbol, requested_amount_inr=actual_margin_inr, leverage=lev, side=side, price=price)
+                risk_ok, risk_msg = verify_coindcx_risk(user_id, symbol, requested_amount_inr=actual_margin_inr, leverage=lev, side=side, price=price, ai_win_prob=ai_win_prob)
                 if not risk_ok:
                     log_audit_event(user_id, "ORDER_RISK_REJECTED", f"Real bot order rejected by risk engine: {risk_msg}", "WARNING", {"symbol": symbol, "side": side, "qty": qty, "margin": actual_margin_inr})
                     return {

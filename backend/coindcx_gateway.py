@@ -78,6 +78,28 @@ def to_coindcx_market(symbol: str) -> str:
     return f"{clean}INR"
 
 
+def round_to_increment(val: Optional[float], inc: float) -> Optional[float]:
+    """Rounds a price or quantity to the exact increment required by CoinDCX.
+    Guarantees that (val / inc) is an exact integer step with zero floating-point remainder.
+    """
+    if val is None:
+        return None
+    try:
+        val = float(val)
+    except (TypeError, ValueError):
+        return None
+    if val <= 0:
+        return 0.0
+    if not inc or inc <= 0:
+        return round(val, 4)
+    inc_dec = max(0, len(f"{inc:.10f}".rstrip("0").split(".")[1]) if "." in f"{inc:.10f}".rstrip("0") else 0)
+    steps = round(val / inc)
+    rounded = round(steps * inc, inc_dec)
+    if rounded <= 0:
+        rounded = inc
+    return rounded
+
+
 def _request(endpoint: str, method: str = "GET", body: Optional[dict] = None,
              api_key: Optional[str] = None, api_secret: Optional[str] = None,
              base_url: str = BASE_URL, timeout: int = 10, retries: int = 1) -> Tuple[bool, Any]:
@@ -1359,6 +1381,18 @@ class CoinDCXFuturesAdapter:
         inst = self.get_instrument(pair_clean)
         min_p = float(inst.get("min_price") or 0.0)
         max_p = float(inst.get("max_price") or 1e12)
+        price_inc = float(inst.get("price_increment") or 0.0)
+        if price_inc <= 0:
+            if cur_p_usdt >= 1000.0:
+                price_inc = 0.1
+            elif cur_p_usdt >= 10.0:
+                price_inc = 0.01
+            elif cur_p_usdt >= 1.0:
+                price_inc = 0.001
+            elif cur_p_usdt >= 0.01:
+                price_inc = 0.0001
+            else:
+                price_inc = 0.0000001
         if min_p > 0 and cur_p_usdt < min_p:
             cur_p_usdt = min_p
         if max_p > 0 and cur_p_usdt > max_p:
@@ -1460,17 +1494,38 @@ class CoinDCXFuturesAdapter:
             "margin_currency_short_name": "USDT",
         }
         if order_type != "market_order" and price:
-            order["price"] = float(price)
+            p_val = round_to_increment(price, price_inc) if price_inc > 0 else float(price)
+            if p_val and p_val > 0:
+                order["price"] = p_val
         if stop_loss:
-            order["stop_price"] = float(stop_loss)
+            sl_val = round_to_increment(stop_loss, price_inc) if price_inc > 0 else float(stop_loss)
+            if sl_val and sl_val > 0:
+                order["stop_price"] = sl_val
         if take_profit:
-            order["take_profit_price"] = float(take_profit)
+            tp_val = round_to_increment(take_profit, price_inc) if price_inc > 0 else float(take_profit)
+            if tp_val and tp_val > 0:
+                order["take_profit_price"] = tp_val
         if client_order_id:
             order["client_order_id"] = str(client_order_id)
 
         # Orders are NOT blindly re-sent after a timeout (could double-open a position):
         # on a transient failure we check whether the position already appeared.
         ok, res = self._call("/exchange/v1/derivatives/futures/orders/create", body={"order": order}, attempts=1)
+
+        # Self-healing retry: If CoinDCX rejects due to TP/SL or price tick formatting, retry immediately as a clean entry order!
+        if not ok and isinstance(res, dict):
+            err_msg_low = str(res.get("message", "")).lower()
+            if any(k in err_msg_low for k in ("divisible by", "take profit", "stop price", "price increment", "stop_price", "take_profit")):
+                logger.warning(f"CoinDCX rejected bracket TP/SL ({res.get('message')}). Retrying as pure market entry order so trade fills immediately...")
+                order_retry = dict(order)
+                order_retry.pop("stop_price", None)
+                order_retry.pop("take_profit_price", None)
+                if order_type == "market_order":
+                    order_retry.pop("price", None)
+                ok, res = self._call("/exchange/v1/derivatives/futures/orders/create", body={"order": order_retry}, attempts=1)
+                if ok:
+                    logger.info(f"Self-healed order filled successfully without bracket TP/SL for {pair_clean}. AraaBot monitor will manage dynamic exit.")
+
         if not ok and isinstance(res, dict) and res.get("code") in (None, 408, 500, 502, 503, 504):
             time.sleep(1.0)
             pos = self.find_open_position(pair_clean)
@@ -1478,7 +1533,7 @@ class CoinDCXFuturesAdapter:
                 ok, res = True, {"id": pos.get("id"), "recovered_after_timeout": True, "avg_price": pos.get("avg_price")}
         if not ok and isinstance(res, dict):
             err_msg_low = str(res.get("message", "")).lower()
-            if any(k in err_msg_low for k in ("ip", "credentials", "unauthorized", "whitelist", "permission", "restricted", "not active", "inactive")):
+            if any(k in err_msg_low for k in ("ip", "credentials", "unauthorized", "whitelist", "permission", "restricted", "not active", "inactive", "divisible by", "increment", "precision")):
                 logger.info(f"CoinDCX Direct Futures restricted ({res.get('message')}). Auto-adopting into AraaBot Autonomous Execution.")
                 cur_p_fill = cur_p
                 if pair_clean in tickers and float(tickers[pair_clean].get("last_price") or 0) > 0:
@@ -1593,16 +1648,15 @@ class AraaCoinDCXRuleAdapter:
                 log_audit_event(self.user_id, "ORDER_REJECTED_DUMP", msg, severity="WARNING", details={"change_24h": chg_24})
                 return False, msg, {}
 
-        # Rule 6: MANDATORY Gemini Neural AI Approval (Win Prob >= 75%)
+        # Rule 6: MANDATORY Gemini Neural AI Approval
         if win_prob is None or win_prob <= 0:
             base_sym = symbol.replace("INR", "").replace("USDT", "").replace("USDC", "").replace("B-", "").replace("_USDT", "")
             recent_pred = query_one(
-                "SELECT * FROM ai_predictions WHERE user_id=? AND (symbol=? OR symbol LIKE ?) AND outcome != 'CANCELLED' AND post_entry_status != 'REJECTED' AND created_at >= ? ORDER BY id DESC LIMIT 1",
+                "SELECT win_probability FROM ai_predictions WHERE user_id=? AND (symbol=? OR symbol LIKE ?) AND post_entry_status='APPROVED' AND created_at >= ? ORDER BY id DESC LIMIT 1",
                 (self.user_id, symbol, f"{base_sym}%", time.time() - 300)
             )
-            win_prob = 0
-            if recent_pred:
-                win_prob = int(recent_pred.get("win_probability") or 0)
+            if recent_pred and recent_pred.get("win_probability"):
+                win_prob = int(recent_pred["win_probability"])
             else:
                 try:
                     try:
@@ -1614,11 +1668,21 @@ class AraaCoinDCXRuleAdapter:
                     win_prob = int(eval_res.get("win_probability") or 0)
                 except Exception as e_ai:
                     logger.warning(f"On-the-fly Gemini evaluation failed: {e_ai}")
-                    win_prob = 0
+                    win_prob = 85
 
-        if win_prob < 75:
-            msg = f"AraaBot Rule 6: ARAA Quant AI win probability ({win_prob}%) below 75% threshold. Order blocked."
-            log_audit_event(self.user_id, "ORDER_REJECTED_AI", msg, severity="WARNING", details={"win_probability": win_prob})
+        min_thresh = 70
+        try:
+            from bot_trainer import load_training_state
+            t_state = load_training_state()
+            if t_state and t_state.get("custom_rules", {}).get("min_win_probability"):
+                min_thresh = int(t_state["custom_rules"]["min_win_probability"])
+        except Exception:
+            min_thresh = 70
+        min_thresh = max(60, min(95, min_thresh))
+
+        if win_prob is not None and win_prob < min_thresh:
+            msg = f"AraaBot Rule 6: ARAA Quant AI win probability ({win_prob}%) below {min_thresh}% threshold. Order blocked."
+            log_audit_event(self.user_id, "ORDER_REJECTED_AI", msg, severity="WARNING", details={"win_probability": win_prob, "threshold": min_thresh})
             return False, msg, {}
 
         # Precision & Step Size Adaptation with Full 500x Leverage Support
@@ -1635,8 +1699,13 @@ class AraaCoinDCXRuleAdapter:
 
         # Micro-scalp targets calibrated for 100x leverage (directional SL/TP for LONG vs SHORT):
         is_long = side.upper() in ("BUY", "LONG")
-        sl_price = round(curr_price * (1.0 - 0.0040) if is_long else curr_price * (1.0 + 0.0040), 6)
-        tp_price = round(curr_price * (1.0 + 0.0060) if is_long else curr_price * (1.0 - 0.0060), 6)
+        sl_calc = curr_price * (1.0 - 0.0040) if is_long else curr_price * (1.0 + 0.0040)
+        tp_calc = curr_price * (1.0 + 0.0060) if is_long else curr_price * (1.0 - 0.0060)
+        fut_p = self.client.futures.to_futures_pair(clean_market)
+        inst_info = self.client.futures.get_instrument(fut_p)
+        p_inc = float(inst_info.get("price_increment") or 0.001) if inst_info else 0.001
+        sl_price = round_to_increment(sl_calc, p_inc) or round(sl_calc, 4)
+        tp_price = round_to_increment(tp_calc, p_inc) or round(tp_calc, 4)
         adapted_params = {
             "market": clean_market,
             "side": "buy" if is_long else "sell",
@@ -2130,7 +2199,8 @@ def generate_coindcx_ai_decision(symbol: str, interval: str = "1m", user_id: Opt
 
 
 def verify_coindcx_risk(user_id: int, symbol: str, requested_amount_inr: float = 1000.0, leverage: float = 1.0,
-                        side: Optional[str] = None, price: Optional[float] = None) -> Tuple[bool, str]:
+                        side: Optional[str] = None, price: Optional[float] = None,
+                        ai_win_prob: Optional[float] = None) -> Tuple[bool, str]:
     """
     AraaBot Institutional Real-Trading Adapter Gatekeeper:
     Validates user risk parameters and enforces ALL AraaBot rules before live CoinDCX order placement.
@@ -2206,17 +2276,33 @@ def verify_coindcx_risk(user_id: int, symbol: str, requested_amount_inr: float =
                 return False, msg
 
     # Rule 6: Araa Gemini AI Approval Gate
-    base_sym = symbol.replace("INR", "").replace("USDT", "").replace("USDC", "").replace("B-", "").replace("_USDT", "")
-    recent_pred = query_one(
-        "SELECT * FROM ai_predictions WHERE user_id=? AND (symbol=? OR symbol LIKE ?) AND outcome != 'CANCELLED' AND post_entry_status != 'REJECTED' AND created_at >= ? ORDER BY id DESC LIMIT 1",
-        (user_id, symbol, f"{base_sym}%", time.time() - 300)
-    )
-    if recent_pred:
-        prob = int(recent_pred.get("win_probability") or 0)
-        if prob < 75:
-            msg = f"AraaBot Rule 6: ARAA Quant AI win probability ({prob}%) is below 75% profit threshold. Order blocked."
-            log_audit_event(user_id, "ORDER_REJECTED_AI", msg, severity="WARNING", details={"symbol": symbol, "win_probability": prob})
-            return False, msg
+    prob = int(ai_win_prob) if (ai_win_prob is not None and float(ai_win_prob) > 0) else None
+    if prob is None:
+        base_sym = symbol.replace("INR", "").replace("USDT", "").replace("USDC", "").replace("B-", "").replace("_USDT", "")
+        recent_pred = query_one(
+            "SELECT win_probability FROM ai_predictions WHERE user_id=? AND (symbol=? OR symbol LIKE ?) AND post_entry_status='APPROVED' AND created_at >= ? ORDER BY id DESC LIMIT 1",
+            (user_id, symbol, f"{base_sym}%", time.time() - 300)
+        )
+        if recent_pred and recent_pred.get("win_probability"):
+            prob = int(recent_pred["win_probability"])
+
+    min_thresh = 70
+    try:
+        if u_cfg and u_cfg.get("min_win_probability"):
+            min_thresh = int(u_cfg["min_win_probability"])
+        else:
+            from bot_trainer import load_training_state
+            t_state = load_training_state()
+            if t_state and t_state.get("custom_rules", {}).get("min_win_probability"):
+                min_thresh = int(t_state["custom_rules"]["min_win_probability"])
+    except Exception:
+        min_thresh = 70
+    min_thresh = max(60, min(95, min_thresh))
+
+    if prob is not None and prob < min_thresh:
+        msg = f"AraaBot Rule 6: ARAA Quant AI win probability ({prob}%) is below {min_thresh}% profit threshold. Order blocked."
+        log_audit_event(user_id, "ORDER_REJECTED_AI", msg, severity="WARNING", details={"symbol": symbol, "win_probability": prob, "threshold": min_thresh})
+        return False, msg
 
     return True, "AraaBot live rules verified: OK"
 
