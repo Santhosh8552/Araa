@@ -994,29 +994,36 @@ class Bot:
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
 
             # =========================================================================
-            # RULE 0: ULTRA-FAST SCALP PROFIT CAPTURE (+$0.03+ PROFIT LOCK)
-            # When any trade reaches +$0.03 profit (or 2%+ ROI with profit), BANK IT IMMEDIATELY!
-            # Locks profit rapidly into wallet and frees up position slots for new AI setups.
+            # RULE 0: BIG-PROFIT TRAILING ENGINE (LET WINNERS RUN, LOCK PEAKS!)
+            # Never cap winners at $0.03! Once green, trail the peak upward so trades
+            # capture $0.15, $0.50, $1.00, $3.00+ while guaranteeing profit lock!
             # =========================================================================
-            if pnl >= 0.03 or (pnl >= 0.02 and roi_pct >= 2.0) or (roi_pct >= 3.0 and pnl > 0):
-                self.close(p, price, f"SCALP_PROFIT_TAKEN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
+            if roi_pct >= 40.0 and pnl > 0:
+                self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
+            trail_floor = None
+            if peak_cash >= 1.00:
+                trail_floor = round(peak_cash * 0.85, 3)
+            elif peak_cash >= 0.30:
+                trail_floor = round(peak_cash * 0.78, 3)
+            elif peak_cash >= 0.10:
+                trail_floor = round(peak_cash * 0.70, 3)
+            elif peak_cash >= 0.04:
+                trail_floor = 0.02
+
+            if trail_floor is not None and pnl <= trail_floor and time_held >= 2.0:
+                self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             # =========================================================================
-            # RULE 0B: FAST DOWNSIDE LOSS CUT (-$0.01 / -$0.02 MAX CUT)
-            # Never let adverse trades bleed into -$0.14 or -0.28% technical stops.
-            # After brief initial tick buffer (>= 3s), cut losing positions tightly!
+            # RULE 0B: SMART PROPORTIONAL DOWNSIDE CUT
+            # Gives 5s spread breathing room, then cuts adverse trades tightly at ~5-6% ROI
+            # or -0.12% move so losses stay small while winners run big.
             # =========================================================================
-            if (time_held >= 3.0 and pnl <= -0.015) or pnl <= -0.03 or move_pct <= -0.10 or roi_pct <= -5.0:
+            fast_cut_usd = max(0.03, round(pos_margin * 0.06, 3))
+            if (time_held >= 5.0 and pnl <= -fast_cut_usd) or move_pct <= -0.12 or roi_pct <= -7.0:
                 self.close(p, price, f"FAST_MICRO_CUT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 0C: PEAK PROFIT REVERSION PROTECTION
-            # If trade peaked in profit (>= +$0.02), never let it turn into a loss!
-            # =========================================================================
-            if peak_cash >= 0.02 and pnl <= 0.005 and time_held >= 2.0:
-                self.close(p, price, f"PEAK_PROFIT_PROTECTION (Peaked +${peak_cash:.2f} -> Locked +${pnl:.2f})")
                 continue
 
             # =========================================================================
@@ -1278,25 +1285,32 @@ class Bot:
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
 
             # =========================================================================
-            # RULE 0: ULTRA-FAST SCALP PROFIT CAPTURE (+$0.03+ PROFIT LOCK)
-            # When any trade reaches +$0.03 profit (or 2%+ ROI with profit), BANK IT IMMEDIATELY!
+            # RULE 0: BIG-PROFIT TRAILING ENGINE (LET WINNERS RUN, LOCK PEAKS!)
             # =========================================================================
-            if current_pnl >= 0.03 or (current_pnl >= 0.02 and roi_pct >= 2.0) or (roi_pct >= 3.0 and current_pnl > 0):
-                self.close(p, price, f"SCALP_PROFIT_TAKEN (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
+            if roi_pct >= 40.0 and current_pnl > 0:
+                self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
+            trail_floor = None
+            if peak_cash >= 1.00:
+                trail_floor = round(peak_cash * 0.85, 3)
+            elif peak_cash >= 0.30:
+                trail_floor = round(peak_cash * 0.78, 3)
+            elif peak_cash >= 0.10:
+                trail_floor = round(peak_cash * 0.70, 3)
+            elif peak_cash >= 0.04:
+                trail_floor = 0.02
+
+            if trail_floor is not None and current_pnl <= trail_floor and time_held >= 2.0:
+                self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             # =========================================================================
-            # RULE 0B: FAST DOWNSIDE LOSS CUT (-$0.01 / -$0.02 MAX CUT)
+            # RULE 0B: SMART PROPORTIONAL DOWNSIDE CUT
             # =========================================================================
-            if (time_held >= 3.0 and current_pnl <= -0.015) or current_pnl <= -0.03 or move_pct <= -0.10 or roi_pct <= -5.0:
+            fast_cut_usd = max(0.03, round(pos_margin * 0.06, 3))
+            if (time_held >= 5.0 and current_pnl <= -fast_cut_usd) or move_pct <= -0.12 or roi_pct <= -7.0:
                 self.close(p, price, f"FAST_MICRO_CUT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 0C: PEAK PROFIT REVERSION PROTECTION
-            # =========================================================================
-            if peak_cash >= 0.02 and current_pnl <= 0.005 and time_held >= 2.0:
-                self.close(p, price, f"PEAK_PROFIT_PROTECTION (Peaked +${peak_cash:.2f} -> Locked +${current_pnl:.2f})")
                 continue
 
             # =========================================================================
@@ -1523,8 +1537,8 @@ class Bot:
                 max_margin = acct_cap
                 min_margin = 0.01
             else:
-                base_margin = round(min(5.0, max(1.0, acct_cap / max(slots_target, 1))), 2)
-                max_margin = 10.0
+                base_margin = round(min(15.0, max(2.0, acct_cap / max(slots_target, 1))), 2)
+                max_margin = 20.0
                 min_margin = 0.5
         elif is_live_flag and broker_name == "COINDCX":
             # AraaBot Rule Adapter Sizing Rule for Spot INR:
