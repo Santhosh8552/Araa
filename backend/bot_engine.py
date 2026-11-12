@@ -994,6 +994,32 @@ class Bot:
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
 
             # =========================================================================
+            # RULE 0: ULTRA-FAST SCALP PROFIT CAPTURE (+$0.03+ PROFIT LOCK)
+            # When any trade reaches +$0.03 profit (or 2%+ ROI with profit), BANK IT IMMEDIATELY!
+            # Locks profit rapidly into wallet and frees up position slots for new AI setups.
+            # =========================================================================
+            if pnl >= 0.03 or (pnl >= 0.02 and roi_pct >= 2.0) or (roi_pct >= 3.0 and pnl > 0):
+                self.close(p, price, f"SCALP_PROFIT_TAKEN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
+            # =========================================================================
+            # RULE 0B: FAST DOWNSIDE LOSS CUT (-$0.01 / -$0.02 MAX CUT)
+            # Never let adverse trades bleed into -$0.14 or -0.28% technical stops.
+            # After brief initial tick buffer (>= 3s), cut losing positions tightly!
+            # =========================================================================
+            if (time_held >= 3.0 and pnl <= -0.015) or pnl <= -0.03 or move_pct <= -0.10 or roi_pct <= -5.0:
+                self.close(p, price, f"FAST_MICRO_CUT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
+                continue
+
+            # =========================================================================
+            # RULE 0C: PEAK PROFIT REVERSION PROTECTION
+            # If trade peaked in profit (>= +$0.02), never let it turn into a loss!
+            # =========================================================================
+            if peak_cash >= 0.02 and pnl <= 0.005 and time_held >= 2.0:
+                self.close(p, price, f"PEAK_PROFIT_PROTECTION (Peaked +${peak_cash:.2f} -> Locked +${pnl:.2f})")
+                continue
+
+            # =========================================================================
             # RULE 1A: FAST DOWNSIDE STOP-LOSS GUARD (REAL CAPITAL PRESERVATION)
             # Never allow a real-money trade to sink into excessive loss
             # =========================================================================
@@ -1250,6 +1276,28 @@ class Bot:
             roi_pct = (current_pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
             # Dynamic min take profit: 5% of isolated margin, minimum $0.005 for micro-wallets
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
+
+            # =========================================================================
+            # RULE 0: ULTRA-FAST SCALP PROFIT CAPTURE (+$0.03+ PROFIT LOCK)
+            # When any trade reaches +$0.03 profit (or 2%+ ROI with profit), BANK IT IMMEDIATELY!
+            # =========================================================================
+            if current_pnl >= 0.03 or (current_pnl >= 0.02 and roi_pct >= 2.0) or (roi_pct >= 3.0 and current_pnl > 0):
+                self.close(p, price, f"SCALP_PROFIT_TAKEN (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
+            # =========================================================================
+            # RULE 0B: FAST DOWNSIDE LOSS CUT (-$0.01 / -$0.02 MAX CUT)
+            # =========================================================================
+            if (time_held >= 3.0 and current_pnl <= -0.015) or current_pnl <= -0.03 or move_pct <= -0.10 or roi_pct <= -5.0:
+                self.close(p, price, f"FAST_MICRO_CUT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
+                continue
+
+            # =========================================================================
+            # RULE 0C: PEAK PROFIT REVERSION PROTECTION
+            # =========================================================================
+            if peak_cash >= 0.02 and current_pnl <= 0.005 and time_held >= 2.0:
+                self.close(p, price, f"PEAK_PROFIT_PROTECTION (Peaked +${peak_cash:.2f} -> Locked +${current_pnl:.2f})")
+                continue
 
             # =========================================================================
             # RULE 1A: FAST DOWNSIDE STOP-LOSS GUARD (PROTECTS ACCUMULATED PROFITS)
@@ -1669,10 +1717,24 @@ class Bot:
                     continue
                 pool = by_cat.get(cat) or []
                 bot_dir = str(user.get("bot_trade_direction") or "BOTH").upper()
+                high_lev_pairs = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "NEARUSDT")
                 if bot_dir == "SHORT":
-                    pool.sort(key=lambda x: 0 if x.get("side") in ("SHORT", "SELL") else 1)
+                    pool.sort(key=lambda x: (
+                        0 if x.get("symbol") in high_lev_pairs else 1,
+                        0 if x.get("side") in ("SHORT", "SELL") else 1,
+                        -x.get("confidence", 0.0)
+                    ))
                 elif bot_dir == "LONG":
-                    pool.sort(key=lambda x: 0 if x.get("side") in ("LONG", "BUY") else 1)
+                    pool.sort(key=lambda x: (
+                        0 if x.get("symbol") in high_lev_pairs else 1,
+                        0 if x.get("side") in ("LONG", "BUY") else 1,
+                        -x.get("confidence", 0.0)
+                    ))
+                else:
+                    pool.sort(key=lambda x: (
+                        0 if x.get("symbol") in high_lev_pairs else 1,
+                        -x.get("confidence", 0.0)
+                    ))
                 while pool:
                     cand = dict(pool.pop(0))
                     if cand["symbol"] in held:

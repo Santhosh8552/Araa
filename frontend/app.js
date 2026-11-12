@@ -3818,16 +3818,17 @@ async function refreshExnessTerminal() {
           const cDir = (c.side === 'BUY' || c.side === 'LONG') ? 1.0 : -1.0;
           const cCdxCash = cEntry > 0 ? (cMargin * ((cExit - cEntry) / cEntry * cDir)) : 0.0;
           const cPnlColor = cPnl >= 0 ? "#10b981" : "#ef4444";
+          const fmtPrice = (val) => val < 0.01 ? val.toFixed(6) : (val < 1.0 ? val.toFixed(4) : val.toLocaleString('en-US', {maximumFractionDigits: 2}));
 
           return `<tr>
             <td style="font-weight:800; color:#38bdf8;">${c.symbol}</td>
             <td><span style="background:${c.side==='BUY'||c.side==='LONG'?'rgba(16,185,129,0.2)':'rgba(239,68,68,0.2)'}; color:${c.side==='BUY'||c.side==='LONG'?'#10b981':'#f87171'}; padding:2px 6px; border-radius:4px; font-weight:800; font-size:10px;">${c.side}</span></td>
             <td style="font-family:'JetBrains Mono',monospace;">${c.qty}</td>
-            <td style="font-family:'JetBrains Mono',monospace;">$${cEntry.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
-            <td style="font-family:'JetBrains Mono',monospace;">$${cExit.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
+            <td style="font-family:'JetBrains Mono',monospace;">$${fmtPrice(cEntry)}</td>
+            <td style="font-family:'JetBrains Mono',monospace;">$${fmtPrice(cExit)}</td>
             <td style="font-family:'JetBrains Mono',monospace;">
               <div style="font-weight:800; color:${cPnlColor}; font-size:11.5px;">${cPnl>=0?'+':''}$${cPnl.toFixed(2)} (${cRoi>=0?'+':''}${cRoi.toFixed(1)}%)</div>
-              <div style="font-size:9.5px; color:#10b981; font-weight:700;">🟢 Profit Banked: ${cPnl>=0?'+':''}$${cPnl.toFixed(2)}</div>
+              <div style="font-size:9.5px; color:${cPnlColor}; font-weight:700;">${cPnl>=0 ? '🟢 Profit Banked: +$' + cPnl.toFixed(2) : '🔴 Realized Loss: -$' + Math.abs(cPnl).toFixed(2)}</div>
             </td>
             <td style="color:#94a3b8; font-size:10.5px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${c.close_reason || c.signal_reason || ''}">${c.close_reason || c.signal_reason || 'PROFIT_LOCKED'}</td>
           </tr>`;
