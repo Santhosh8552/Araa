@@ -9,17 +9,42 @@ const priceFmt = (p) => Number(p) >= 1000 ? Number(p).toLocaleString("en-IN", {m
 const ago = (ts) => { if (!ts) return "never"; const s = Date.now() / 1000 - ts;
   if (s < 60) return Math.max(1, Math.round(s)) + "s"; if (s < 3600) return Math.round(s / 60) + "m";
   if (s < 86400) return Math.round(s / 3600) + "h"; return Math.round(s / 86400) + "d"; };
-const adminHeaders = (extra) => Object.assign({"X-Admin-Token": sessionStorage.getItem("tradepro_admin_token") || ""}, extra || {});
-const handleAdminJson = (r) => {
+const getAdminToken = () => localStorage.getItem("tradepro_admin_token") || sessionStorage.getItem("tradepro_admin_token") || "";
+const setAdminToken = (tok, usr) => {
+  localStorage.setItem("tradepro_admin_token", tok);
+  sessionStorage.setItem("tradepro_admin_token", tok);
+  if (usr) {
+    localStorage.setItem("tradepro_admin_user", usr);
+    sessionStorage.setItem("tradepro_admin_user", usr);
+  }
+};
+const clearAdminToken = () => {
+  localStorage.removeItem("tradepro_admin_token");
+  sessionStorage.removeItem("tradepro_admin_token");
+  localStorage.removeItem("tradepro_admin_user");
+  sessionStorage.removeItem("tradepro_admin_user");
+};
+const adminHeaders = (extra) => Object.assign({"X-Admin-Token": getAdminToken()}, extra || {});
+const handleAdminJson = (r, sentToken) => {
   if (r.status === 401 && !String(r.url).includes("/api/admin/login")) {
-    sessionStorage.removeItem("tradepro_admin_token");
-    if (typeof checkAdminAuth === "function") checkAdminAuth();
+    // Only clear token if this 401 corresponds to the currently active token (avoids pre-login race condition)
+    const curTok = getAdminToken();
+    if (!curTok || (sentToken && sentToken === curTok)) {
+      clearAdminToken();
+      if (typeof checkAdminAuth === "function") checkAdminAuth();
+    }
   }
   return r.json();
 };
-const get = (p) => fetch(API + p, {headers: adminHeaders()}).then(handleAdminJson);
-const post = (p, body) => fetch(API + p, {method: "POST", headers: adminHeaders({"Content-Type": "application/json"}),
-  body: body ? JSON.stringify(body) : undefined}).then(handleAdminJson);
+const get = (p) => {
+  const tok = getAdminToken();
+  return fetch(API + p, {headers: adminHeaders()}).then((r) => handleAdminJson(r, tok));
+};
+const post = (p, body) => {
+  const tok = getAdminToken();
+  return fetch(API + p, {method: "POST", headers: adminHeaders({"Content-Type": "application/json"}),
+    body: body ? JSON.stringify(body) : undefined}).then((r) => handleAdminJson(r, tok));
+};
 
 /* ---------------- overview ---------------- */
 async function loadOverview() {
@@ -698,6 +723,7 @@ if ($("hero_flush_positions")) {
 }
 
 async function tick() {
+  if (!getAdminToken()) return;
   try {
     await loadOverview(); await loadStorage(); await loadWithdrawals();
     await loadUsers(); await loadDeposits(); await loadLedger(); await loadLogs();
@@ -898,10 +924,10 @@ if ($("adm_hub_search")) {
   };
 }
 
-preview(); tick();
-setInterval(async () => { try { await loadOverview(); await loadStorage(); await loadGatekeeperAudit(); } catch (e) {} }, 3000);
-setInterval(async () => { try { await loadWithdrawals(); await loadUsers(); await loadLogs(); await loadFirewall(); } catch (e) {} }, 7000);
-setInterval(async () => { try { await loadDeposits(); await loadLedger(); } catch (e) {} }, 15000);
+preview(); if (getAdminToken()) tick();
+setInterval(async () => { if (!getAdminToken()) return; try { await loadOverview(); await loadStorage(); await loadGatekeeperAudit(); } catch (e) {} }, 3000);
+setInterval(async () => { if (!getAdminToken()) return; try { await loadWithdrawals(); await loadUsers(); await loadLogs(); await loadFirewall(); } catch (e) {} }, 7000);
+setInterval(async () => { if (!getAdminToken()) return; try { await loadDeposits(); await loadLedger(); } catch (e) {} }, 15000);
 
 /* ---------------- AraaBot Adapter Rules Gatekeeper Telemetry & Pre-Trade Audit Stream ---------------- */
 async function loadGatekeeperAudit() {
@@ -1224,11 +1250,11 @@ if ($("btn_test_upi_qr")) {
     }
   };
 }
-loadUpiGatewayConfig();
+if (getAdminToken()) loadUpiGatewayConfig();
 
 /* ==================== 🛡️ ADMIN AUTHENTICATION GATE ==================== */
 function checkAdminAuth() {
-  const token = sessionStorage.getItem("tradepro_admin_token");
+  const token = getAdminToken();
   const modal = $("modal_admin_auth");
   if (!token) {
     if (modal) {
@@ -1247,6 +1273,7 @@ function checkAdminAuth() {
 
 async function handleAdminLoginSubmit(e) {
   if (e) e.preventDefault();
+  if (window._adminLoggingIn) return;
   const uInput = $("admin_login_username");
   const pInput = $("admin_login_password");
   const errDiv = $("admin_auth_error");
@@ -1263,14 +1290,14 @@ async function handleAdminLoginSubmit(e) {
     return;
   }
 
+  window._adminLoggingIn = true;
   try {
     if (btn) { btn.disabled = true; btn.textContent = "Verifying..."; }
     if (errDiv) errDiv.style.display = "none";
 
     const res = await post("/api/admin/login", { username, password });
     if (res && res.success && res.admin_token) {
-      sessionStorage.setItem("tradepro_admin_token", res.admin_token);
-      sessionStorage.setItem("tradepro_admin_user", res.user || username);
+      setAdminToken(res.admin_token, res.user || username);
       const modal = $("modal_admin_auth");
       if (modal) {
         modal.style.display = "none";
@@ -1278,6 +1305,8 @@ async function handleAdminLoginSubmit(e) {
       }
       // Trigger full data reload
       await tick();
+      if (typeof loadUpiGatewayConfig === "function") loadUpiGatewayConfig();
+      if (typeof loadSlackConfig === "function") loadSlackConfig();
     } else {
       if (errDiv) {
         errDiv.textContent = (res && res.error) || "Invalid administrator credentials. Access denied.";
@@ -1290,13 +1319,13 @@ async function handleAdminLoginSubmit(e) {
       errDiv.style.display = "block";
     }
   } finally {
+    window._adminLoggingIn = false;
     if (btn) { btn.disabled = false; btn.textContent = "🔓 UNLOCK ADMIN COMMAND CENTER"; }
   }
 }
 
 function handleAdminLogout() {
-  sessionStorage.removeItem("tradepro_admin_token");
-  sessionStorage.removeItem("tradepro_admin_user");
+  clearAdminToken();
   const modal = $("modal_admin_auth");
   if (modal) {
     modal.style.display = "flex";
@@ -1306,9 +1335,6 @@ function handleAdminLogout() {
 
 if ($("form_admin_login")) {
   $("form_admin_login").onsubmit = handleAdminLoginSubmit;
-}
-if ($("btn_submit_admin_login")) {
-  $("btn_submit_admin_login").onclick = handleAdminLoginSubmit;
 }
 if ($("btn_admin_logout")) {
   $("btn_admin_logout").onclick = handleAdminLogout;
@@ -1457,8 +1483,8 @@ document.querySelectorAll(".prompt_pill").forEach(pill => {
   };
 });
 
-// Load Slack config on startup
-loadSlackConfig();
+// Load Slack config on startup only when authenticated
+if (getAdminToken()) loadSlackConfig();
 
 /* =========================================================================
    ENTERPRISE V3 CONTROL CENTER: TRIAL BALANCE, GLOBAL KILL SWITCH & ARAA AI

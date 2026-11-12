@@ -5972,7 +5972,7 @@ def admin_login():
 
     is_valid = False
     # 1. Hardcoded Administrator credentials requested by owner
-    if (username in ("santhosh8552", "admin")) and (password in ("Password", "admin")):
+    if (username.lower() in ("santhosh8552", "admin")) and (password in ("Password", "admin")):
         is_valid = True
     elif env_user and env_pass:
         is_valid = _hmac.compare_digest(username.encode(), env_user.encode()) and \
