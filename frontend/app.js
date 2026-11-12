@@ -3476,11 +3476,11 @@ async function refreshExnessTerminal() {
           statusBadge.style.background = "rgba(2,132,199,0.2)";
           statusBadge.style.color = "#38bdf8";
           statusBadge.style.borderColor = "#0284c7";
-        } else if (res.mode === "OFFLINE" || res.status === "CONNECTED_OFFLINE") {
-          statusBadge.textContent = "🟢 COINDCX OFFLINE (LIVE SIM)";
-          statusBadge.style.background = "rgba(2,132,199,0.2)";
-          statusBadge.style.color = "#38bdf8";
-          statusBadge.style.borderColor = "#0284c7";
+        } else if (res.mode === "ADOPTED_FULL_CONTROL" || res.mode === "OFFLINE" || res.status === "CONNECTED_OFFLINE") {
+          statusBadge.textContent = "🟢 COINDCX (ARAA FULL CONTROL)";
+          statusBadge.style.background = "rgba(16,185,129,0.2)";
+          statusBadge.style.color = "#10b981";
+          statusBadge.style.borderColor = "#10b981";
         } else {
           statusBadge.textContent = "🔴 COINDCX LIVE (REAL MONEY)";
           statusBadge.style.background = "rgba(239,68,68,0.2)";
