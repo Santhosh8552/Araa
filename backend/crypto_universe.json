@@ -1,0 +1,4208 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "base": "BTC",
+    "quote": "USDT",
+    "display_name": "Bitcoin",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "ETHUSDT",
+    "base": "ETH",
+    "quote": "USDT",
+    "display_name": "Ethereum",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "BNBUSDT",
+    "base": "BNB",
+    "quote": "USDT",
+    "display_name": "BNB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "NEOUSDT",
+    "base": "NEO",
+    "quote": "USDT",
+    "display_name": "NEO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LTCUSDT",
+    "base": "LTC",
+    "quote": "USDT",
+    "display_name": "Litecoin",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QTUMUSDT",
+    "base": "QTUM",
+    "quote": "USDT",
+    "display_name": "QTUM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ADAUSDT",
+    "base": "ADA",
+    "quote": "USDT",
+    "display_name": "Cardano",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XRPUSDT",
+    "base": "XRP",
+    "quote": "USDT",
+    "display_name": "XRP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "TUSDUSDT",
+    "base": "TUSD",
+    "quote": "USDT",
+    "display_name": "TUSD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IOTAUSDT",
+    "base": "IOTA",
+    "quote": "USDT",
+    "display_name": "IOTA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XLMUSDT",
+    "base": "XLM",
+    "quote": "USDT",
+    "display_name": "Stellar",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ONTUSDT",
+    "base": "ONT",
+    "quote": "USDT",
+    "display_name": "ONT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TRXUSDT",
+    "base": "TRX",
+    "quote": "USDT",
+    "display_name": "TRON",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ETCUSDT",
+    "base": "ETC",
+    "quote": "USDT",
+    "display_name": "ETC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "VETUSDT",
+    "base": "VET",
+    "quote": "USDT",
+    "display_name": "VET",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USDCUSDT",
+    "base": "USDC",
+    "quote": "USDT",
+    "display_name": "USDC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LINKUSDT",
+    "base": "LINK",
+    "quote": "USDT",
+    "display_name": "Chainlink",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ONGUSDT",
+    "base": "ONG",
+    "quote": "USDT",
+    "display_name": "ONG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HOTUSDT",
+    "base": "HOT",
+    "quote": "USDT",
+    "display_name": "HOT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZILUSDT",
+    "base": "ZIL",
+    "quote": "USDT",
+    "display_name": "ZIL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZRXUSDT",
+    "base": "ZRX",
+    "quote": "USDT",
+    "display_name": "ZRX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FETUSDT",
+    "base": "FET",
+    "quote": "USDT",
+    "display_name": "FET",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BATUSDT",
+    "base": "BAT",
+    "quote": "USDT",
+    "display_name": "BAT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZECUSDT",
+    "base": "ZEC",
+    "quote": "USDT",
+    "display_name": "ZEC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "IOSTUSDT",
+    "base": "IOST",
+    "quote": "USDT",
+    "display_name": "IOST",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CELRUSDT",
+    "base": "CELR",
+    "quote": "USDT",
+    "display_name": "CELR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DASHUSDT",
+    "base": "DASH",
+    "quote": "USDT",
+    "display_name": "DASH",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "THETAUSDT",
+    "base": "THETA",
+    "quote": "USDT",
+    "display_name": "THETA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ENJUSDT",
+    "base": "ENJ",
+    "quote": "USDT",
+    "display_name": "ENJ",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ATOMUSDT",
+    "base": "ATOM",
+    "quote": "USDT",
+    "display_name": "Cosmos",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TFUELUSDT",
+    "base": "TFUEL",
+    "quote": "USDT",
+    "display_name": "TFUEL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ONEUSDT",
+    "base": "ONE",
+    "quote": "USDT",
+    "display_name": "ONE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ALGOUSDT",
+    "base": "ALGO",
+    "quote": "USDT",
+    "display_name": "Algorand",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DOGEUSDT",
+    "base": "DOGE",
+    "quote": "USDT",
+    "display_name": "Dogecoin",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "DUSKUSDT",
+    "base": "DUSK",
+    "quote": "USDT",
+    "display_name": "DUSK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ANKRUSDT",
+    "base": "ANKR",
+    "quote": "USDT",
+    "display_name": "ANKR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WINUSDT",
+    "base": "WIN",
+    "quote": "USDT",
+    "display_name": "WIN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MTLUSDT",
+    "base": "MTL",
+    "quote": "USDT",
+    "display_name": "MTL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "CVCUSDT",
+    "base": "CVC",
+    "quote": "USDT",
+    "display_name": "CVC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CHZUSDT",
+    "base": "CHZ",
+    "quote": "USDT",
+    "display_name": "Chiliz",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BANDUSDT",
+    "base": "BAND",
+    "quote": "USDT",
+    "display_name": "BAND",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XTZUSDT",
+    "base": "XTZ",
+    "quote": "USDT",
+    "display_name": "XTZ",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RVNUSDT",
+    "base": "RVN",
+    "quote": "USDT",
+    "display_name": "RVN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HBARUSDT",
+    "base": "HBAR",
+    "quote": "USDT",
+    "display_name": "HBAR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "STXUSDT",
+    "base": "STX",
+    "quote": "USDT",
+    "display_name": "STX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KAVAUSDT",
+    "base": "KAVA",
+    "quote": "USDT",
+    "display_name": "KAVA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ARPAUSDT",
+    "base": "ARPA",
+    "quote": "USDT",
+    "display_name": "ARPA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IOTXUSDT",
+    "base": "IOTX",
+    "quote": "USDT",
+    "display_name": "IOTX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RLCUSDT",
+    "base": "RLC",
+    "quote": "USDT",
+    "display_name": "RLC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BCHUSDT",
+    "base": "BCH",
+    "quote": "USDT",
+    "display_name": "Bitcoin Cash",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FTTUSDT",
+    "base": "FTT",
+    "quote": "USDT",
+    "display_name": "FTT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EURUSDT",
+    "base": "EUR",
+    "quote": "USDT",
+    "display_name": "EUR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OGNUSDT",
+    "base": "OGN",
+    "quote": "USDT",
+    "display_name": "OGN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LSKUSDT",
+    "base": "LSK",
+    "quote": "USDT",
+    "display_name": "LSK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BNTUSDT",
+    "base": "BNT",
+    "quote": "USDT",
+    "display_name": "BNT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "MBLUSDT",
+    "base": "MBL",
+    "quote": "USDT",
+    "display_name": "MBL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "COTIUSDT",
+    "base": "COTI",
+    "quote": "USDT",
+    "display_name": "COTI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SOLUSDT",
+    "base": "SOL",
+    "quote": "USDT",
+    "display_name": "Solana",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "CTSIUSDT",
+    "base": "CTSI",
+    "quote": "USDT",
+    "display_name": "CTSI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HIVEUSDT",
+    "base": "HIVE",
+    "quote": "USDT",
+    "display_name": "HIVE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CHRUSDT",
+    "base": "CHR",
+    "quote": "USDT",
+    "display_name": "CHR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KNCUSDT",
+    "base": "KNC",
+    "quote": "USDT",
+    "display_name": "KNC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "COMPUSDT",
+    "base": "COMP",
+    "quote": "USDT",
+    "display_name": "Compound",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SCUSDT",
+    "base": "SC",
+    "quote": "USDT",
+    "display_name": "SC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZENUSDT",
+    "base": "ZEN",
+    "quote": "USDT",
+    "display_name": "ZEN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SNXUSDT",
+    "base": "SNX",
+    "quote": "USDT",
+    "display_name": "SNX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "VTHOUSDT",
+    "base": "VTHO",
+    "quote": "USDT",
+    "display_name": "VTHO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DGBUSDT",
+    "base": "DGB",
+    "quote": "USDT",
+    "display_name": "DGB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DCRUSDT",
+    "base": "DCR",
+    "quote": "USDT",
+    "display_name": "DCR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MANAUSDT",
+    "base": "MANA",
+    "quote": "USDT",
+    "display_name": "MANA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "YFIUSDT",
+    "base": "YFI",
+    "quote": "USDT",
+    "display_name": "YFI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "JSTUSDT",
+    "base": "JST",
+    "quote": "USDT",
+    "display_name": "JST",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CRVUSDT",
+    "base": "CRV",
+    "quote": "USDT",
+    "display_name": "CRV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SANDUSDT",
+    "base": "SAND",
+    "quote": "USDT",
+    "display_name": "SAND",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NMRUSDT",
+    "base": "NMR",
+    "quote": "USDT",
+    "display_name": "NMR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DOTUSDT",
+    "base": "DOT",
+    "quote": "USDT",
+    "display_name": "Polkadot",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LUNAUSDT",
+    "base": "LUNA",
+    "quote": "USDT",
+    "display_name": "LUNA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RSRUSDT",
+    "base": "RSR",
+    "quote": "USDT",
+    "display_name": "RSR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PAXGUSDT",
+    "base": "PAXG",
+    "quote": "USDT",
+    "display_name": "PAXG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TRBUSDT",
+    "base": "TRB",
+    "quote": "USDT",
+    "display_name": "TRB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SUSHIUSDT",
+    "base": "SUSHI",
+    "quote": "USDT",
+    "display_name": "SUSHI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KSMUSDT",
+    "base": "KSM",
+    "quote": "USDT",
+    "display_name": "KSM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EGLDUSDT",
+    "base": "EGLD",
+    "quote": "USDT",
+    "display_name": "EGLD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DIAUSDT",
+    "base": "DIA",
+    "quote": "USDT",
+    "display_name": "DIA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RUNEUSDT",
+    "base": "RUNE",
+    "quote": "USDT",
+    "display_name": "RUNE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "UMAUSDT",
+    "base": "UMA",
+    "quote": "USDT",
+    "display_name": "UMA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BELUSDT",
+    "base": "BEL",
+    "quote": "USDT",
+    "display_name": "BEL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "UNIUSDT",
+    "base": "UNI",
+    "quote": "USDT",
+    "display_name": "Uniswap",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SUNUSDT",
+    "base": "SUN",
+    "quote": "USDT",
+    "display_name": "SUN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AVAXUSDT",
+    "base": "AVAX",
+    "quote": "USDT",
+    "display_name": "Avalanche",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XVSUSDT",
+    "base": "XVS",
+    "quote": "USDT",
+    "display_name": "XVS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "AAVEUSDT",
+    "base": "AAVE",
+    "quote": "USDT",
+    "display_name": "Aave",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NEARUSDT",
+    "base": "NEAR",
+    "quote": "USDT",
+    "display_name": "NEAR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 50
+  },
+  {
+    "symbol": "FILUSDT",
+    "base": "FIL",
+    "quote": "USDT",
+    "display_name": "Filecoin",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "INJUSDT",
+    "base": "INJ",
+    "quote": "USDT",
+    "display_name": "Injective",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AUDIOUSDT",
+    "base": "AUDIO",
+    "quote": "USDT",
+    "display_name": "AUDIO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CTKUSDT",
+    "base": "CTK",
+    "quote": "USDT",
+    "display_name": "CTK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AXSUSDT",
+    "base": "AXS",
+    "quote": "USDT",
+    "display_name": "Axie Infinity",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "STRAXUSDT",
+    "base": "STRAX",
+    "quote": "USDT",
+    "display_name": "STRAX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ROSEUSDT",
+    "base": "ROSE",
+    "quote": "USDT",
+    "display_name": "ROSE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AVAUSDT",
+    "base": "AVA",
+    "quote": "USDT",
+    "display_name": "AVA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SKLUSDT",
+    "base": "SKL",
+    "quote": "USDT",
+    "display_name": "SKL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GRTUSDT",
+    "base": "GRT",
+    "quote": "USDT",
+    "display_name": "GRT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "JUVUSDT",
+    "base": "JUV",
+    "quote": "USDT",
+    "display_name": "JUV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PSGUSDT",
+    "base": "PSG",
+    "quote": "USDT",
+    "display_name": "PSG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "1INCHUSDT",
+    "base": "1INCH",
+    "quote": "USDT",
+    "display_name": "1INCH",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OGUSDT",
+    "base": "OG",
+    "quote": "USDT",
+    "display_name": "OG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ATMUSDT",
+    "base": "ATM",
+    "quote": "USDT",
+    "display_name": "ATM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ASRUSDT",
+    "base": "ASR",
+    "quote": "USDT",
+    "display_name": "ASR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "CELOUSDT",
+    "base": "CELO",
+    "quote": "USDT",
+    "display_name": "CELO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RIFUSDT",
+    "base": "RIF",
+    "quote": "USDT",
+    "display_name": "RIF",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CKBUSDT",
+    "base": "CKB",
+    "quote": "USDT",
+    "display_name": "CKB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TWTUSDT",
+    "base": "TWT",
+    "quote": "USDT",
+    "display_name": "TWT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SFPUSDT",
+    "base": "SFP",
+    "quote": "USDT",
+    "display_name": "SFP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DODOUSDT",
+    "base": "DODO",
+    "quote": "USDT",
+    "display_name": "DODO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CAKEUSDT",
+    "base": "CAKE",
+    "quote": "USDT",
+    "display_name": "CAKE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ACMUSDT",
+    "base": "ACM",
+    "quote": "USDT",
+    "display_name": "ACM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ALICEUSDT",
+    "base": "ALICE",
+    "quote": "USDT",
+    "display_name": "ALICE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SUPERUSDT",
+    "base": "SUPER",
+    "quote": "USDT",
+    "display_name": "SUPER",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CFXUSDT",
+    "base": "CFX",
+    "quote": "USDT",
+    "display_name": "CFX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TKOUSDT",
+    "base": "TKO",
+    "quote": "USDT",
+    "display_name": "TKO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PUNDIXUSDT",
+    "base": "PUNDIX",
+    "quote": "USDT",
+    "display_name": "PUNDIX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TLMUSDT",
+    "base": "TLM",
+    "quote": "USDT",
+    "display_name": "TLM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BARUSDT",
+    "base": "BAR",
+    "quote": "USDT",
+    "display_name": "BAR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SLPUSDT",
+    "base": "SLP",
+    "quote": "USDT",
+    "display_name": "SLP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SHIBUSDT",
+    "base": "SHIB",
+    "quote": "USDT",
+    "display_name": "Shiba Inu",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ICPUSDT",
+    "base": "ICP",
+    "quote": "USDT",
+    "display_name": "ICP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ARUSDT",
+    "base": "AR",
+    "quote": "USDT",
+    "display_name": "Arweave",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MASKUSDT",
+    "base": "MASK",
+    "quote": "USDT",
+    "display_name": "MASK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LPTUSDT",
+    "base": "LPT",
+    "quote": "USDT",
+    "display_name": "LPT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XVGUSDT",
+    "base": "XVG",
+    "quote": "USDT",
+    "display_name": "XVG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GTCUSDT",
+    "base": "GTC",
+    "quote": "USDT",
+    "display_name": "GTC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PHAUSDT",
+    "base": "PHA",
+    "quote": "USDT",
+    "display_name": "PHA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DEXEUSDT",
+    "base": "DEXE",
+    "quote": "USDT",
+    "display_name": "DEXE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "C98USDT",
+    "base": "C98",
+    "quote": "USDT",
+    "display_name": "C98",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QNTUSDT",
+    "base": "QNT",
+    "quote": "USDT",
+    "display_name": "QNT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FLOWUSDT",
+    "base": "FLOW",
+    "quote": "USDT",
+    "display_name": "FLOW",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MINAUSDT",
+    "base": "MINA",
+    "quote": "USDT",
+    "display_name": "MINA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RAYUSDT",
+    "base": "RAY",
+    "quote": "USDT",
+    "display_name": "RAY",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QUICKUSDT",
+    "base": "QUICK",
+    "quote": "USDT",
+    "display_name": "QUICK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "REQUSDT",
+    "base": "REQ",
+    "quote": "USDT",
+    "display_name": "REQ",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WAXPUSDT",
+    "base": "WAXP",
+    "quote": "USDT",
+    "display_name": "WAXP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "GNOUSDT",
+    "base": "GNO",
+    "quote": "USDT",
+    "display_name": "GNO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XECUSDT",
+    "base": "XEC",
+    "quote": "USDT",
+    "display_name": "XEC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DYDXUSDT",
+    "base": "DYDX",
+    "quote": "USDT",
+    "display_name": "DYDX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GALAUSDT",
+    "base": "GALA",
+    "quote": "USDT",
+    "display_name": "GALA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ILVUSDT",
+    "base": "ILV",
+    "quote": "USDT",
+    "display_name": "ILV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "YGGUSDT",
+    "base": "YGG",
+    "quote": "USDT",
+    "display_name": "YGG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FIDAUSDT",
+    "base": "FIDA",
+    "quote": "USDT",
+    "display_name": "FIDA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AGLDUSDT",
+    "base": "AGLD",
+    "quote": "USDT",
+    "display_name": "AGLD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RADUSDT",
+    "base": "RAD",
+    "quote": "USDT",
+    "display_name": "RAD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RAREUSDT",
+    "base": "RARE",
+    "quote": "USDT",
+    "display_name": "RARE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LAZIOUSDT",
+    "base": "LAZIO",
+    "quote": "USDT",
+    "display_name": "LAZIO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ADXUSDT",
+    "base": "ADX",
+    "quote": "USDT",
+    "display_name": "ADX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AUCTIONUSDT",
+    "base": "AUCTION",
+    "quote": "USDT",
+    "display_name": "AUCTION",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MOVRUSDT",
+    "base": "MOVR",
+    "quote": "USDT",
+    "display_name": "MOVR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CITYUSDT",
+    "base": "CITY",
+    "quote": "USDT",
+    "display_name": "CITY",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ENSUSDT",
+    "base": "ENS",
+    "quote": "USDT",
+    "display_name": "ENS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QIUSDT",
+    "base": "QI",
+    "quote": "USDT",
+    "display_name": "QI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PORTOUSDT",
+    "base": "PORTO",
+    "quote": "USDT",
+    "display_name": "PORTO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "POWRUSDT",
+    "base": "POWR",
+    "quote": "USDT",
+    "display_name": "POWR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "JASMYUSDT",
+    "base": "JASMY",
+    "quote": "USDT",
+    "display_name": "JASMY",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AMPUSDT",
+    "base": "AMP",
+    "quote": "USDT",
+    "display_name": "AMP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SANTOSUSDT",
+    "base": "SANTOS",
+    "quote": "USDT",
+    "display_name": "SANTOS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "BICOUSDT",
+    "base": "BICO",
+    "quote": "USDT",
+    "display_name": "BICO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FLUXUSDT",
+    "base": "FLUX",
+    "quote": "USDT",
+    "display_name": "FLUX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CVXUSDT",
+    "base": "CVX",
+    "quote": "USDT",
+    "display_name": "CVX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PEOPLEUSDT",
+    "base": "PEOPLE",
+    "quote": "USDT",
+    "display_name": "PEOPLE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SPELLUSDT",
+    "base": "SPELL",
+    "quote": "USDT",
+    "display_name": "SPELL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "JOEUSDT",
+    "base": "JOE",
+    "quote": "USDT",
+    "display_name": "JOE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "ACHUSDT",
+    "base": "ACH",
+    "quote": "USDT",
+    "display_name": "ACH",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IMXUSDT",
+    "base": "IMX",
+    "quote": "USDT",
+    "display_name": "IMX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GLMRUSDT",
+    "base": "GLMR",
+    "quote": "USDT",
+    "display_name": "GLMR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "API3USDT",
+    "base": "API3",
+    "quote": "USDT",
+    "display_name": "API3",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BTTCUSDT",
+    "base": "BTTC",
+    "quote": "USDT",
+    "display_name": "BTTC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XNOUSDT",
+    "base": "XNO",
+    "quote": "USDT",
+    "display_name": "XNO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WOOUSDT",
+    "base": "WOO",
+    "quote": "USDT",
+    "display_name": "WOO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ALPINEUSDT",
+    "base": "ALPINE",
+    "quote": "USDT",
+    "display_name": "ALPINE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TUSDT",
+    "base": "T",
+    "quote": "USDT",
+    "display_name": "T",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ASTRUSDT",
+    "base": "ASTR",
+    "quote": "USDT",
+    "display_name": "ASTR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "GMTUSDT",
+    "base": "GMT",
+    "quote": "USDT",
+    "display_name": "GMT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "APEUSDT",
+    "base": "APE",
+    "quote": "USDT",
+    "display_name": "APE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "STEEMUSDT",
+    "base": "STEEM",
+    "quote": "USDT",
+    "display_name": "STEEM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NEXOUSDT",
+    "base": "NEXO",
+    "quote": "USDT",
+    "display_name": "NEXO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LDOUSDT",
+    "base": "LDO",
+    "quote": "USDT",
+    "display_name": "LDO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OPUSDT",
+    "base": "OP",
+    "quote": "USDT",
+    "display_name": "Optimism",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LUNCUSDT",
+    "base": "LUNC",
+    "quote": "USDT",
+    "display_name": "LUNC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GMXUSDT",
+    "base": "GMX",
+    "quote": "USDT",
+    "display_name": "GMX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "POLYXUSDT",
+    "base": "POLYX",
+    "quote": "USDT",
+    "display_name": "POLYX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "APTUSDT",
+    "base": "APT",
+    "quote": "USDT",
+    "display_name": "Aptos",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OSMOUSDT",
+    "base": "OSMO",
+    "quote": "USDT",
+    "display_name": "OSMO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MAGICUSDT",
+    "base": "MAGIC",
+    "quote": "USDT",
+    "display_name": "MAGIC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RPLUSDT",
+    "base": "RPL",
+    "quote": "USDT",
+    "display_name": "RPL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GNSUSDT",
+    "base": "GNS",
+    "quote": "USDT",
+    "display_name": "GNS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SYNUSDT",
+    "base": "SYN",
+    "quote": "USDT",
+    "display_name": "SYN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SSVUSDT",
+    "base": "SSV",
+    "quote": "USDT",
+    "display_name": "SSV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LQTYUSDT",
+    "base": "LQTY",
+    "quote": "USDT",
+    "display_name": "LQTY",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USTCUSDT",
+    "base": "USTC",
+    "quote": "USDT",
+    "display_name": "USTC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "GASUSDT",
+    "base": "GAS",
+    "quote": "USDT",
+    "display_name": "GAS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "GLMUSDT",
+    "base": "GLM",
+    "quote": "USDT",
+    "display_name": "GLM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PROMUSDT",
+    "base": "PROM",
+    "quote": "USDT",
+    "display_name": "PROM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QKCUSDT",
+    "base": "QKC",
+    "quote": "USDT",
+    "display_name": "QKC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IDUSDT",
+    "base": "ID",
+    "quote": "USDT",
+    "display_name": "ID",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ARBUSDT",
+    "base": "ARB",
+    "quote": "USDT",
+    "display_name": "Arbitrum",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WBTCUSDT",
+    "base": "WBTC",
+    "quote": "USDT",
+    "display_name": "WBTC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EDUUSDT",
+    "base": "EDU",
+    "quote": "USDT",
+    "display_name": "EDU",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SUIUSDT",
+    "base": "SUI",
+    "quote": "USDT",
+    "display_name": "Sui",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PEPEUSDT",
+    "base": "PEPE",
+    "quote": "USDT",
+    "display_name": "Pepe",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 100
+  },
+  {
+    "symbol": "FLOKIUSDT",
+    "base": "FLOKI",
+    "quote": "USDT",
+    "display_name": "FLOKI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MAVUSDT",
+    "base": "MAV",
+    "quote": "USDT",
+    "display_name": "MAV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PENDLEUSDT",
+    "base": "PENDLE",
+    "quote": "USDT",
+    "display_name": "PENDLE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ARKMUSDT",
+    "base": "ARKM",
+    "quote": "USDT",
+    "display_name": "ARKM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WBETHUSDT",
+    "base": "WBETH",
+    "quote": "USDT",
+    "display_name": "WBETH",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WLDUSDT",
+    "base": "WLD",
+    "quote": "USDT",
+    "display_name": "WLD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FDUSDUSDT",
+    "base": "FDUSD",
+    "quote": "USDT",
+    "display_name": "FDUSD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SEIUSDT",
+    "base": "SEI",
+    "quote": "USDT",
+    "display_name": "Sei",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CYBERUSDT",
+    "base": "CYBER",
+    "quote": "USDT",
+    "display_name": "CYBER",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ARKUSDT",
+    "base": "ARK",
+    "quote": "USDT",
+    "display_name": "ARK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IQUSDT",
+    "base": "IQ",
+    "quote": "USDT",
+    "display_name": "IQ",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TIAUSDT",
+    "base": "TIA",
+    "quote": "USDT",
+    "display_name": "Celestia",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MEMEUSDT",
+    "base": "MEME",
+    "quote": "USDT",
+    "display_name": "MEME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ORDIUSDT",
+    "base": "ORDI",
+    "quote": "USDT",
+    "display_name": "ORDI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BEAMXUSDT",
+    "base": "BEAMX",
+    "quote": "USDT",
+    "display_name": "BEAMX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BLURUSDT",
+    "base": "BLUR",
+    "quote": "USDT",
+    "display_name": "BLUR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "JTOUSDT",
+    "base": "JTO",
+    "quote": "USDT",
+    "display_name": "JTO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "1000SATSUSDT",
+    "base": "1000SATS",
+    "quote": "USDT",
+    "display_name": "1000SATS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BONKUSDT",
+    "base": "BONK",
+    "quote": "USDT",
+    "display_name": "Bonk",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ACEUSDT",
+    "base": "ACE",
+    "quote": "USDT",
+    "display_name": "ACE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AIUSDT",
+    "base": "AI",
+    "quote": "USDT",
+    "display_name": "AI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XAIUSDT",
+    "base": "XAI",
+    "quote": "USDT",
+    "display_name": "XAI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MANTAUSDT",
+    "base": "MANTA",
+    "quote": "USDT",
+    "display_name": "MANTA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ALTUSDT",
+    "base": "ALT",
+    "quote": "USDT",
+    "display_name": "ALT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "JUPUSDT",
+    "base": "JUP",
+    "quote": "USDT",
+    "display_name": "JUP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PYTHUSDT",
+    "base": "PYTH",
+    "quote": "USDT",
+    "display_name": "PYTH",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RONINUSDT",
+    "base": "RONIN",
+    "quote": "USDT",
+    "display_name": "RONIN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DYMUSDT",
+    "base": "DYM",
+    "quote": "USDT",
+    "display_name": "DYM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PIXELUSDT",
+    "base": "PIXEL",
+    "quote": "USDT",
+    "display_name": "PIXEL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "STRKUSDT",
+    "base": "STRK",
+    "quote": "USDT",
+    "display_name": "STRK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PORTALUSDT",
+    "base": "PORTAL",
+    "quote": "USDT",
+    "display_name": "PORTAL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AXLUSDT",
+    "base": "AXL",
+    "quote": "USDT",
+    "display_name": "AXL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WIFUSDT",
+    "base": "WIF",
+    "quote": "USDT",
+    "display_name": "dogwifhat",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "METISUSDT",
+    "base": "METIS",
+    "quote": "USDT",
+    "display_name": "METIS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AEVOUSDT",
+    "base": "AEVO",
+    "quote": "USDT",
+    "display_name": "AEVO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BOMEUSDT",
+    "base": "BOME",
+    "quote": "USDT",
+    "display_name": "BOME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ETHFIUSDT",
+    "base": "ETHFI",
+    "quote": "USDT",
+    "display_name": "ETHFI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ENAUSDT",
+    "base": "ENA",
+    "quote": "USDT",
+    "display_name": "ENA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WUSDT",
+    "base": "W",
+    "quote": "USDT",
+    "display_name": "W",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TNSRUSDT",
+    "base": "TNSR",
+    "quote": "USDT",
+    "display_name": "TNSR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SAGAUSDT",
+    "base": "SAGA",
+    "quote": "USDT",
+    "display_name": "SAGA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TAOUSDT",
+    "base": "TAO",
+    "quote": "USDT",
+    "display_name": "Bittensor",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "REZUSDT",
+    "base": "REZ",
+    "quote": "USDT",
+    "display_name": "REZ",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BBUSDT",
+    "base": "BB",
+    "quote": "USDT",
+    "display_name": "BB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NOTUSDT",
+    "base": "NOT",
+    "quote": "USDT",
+    "display_name": "NOT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IOUSDT",
+    "base": "IO",
+    "quote": "USDT",
+    "display_name": "IO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZKUSDT",
+    "base": "ZK",
+    "quote": "USDT",
+    "display_name": "ZK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LISTAUSDT",
+    "base": "LISTA",
+    "quote": "USDT",
+    "display_name": "LISTA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZROUSDT",
+    "base": "ZRO",
+    "quote": "USDT",
+    "display_name": "ZRO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GUSDT",
+    "base": "G",
+    "quote": "USDT",
+    "display_name": "G",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BANANAUSDT",
+    "base": "BANANA",
+    "quote": "USDT",
+    "display_name": "BANANA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "RENDERUSDT",
+    "base": "RENDER",
+    "quote": "USDT",
+    "display_name": "RENDER",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DOGSUSDT",
+    "base": "DOGS",
+    "quote": "USDT",
+    "display_name": "DOGS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EURIUSDT",
+    "base": "EURI",
+    "quote": "USDT",
+    "display_name": "EURI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "POLUSDT",
+    "base": "POL",
+    "quote": "USDT",
+    "display_name": "Polygon",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NEIROUSDT",
+    "base": "NEIRO",
+    "quote": "USDT",
+    "display_name": "NEIRO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TURBOUSDT",
+    "base": "TURBO",
+    "quote": "USDT",
+    "display_name": "TURBO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "1MBABYDOGEUSDT",
+    "base": "1MBABYDOGE",
+    "quote": "USDT",
+    "display_name": "1MBABYDOGE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CATIUSDT",
+    "base": "CATI",
+    "quote": "USDT",
+    "display_name": "CATI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HMSTRUSDT",
+    "base": "HMSTR",
+    "quote": "USDT",
+    "display_name": "HMSTR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EIGENUSDT",
+    "base": "EIGEN",
+    "quote": "USDT",
+    "display_name": "EIGEN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SCRUSDT",
+    "base": "SCR",
+    "quote": "USDT",
+    "display_name": "SCR",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BNSOLUSDT",
+    "base": "BNSOL",
+    "quote": "USDT",
+    "display_name": "BNSOL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LUMIAUSDT",
+    "base": "LUMIA",
+    "quote": "USDT",
+    "display_name": "LUMIA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KAIAUSDT",
+    "base": "KAIA",
+    "quote": "USDT",
+    "display_name": "KAIA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "COWUSDT",
+    "base": "COW",
+    "quote": "USDT",
+    "display_name": "COW",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CETUSUSDT",
+    "base": "CETUS",
+    "quote": "USDT",
+    "display_name": "CETUS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PNUTUSDT",
+    "base": "PNUT",
+    "quote": "USDT",
+    "display_name": "PNUT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ACTUSDT",
+    "base": "ACT",
+    "quote": "USDT",
+    "display_name": "ACT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USUALUSDT",
+    "base": "USUAL",
+    "quote": "USDT",
+    "display_name": "USUAL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "THEUSDT",
+    "base": "THE",
+    "quote": "USDT",
+    "display_name": "THE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ORCAUSDT",
+    "base": "ORCA",
+    "quote": "USDT",
+    "display_name": "ORCA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MOVEUSDT",
+    "base": "MOVE",
+    "quote": "USDT",
+    "display_name": "MOVE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MEUSDT",
+    "base": "ME",
+    "quote": "USDT",
+    "display_name": "ME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "VELODROMEUSDT",
+    "base": "VELODROME",
+    "quote": "USDT",
+    "display_name": "VELODROME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "VANAUSDT",
+    "base": "VANA",
+    "quote": "USDT",
+    "display_name": "VANA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "1000CATUSDT",
+    "base": "1000CAT",
+    "quote": "USDT",
+    "display_name": "1000CAT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PENGUUSDT",
+    "base": "PENGU",
+    "quote": "USDT",
+    "display_name": "PENGU",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BIOUSDT",
+    "base": "BIO",
+    "quote": "USDT",
+    "display_name": "BIO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AIXBTUSDT",
+    "base": "AIXBT",
+    "quote": "USDT",
+    "display_name": "AIXBT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CGPTUSDT",
+    "base": "CGPT",
+    "quote": "USDT",
+    "display_name": "CGPT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "COOKIEUSDT",
+    "base": "COOKIE",
+    "quote": "USDT",
+    "display_name": "COOKIE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SUSDT",
+    "base": "S",
+    "quote": "USDT",
+    "display_name": "S",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SOLVUSDT",
+    "base": "SOLV",
+    "quote": "USDT",
+    "display_name": "SOLV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TRUMPUSDT",
+    "base": "TRUMP",
+    "quote": "USDT",
+    "display_name": "TRUMP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ANIMEUSDT",
+    "base": "ANIME",
+    "quote": "USDT",
+    "display_name": "ANIME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BERAUSDT",
+    "base": "BERA",
+    "quote": "USDT",
+    "display_name": "BERA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "1000CHEEMSUSDT",
+    "base": "1000CHEEMS",
+    "quote": "USDT",
+    "display_name": "1000CHEEMS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TSTUSDT",
+    "base": "TST",
+    "quote": "USDT",
+    "display_name": "TST",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LAYERUSDT",
+    "base": "LAYER",
+    "quote": "USDT",
+    "display_name": "LAYER",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HEIUSDT",
+    "base": "HEI",
+    "quote": "USDT",
+    "display_name": "HEI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KAITOUSDT",
+    "base": "KAITO",
+    "quote": "USDT",
+    "display_name": "KAITO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SHELLUSDT",
+    "base": "SHELL",
+    "quote": "USDT",
+    "display_name": "SHELL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "REDUSDT",
+    "base": "RED",
+    "quote": "USDT",
+    "display_name": "RED",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GPSUSDT",
+    "base": "GPS",
+    "quote": "USDT",
+    "display_name": "GPS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EPICUSDT",
+    "base": "EPIC",
+    "quote": "USDT",
+    "display_name": "EPIC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BMTUSDT",
+    "base": "BMT",
+    "quote": "USDT",
+    "display_name": "BMT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FORMUSDT",
+    "base": "FORM",
+    "quote": "USDT",
+    "display_name": "FORM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XUSDUSDT",
+    "base": "XUSD",
+    "quote": "USDT",
+    "display_name": "XUSD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NILUSDT",
+    "base": "NIL",
+    "quote": "USDT",
+    "display_name": "NIL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PARTIUSDT",
+    "base": "PARTI",
+    "quote": "USDT",
+    "display_name": "PARTI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MUBARAKUSDT",
+    "base": "MUBARAK",
+    "quote": "USDT",
+    "display_name": "MUBARAK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TUTUSDT",
+    "base": "TUT",
+    "quote": "USDT",
+    "display_name": "TUT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BROCCOLI714USDT",
+    "base": "BROCCOLI714",
+    "quote": "USDT",
+    "display_name": "BROCCOLI714",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BANANAS31USDT",
+    "base": "BANANAS31",
+    "quote": "USDT",
+    "display_name": "BANANAS31",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GUNUSDT",
+    "base": "GUN",
+    "quote": "USDT",
+    "display_name": "GUN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BABYUSDT",
+    "base": "BABY",
+    "quote": "USDT",
+    "display_name": "BABY",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ONDOUSDT",
+    "base": "ONDO",
+    "quote": "USDT",
+    "display_name": "ONDO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BIGTIMEUSDT",
+    "base": "BIGTIME",
+    "quote": "USDT",
+    "display_name": "BIGTIME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "VIRTUALUSDT",
+    "base": "VIRTUAL",
+    "quote": "USDT",
+    "display_name": "VIRTUAL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KERNELUSDT",
+    "base": "KERNEL",
+    "quote": "USDT",
+    "display_name": "KERNEL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WCTUSDT",
+    "base": "WCT",
+    "quote": "USDT",
+    "display_name": "WCT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HYPERUSDT",
+    "base": "HYPER",
+    "quote": "USDT",
+    "display_name": "HYPER",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "INITUSDT",
+    "base": "INIT",
+    "quote": "USDT",
+    "display_name": "INIT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SIGNUSDT",
+    "base": "SIGN",
+    "quote": "USDT",
+    "display_name": "SIGN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "STOUSDT",
+    "base": "STO",
+    "quote": "USDT",
+    "display_name": "STO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SYRUPUSDT",
+    "base": "SYRUP",
+    "quote": "USDT",
+    "display_name": "SYRUP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KMNOUSDT",
+    "base": "KMNO",
+    "quote": "USDT",
+    "display_name": "KMNO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SXTUSDT",
+    "base": "SXT",
+    "quote": "USDT",
+    "display_name": "SXT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NXPCUSDT",
+    "base": "NXPC",
+    "quote": "USDT",
+    "display_name": "NXPC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AWEUSDT",
+    "base": "AWE",
+    "quote": "USDT",
+    "display_name": "AWE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HAEDALUSDT",
+    "base": "HAEDAL",
+    "quote": "USDT",
+    "display_name": "HAEDAL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USD1USDT",
+    "base": "USD1",
+    "quote": "USDT",
+    "display_name": "USD1",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HUMAUSDT",
+    "base": "HUMA",
+    "quote": "USDT",
+    "display_name": "HUMA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AUSDT",
+    "base": "A",
+    "quote": "USDT",
+    "display_name": "A",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SOPHUSDT",
+    "base": "SOPH",
+    "quote": "USDT",
+    "display_name": "SOPH",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RESOLVUSDT",
+    "base": "RESOLV",
+    "quote": "USDT",
+    "display_name": "RESOLV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HOMEUSDT",
+    "base": "HOME",
+    "quote": "USDT",
+    "display_name": "HOME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SPKUSDT",
+    "base": "SPK",
+    "quote": "USDT",
+    "display_name": "SPK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NEWTUSDT",
+    "base": "NEWT",
+    "quote": "USDT",
+    "display_name": "NEWT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SAHARAUSDT",
+    "base": "SAHARA",
+    "quote": "USDT",
+    "display_name": "SAHARA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LAUSDT",
+    "base": "LA",
+    "quote": "USDT",
+    "display_name": "LA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ERAUSDT",
+    "base": "ERA",
+    "quote": "USDT",
+    "display_name": "ERA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CUSDT",
+    "base": "C",
+    "quote": "USDT",
+    "display_name": "C",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TREEUSDT",
+    "base": "TREE",
+    "quote": "USDT",
+    "display_name": "TREE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TOWNSUSDT",
+    "base": "TOWNS",
+    "quote": "USDT",
+    "display_name": "TOWNS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PROVEUSDT",
+    "base": "PROVE",
+    "quote": "USDT",
+    "display_name": "PROVE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BFUSDUSDT",
+    "base": "BFUSD",
+    "quote": "USDT",
+    "display_name": "BFUSD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PLUMEUSDT",
+    "base": "PLUME",
+    "quote": "USDT",
+    "display_name": "PLUME",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DOLOUSDT",
+    "base": "DOLO",
+    "quote": "USDT",
+    "display_name": "DOLO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "MITOUSDT",
+    "base": "MITO",
+    "quote": "USDT",
+    "display_name": "MITO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WLFIUSDT",
+    "base": "WLFI",
+    "quote": "USDT",
+    "display_name": "WLFI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SOMIUSDT",
+    "base": "SOMI",
+    "quote": "USDT",
+    "display_name": "SOMI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OPENUSDT",
+    "base": "OPEN",
+    "quote": "USDT",
+    "display_name": "OPEN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USDEUSDT",
+    "base": "USDE",
+    "quote": "USDT",
+    "display_name": "USDE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LINEAUSDT",
+    "base": "LINEA",
+    "quote": "USDT",
+    "display_name": "LINEA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HOLOUSDT",
+    "base": "HOLO",
+    "quote": "USDT",
+    "display_name": "HOLO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PUMPUSDT",
+    "base": "PUMP",
+    "quote": "USDT",
+    "display_name": "PUMP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AVNTUSDT",
+    "base": "AVNT",
+    "quote": "USDT",
+    "display_name": "AVNT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZKCUSDT",
+    "base": "ZKC",
+    "quote": "USDT",
+    "display_name": "ZKC",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SKYUSDT",
+    "base": "SKY",
+    "quote": "USDT",
+    "display_name": "SKY",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BARDUSDT",
+    "base": "BARD",
+    "quote": "USDT",
+    "display_name": "BARD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "0GUSDT",
+    "base": "0G",
+    "quote": "USDT",
+    "display_name": "0G",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HEMIUSDT",
+    "base": "HEMI",
+    "quote": "USDT",
+    "display_name": "HEMI",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XPLUSDT",
+    "base": "XPL",
+    "quote": "USDT",
+    "display_name": "XPL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MIRAUSDT",
+    "base": "MIRA",
+    "quote": "USDT",
+    "display_name": "MIRA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FFUSDT",
+    "base": "FF",
+    "quote": "USDT",
+    "display_name": "FF",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EDENUSDT",
+    "base": "EDEN",
+    "quote": "USDT",
+    "display_name": "EDEN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NOMUSDT",
+    "base": "NOM",
+    "quote": "USDT",
+    "display_name": "NOM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "2ZUSDT",
+    "base": "2Z",
+    "quote": "USDT",
+    "display_name": "2Z",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MORPHOUSDT",
+    "base": "MORPHO",
+    "quote": "USDT",
+    "display_name": "MORPHO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ASTERUSDT",
+    "base": "ASTER",
+    "quote": "USDT",
+    "display_name": "ASTER",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WALUSDT",
+    "base": "WAL",
+    "quote": "USDT",
+    "display_name": "WAL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EULUSDT",
+    "base": "EUL",
+    "quote": "USDT",
+    "display_name": "EUL",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ENSOUSDT",
+    "base": "ENSO",
+    "quote": "USDT",
+    "display_name": "ENSO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "YBUSDT",
+    "base": "YB",
+    "quote": "USDT",
+    "display_name": "YB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "ZBTUSDT",
+    "base": "ZBT",
+    "quote": "USDT",
+    "display_name": "ZBT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TURTLEUSDT",
+    "base": "TURTLE",
+    "quote": "USDT",
+    "display_name": "TURTLE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GIGGLEUSDT",
+    "base": "GIGGLE",
+    "quote": "USDT",
+    "display_name": "GIGGLE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FUSDT",
+    "base": "F",
+    "quote": "USDT",
+    "display_name": "F",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KITEUSDT",
+    "base": "KITE",
+    "quote": "USDT",
+    "display_name": "KITE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MMTUSDT",
+    "base": "MMT",
+    "quote": "USDT",
+    "display_name": "MMT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SAPIENUSDT",
+    "base": "SAPIEN",
+    "quote": "USDT",
+    "display_name": "SAPIEN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "ALLOUSDT",
+    "base": "ALLO",
+    "quote": "USDT",
+    "display_name": "ALLO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BANKUSDT",
+    "base": "BANK",
+    "quote": "USDT",
+    "display_name": "BANK",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "METUSDT",
+    "base": "MET",
+    "quote": "USDT",
+    "display_name": "MET",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ATUSDT",
+    "base": "AT",
+    "quote": "USDT",
+    "display_name": "AT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KGSTUSDT",
+    "base": "KGST",
+    "quote": "USDT",
+    "display_name": "KGST",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BREVUSDT",
+    "base": "BREV",
+    "quote": "USDT",
+    "display_name": "BREV",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "\u5e01\u5b89\u4eba\u751fUSDT",
+    "base": "\u5e01\u5b89\u4eba\u751f",
+    "quote": "USDT",
+    "display_name": "\u5e01\u5b89\u4eba\u751f",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZKPUSDT",
+    "base": "ZKP",
+    "quote": "USDT",
+    "display_name": "ZKP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "UUSDT",
+    "base": "U",
+    "quote": "USDT",
+    "display_name": "U",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FRAXUSDT",
+    "base": "FRAX",
+    "quote": "USDT",
+    "display_name": "FRAX",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW",
+    "leverage": 30
+  },
+  {
+    "symbol": "FOGOUSDT",
+    "base": "FOGO",
+    "quote": "USDT",
+    "display_name": "FOGO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RLUSDUSDT",
+    "base": "RLUSD",
+    "quote": "USDT",
+    "display_name": "RLUSD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SENTUSDT",
+    "base": "SENT",
+    "quote": "USDT",
+    "display_name": "SENT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZAMAUSDT",
+    "base": "ZAMA",
+    "quote": "USDT",
+    "display_name": "ZAMA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ESPUSDT",
+    "base": "ESP",
+    "quote": "USDT",
+    "display_name": "ESP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MANTRAUSDT",
+    "base": "MANTRA",
+    "quote": "USDT",
+    "display_name": "MANTRA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ROBOUSDT",
+    "base": "ROBO",
+    "quote": "USDT",
+    "display_name": "ROBO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OPNUSDT",
+    "base": "OPN",
+    "quote": "USDT",
+    "display_name": "OPN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NIGHTUSDT",
+    "base": "NIGHT",
+    "quote": "USDT",
+    "display_name": "NIGHT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CFGUSDT",
+    "base": "CFG",
+    "quote": "USDT",
+    "display_name": "CFG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KATUSDT",
+    "base": "KAT",
+    "quote": "USDT",
+    "display_name": "KAT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "XAUTUSDT",
+    "base": "XAUT",
+    "quote": "USDT",
+    "display_name": "XAUT",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USDSUSDT",
+    "base": "USDS",
+    "quote": "USDT",
+    "display_name": "USDS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CHIPUSDT",
+    "base": "CHIP",
+    "quote": "USDT",
+    "display_name": "CHIP",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MEGAUSDT",
+    "base": "MEGA",
+    "quote": "USDT",
+    "display_name": "MEGA",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AIGENSYNUSDT",
+    "base": "AIGENSYN",
+    "quote": "USDT",
+    "display_name": "AIGENSYN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GENIUSUSDT",
+    "base": "GENIUS",
+    "quote": "USDT",
+    "display_name": "GENIUS",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "OPGUSDT",
+    "base": "OPG",
+    "quote": "USDT",
+    "display_name": "OPG",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MUBUSDT",
+    "base": "MUB",
+    "quote": "USDT",
+    "display_name": "MUB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CRCLBUSDT",
+    "base": "CRCLB",
+    "quote": "USDT",
+    "display_name": "CRCLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NVDABUSDT",
+    "base": "NVDAB",
+    "quote": "USDT",
+    "display_name": "NVDAB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SNDKBUSDT",
+    "base": "SNDKB",
+    "quote": "USDT",
+    "display_name": "SNDKB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TSLABUSDT",
+    "base": "TSLAB",
+    "quote": "USDT",
+    "display_name": "TSLAB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SPCXBUSDT",
+    "base": "SPCXB",
+    "quote": "USDT",
+    "display_name": "SPCXB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "REUSDT",
+    "base": "RE",
+    "quote": "USDT",
+    "display_name": "RE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AMDBUSDT",
+    "base": "AMDB",
+    "quote": "USDT",
+    "display_name": "AMDB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "EWYBUSDT",
+    "base": "EWYB",
+    "quote": "USDT",
+    "display_name": "EWYB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "INTCBUSDT",
+    "base": "INTCB",
+    "quote": "USDT",
+    "display_name": "INTCB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MSTRBUSDT",
+    "base": "MSTRB",
+    "quote": "USDT",
+    "display_name": "MSTRB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LITEBUSDT",
+    "base": "LITEB",
+    "quote": "USDT",
+    "display_name": "LITEB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "METABUSDT",
+    "base": "METAB",
+    "quote": "USDT",
+    "display_name": "METAB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MSFTBUSDT",
+    "base": "MSFTB",
+    "quote": "USDT",
+    "display_name": "MSFTB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PLTRBUSDT",
+    "base": "PLTRB",
+    "quote": "USDT",
+    "display_name": "PLTRB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QQQBUSDT",
+    "base": "QQQB",
+    "quote": "USDT",
+    "display_name": "QQQB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GRAMUSDT",
+    "base": "GRAM",
+    "quote": "USDT",
+    "display_name": "GRAM",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CBRSBUSDT",
+    "base": "CBRSB",
+    "quote": "USDT",
+    "display_name": "CBRSB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "COINBUSDT",
+    "base": "COINB",
+    "quote": "USDT",
+    "display_name": "COINB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DRAMBUSDT",
+    "base": "DRAMB",
+    "quote": "USDT",
+    "display_name": "DRAMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GLWBUSDT",
+    "base": "GLWB",
+    "quote": "USDT",
+    "display_name": "GLWB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GOOGLBUSDT",
+    "base": "GOOGLB",
+    "quote": "USDT",
+    "display_name": "GOOGLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NBISBUSDT",
+    "base": "NBISB",
+    "quote": "USDT",
+    "display_name": "NBISB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QCOMBUSDT",
+    "base": "QCOMB",
+    "quote": "USDT",
+    "display_name": "QCOMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SOXLBUSDT",
+    "base": "SOXLB",
+    "quote": "USDT",
+    "display_name": "SOXLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SPYBUSDT",
+    "base": "SPYB",
+    "quote": "USDT",
+    "display_name": "SPYB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WDCBUSDT",
+    "base": "WDCB",
+    "quote": "USDT",
+    "display_name": "WDCB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SKHYBUSDT",
+    "base": "SKHYB",
+    "quote": "USDT",
+    "display_name": "SKHYB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AAOIBUSDT",
+    "base": "AAOIB",
+    "quote": "USDT",
+    "display_name": "AAOIB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ARMBUSDT",
+    "base": "ARMB",
+    "quote": "USDT",
+    "display_name": "ARMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AVGOBUSDT",
+    "base": "AVGOB",
+    "quote": "USDT",
+    "display_name": "AVGOB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BABABUSDT",
+    "base": "BABAB",
+    "quote": "USDT",
+    "display_name": "BABAB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HOODBUSDT",
+    "base": "HOODB",
+    "quote": "USDT",
+    "display_name": "HOODB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IBMBUSDT",
+    "base": "IBMB",
+    "quote": "USDT",
+    "display_name": "IBMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MRVLBUSDT",
+    "base": "MRVLB",
+    "quote": "USDT",
+    "display_name": "MRVLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NOKBUSDT",
+    "base": "NOKB",
+    "quote": "USDT",
+    "display_name": "NOKB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TSMBUSDT",
+    "base": "TSMB",
+    "quote": "USDT",
+    "display_name": "TSMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RKLBBUSDT",
+    "base": "RKLBB",
+    "quote": "USDT",
+    "display_name": "RKLBB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AEROUSDT",
+    "base": "AERO",
+    "quote": "USDT",
+    "display_name": "AERO",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AXTIBUSDT",
+    "base": "AXTIB",
+    "quote": "USDT",
+    "display_name": "AXTIB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CRWVBUSDT",
+    "base": "CRWVB",
+    "quote": "USDT",
+    "display_name": "CRWVB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "INTWBUSDT",
+    "base": "INTWB",
+    "quote": "USDT",
+    "display_name": "INTWB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KORUBUSDT",
+    "base": "KORUB",
+    "quote": "USDT",
+    "display_name": "KORUB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MUUBUSDT",
+    "base": "MUUB",
+    "quote": "USDT",
+    "display_name": "MUUB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MVLLBUSDT",
+    "base": "MVLLB",
+    "quote": "USDT",
+    "display_name": "MVLLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ORCLBUSDT",
+    "base": "ORCLB",
+    "quote": "USDT",
+    "display_name": "ORCLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "QNTBUSDT",
+    "base": "QNTB",
+    "quote": "USDT",
+    "display_name": "QNTB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SNXXBUSDT",
+    "base": "SNXXB",
+    "quote": "USDT",
+    "display_name": "SNXXB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TQQQBUSDT",
+    "base": "TQQQB",
+    "quote": "USDT",
+    "display_name": "TQQQB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AAPLBUSDT",
+    "base": "AAPLB",
+    "quote": "USDT",
+    "display_name": "AAPLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AMATBUSDT",
+    "base": "AMATB",
+    "quote": "USDT",
+    "display_name": "AMATB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AMZNBUSDT",
+    "base": "AMZNB",
+    "quote": "USDT",
+    "display_name": "AMZNB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BEBUSDT",
+    "base": "BEB",
+    "quote": "USDT",
+    "display_name": "BEB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DELLBUSDT",
+    "base": "DELLB",
+    "quote": "USDT",
+    "display_name": "DELLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FLNCBUSDT",
+    "base": "FLNCB",
+    "quote": "USDT",
+    "display_name": "FLNCB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GSBUSDT",
+    "base": "GSB",
+    "quote": "USDT",
+    "display_name": "GSB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PYPLBUSDT",
+    "base": "PYPLB",
+    "quote": "USDT",
+    "display_name": "PYPLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SMHBUSDT",
+    "base": "SMHB",
+    "quote": "USDT",
+    "display_name": "SMHB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SOXSBUSDT",
+    "base": "SOXSB",
+    "quote": "USDT",
+    "display_name": "SOXSB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ASMLBUSDT",
+    "base": "ASMLB",
+    "quote": "USDT",
+    "display_name": "ASMLB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ASTSBUSDT",
+    "base": "ASTSB",
+    "quote": "USDT",
+    "display_name": "ASTSB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BMNRBUSDT",
+    "base": "BMNRB",
+    "quote": "USDT",
+    "display_name": "BMNRB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "COHRBUSDT",
+    "base": "COHRB",
+    "quote": "USDT",
+    "display_name": "COHRB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CRDOBUSDT",
+    "base": "CRDOB",
+    "quote": "USDT",
+    "display_name": "CRDOB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "IRENBUSDT",
+    "base": "IRENB",
+    "quote": "USDT",
+    "display_name": "IRENB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "NFLXBUSDT",
+    "base": "NFLXB",
+    "quote": "USDT",
+    "display_name": "NFLXB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SMCIBUSDT",
+    "base": "SMCIB",
+    "quote": "USDT",
+    "display_name": "SMCIB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USARBUSDT",
+    "base": "USARB",
+    "quote": "USDT",
+    "display_name": "USARB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ALABBUSDT",
+    "base": "ALABB",
+    "quote": "USDT",
+    "display_name": "ALABB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GMEBUSDT",
+    "base": "GMEB",
+    "quote": "USDT",
+    "display_name": "GMEB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "DJTBUSDT",
+    "base": "DJTB",
+    "quote": "USDT",
+    "display_name": "DJTB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CRWDBUSDT",
+    "base": "CRWDB",
+    "quote": "USDT",
+    "display_name": "CRWDB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MRNABUSDT",
+    "base": "MRNAB",
+    "quote": "USDT",
+    "display_name": "MRNAB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SQQQBUSDT",
+    "base": "SQQQB",
+    "quote": "USDT",
+    "display_name": "SQQQB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "STXBUSDT",
+    "base": "STXB",
+    "quote": "USDT",
+    "display_name": "STXB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MARSCOINUSDT",
+    "base": "MARSCOIN",
+    "quote": "USDT",
+    "display_name": "MARSCOIN",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CRMBUSDT",
+    "base": "CRMB",
+    "quote": "USDT",
+    "display_name": "CRMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HIMSBUSDT",
+    "base": "HIMSB",
+    "quote": "USDT",
+    "display_name": "HIMSB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "\u725b\u6765USDT",
+    "base": "\u725b\u6765",
+    "quote": "USDT",
+    "display_name": "\u725b\u6765",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BNCBUSDT",
+    "base": "BNCB",
+    "quote": "USDT",
+    "display_name": "BNCB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "GPROBUSDT",
+    "base": "GPROB",
+    "quote": "USDT",
+    "display_name": "GPROB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RDDTBUSDT",
+    "base": "RDDTB",
+    "quote": "USDT",
+    "display_name": "RDDTB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AGPUBUSDT",
+    "base": "AGPUB",
+    "quote": "USDT",
+    "display_name": "AGPUB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "AMCBUSDT",
+    "base": "AMCB",
+    "quote": "USDT",
+    "display_name": "AMCB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CYPHBUSDT",
+    "base": "CYPHB",
+    "quote": "USDT",
+    "display_name": "CYPHB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HYPEUSDT",
+    "base": "HYPE",
+    "quote": "USDT",
+    "display_name": "HYPE",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ADBEBUSDT",
+    "base": "ADBEB",
+    "quote": "USDT",
+    "display_name": "ADBEB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "FWDIBUSDT",
+    "base": "FWDIB",
+    "quote": "USDT",
+    "display_name": "FWDIB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "HPEBUSDT",
+    "base": "HPEB",
+    "quote": "USDT",
+    "display_name": "HPEB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PDDBUSDT",
+    "base": "PDDB",
+    "quote": "USDT",
+    "display_name": "PDDB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SHAZBUSDT",
+    "base": "SHAZB",
+    "quote": "USDT",
+    "display_name": "SHAZB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "WENBUSDT",
+    "base": "WENB",
+    "quote": "USDT",
+    "display_name": "WENB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "ZMBUSDT",
+    "base": "ZMB",
+    "quote": "USDT",
+    "display_name": "ZMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "USDEBUSDT",
+    "base": "USDEB",
+    "quote": "USDT",
+    "display_name": "USDEB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "SECZBUSDT",
+    "base": "SECZB",
+    "quote": "USDT",
+    "display_name": "SECZB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "LLYBUSDT",
+    "base": "LLYB",
+    "quote": "USDT",
+    "display_name": "LLYB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "JPMBUSDT",
+    "base": "JPMB",
+    "quote": "USDT",
+    "display_name": "JPMB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "RWUSDUSDT",
+    "base": "RWUSD",
+    "quote": "USDT",
+    "display_name": "RWUSD",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BBBUSDT",
+    "base": "BBB",
+    "quote": "USDT",
+    "display_name": "BBB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "MDBBUSDT",
+    "base": "MDBB",
+    "quote": "USDT",
+    "display_name": "MDBB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "PENGBUSDT",
+    "base": "PENGB",
+    "quote": "USDT",
+    "display_name": "PENGB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "UVXYBUSDT",
+    "base": "UVXYB",
+    "quote": "USDT",
+    "display_name": "UVXYB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BOTBUSDT",
+    "base": "BOTB",
+    "quote": "USDT",
+    "display_name": "BOTB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "KSTRBUSDT",
+    "base": "KSTRB",
+    "quote": "USDT",
+    "display_name": "KSTRB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "TMFBUSDT",
+    "base": "TMFB",
+    "quote": "USDT",
+    "display_name": "TMFB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "VSTBUSDT",
+    "base": "VSTB",
+    "quote": "USDT",
+    "display_name": "VSTB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "BRKBBUSDT",
+    "base": "BRKBB",
+    "quote": "USDT",
+    "display_name": "BRKBB",
+    "category": "CRYPTO",
+    "source": "TRADINGVIEW"
+  },
+  {
+    "symbol": "CARVUSDT",
+    "base": "CARV",
+    "quote": "USDT",
+    "name": "CARV",
+    "display_name": "CARV (30x)",
+    "category": "CRYPTO",
+    "source": "COINDCX_FUTURES",
+    "tv_symbol": "BINANCE:CARVUSDT",
+    "leverage": 30,
+    "price": 0.0311,
+    "change_pct": 4.4
+  },
+  {
+    "symbol": "MOCAUSDT",
+    "base": "MOCA",
+    "quote": "USDT",
+    "name": "Mocaverse",
+    "display_name": "Mocaverse (30x)",
+    "category": "CRYPTO",
+    "source": "COINDCX_FUTURES",
+    "tv_symbol": "BINANCE:MOCAUSDT",
+    "leverage": 30,
+    "price": 0.007935,
+    "change_pct": 2.12
+  },
+  {
+    "symbol": "SONICUSDT",
+    "base": "SONIC",
+    "quote": "USDT",
+    "name": "Sonic",
+    "display_name": "Sonic (30x)",
+    "category": "CRYPTO",
+    "source": "COINDCX_FUTURES",
+    "tv_symbol": "BINANCE:SONICUSDT",
+    "leverage": 30,
+    "price": 0.02144,
+    "change_pct": 0.09
+  },
+  {
+    "symbol": "1000000MOGUSDT",
+    "base": "1000000MOG",
+    "quote": "USDT",
+    "name": "Mog Coin",
+    "display_name": "Mog Coin (30x)",
+    "category": "CRYPTO",
+    "source": "COINDCX_FUTURES",
+    "tv_symbol": "BINANCE:1000000MOGUSDT",
+    "leverage": 30,
+    "price": 0.0965,
+    "change_pct": 2.33
+  }
+]

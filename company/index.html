@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARAA — Company Proprietary AI Trading Control Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="/company/assets/favicon.png" />
+  <link rel="stylesheet" href="/company/company.css?v=20261111_p10" />
+</head>
+<body>
+
+<div class="shell">
+  <!-- Dark Navy Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/company/assets/araabot_logo_tight.png" alt="AraaBot Logo" style="width:100%; height:100%; object-fit:contain;" /></div>
+      <div>
+        <div class="brand-title">ARAA ENTERPRISE ERP</div>
+        <div class="brand-sub">Prop Desk &amp; Corporate Control</div>
+      </div>
+    </div>
+
+    <div class="nav-sec">Overview</div>
+    <button class="nav-btn active" data-view="dashboard" onclick="App.nav('dashboard')">Company Dashboard</button>
+    <button class="nav-btn" data-view="erp_hub" onclick="App.nav('erp_hub')" style="border-left:3px solid #10b981; color:#10b981; font-weight:800;">🏛️ Corporate ERP &amp; Governance</button>
+
+    <div class="nav-sec">Trading Desks</div>
+    <button class="nav-btn" data-view="india" onclick="App.nav('india')">India Pool · Zerodha</button>
+    <button class="nav-btn" data-view="crypto" onclick="App.nav('crypto')">Crypto Pool · CoinDCX Spot</button>
+    <button class="nav-btn" data-view="ai_hub" onclick="App.nav('ai_hub')">ARAA AI Hub &amp; Copilot</button>
+    <button class="nav-btn" data-view="strategies" onclick="App.nav('strategies')">Strategies &amp; AI Signals</button>
+    <button class="nav-btn" data-view="orders" onclick="App.nav('orders')">16-State OMS &amp; Orders</button>
+    <button class="nav-btn" data-view="positions" onclick="App.nav('positions')">Live Positions &amp; Flatten</button>
+
+    <div class="nav-sec">Finance &amp; Governance</div>
+    <button class="nav-btn" data-view="finance" onclick="App.nav('finance')">Capital Pools &amp; Finance</button>
+    <button class="nav-btn" data-view="ledger" onclick="App.nav('ledger')">Immutable Company Ledger</button>
+    <button class="nav-btn" data-view="reconciliation" onclick="App.nav('reconciliation')">Reconciliation Inspector</button>
+    <button class="nav-btn" data-view="risk" onclick="App.nav('risk')">Risk Guardian</button>
+
+    <div class="nav-sec">Enterprise Admin</div>
+    <button class="nav-btn" data-view="backtest" onclick="App.nav('backtest')">Backtesting &amp; Reports</button>
+    <button class="nav-btn" data-view="company_profile" onclick="App.nav('company_profile')">Company &amp; Compliance</button>
+    <button class="nav-btn" data-view="employees" onclick="App.nav('employees')">Employees, RBAC &amp; MFA</button>
+    <button class="nav-btn" data-view="audit" onclick="App.nav('audit')">Audit Logs &amp; Health</button>
+
+    <div class="sidebar-footer">
+      <a href="/" target="_blank">Trading Terminal (/)</a>
+      <a href="/admin/" target="_blank">Master Admin (/admin)</a>
+      <button class="btn sm red" style="width:100%; margin-top:10px; justify-content:center;" onclick="App.logout()">Sign Out</button>
+    </div>
+  </aside>
+
+  <!-- Main Workspace -->
+  <div class="main">
+    <header class="topbar">
+      <h1 class="topbar-title" id="top_view_title">Company Dashboard</h1>
+      <div class="topbar-meta">
+        <span class="badge ok" id="top_sys_badge">System Healthy</span>
+        <span class="badge neutral" id="top_user_badge">Not Signed In</span>
+        <button class="btn sm" id="co_theme_btn" onclick="App.toggleTheme()" title="Switch Light / Dark Theme">🌙 Theme</button>
+        <button class="btn sm" onclick="App.refreshCurrent()">Refresh</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <div id="global_notice" class="hide alert-banner info"></div>
+
+      <!-- 1. DASHBOARD -->
+      <section id="view_dashboard" class="view-sec">
+        <div class="alert-banner warn">
+          <strong>Reporting Notice:</strong> Combined valuation below is for executive reporting only. <strong>POOL_INDIA_INR (Zerodha)</strong> and <strong>POOL_CRYPTO_SPOT (CoinDCX)</strong> are strictly isolated and never share trading funds or risk budgets.
+        </div>
+        <div class="grid-4" id="dash_kpis"></div>
+        <div class="grid-2" id="dash_pools"></div>
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">Registered Company Broker Accounts</h3>
+            <button class="btn sm primary" onclick="App.nav('india')">Manage Brokers</button>
+          </div>
+          <div class="tbl-wrap" id="dash_accounts_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 1.1 ARAA CORPORATE ERP & GOVERNANCE HUB -->
+      <section id="view_erp_hub" class="view-sec hide">
+        <div class="alert-banner info" style="background:#064e3b; color:#a7f3d0; border-color:#059669;">
+          <strong>🏛️ ARAA PRIVATE LIMITED — Enterprise Corporate Governance &amp; ERP Portal:</strong> Active Legal Entity Management, Directors Directory, Capital Shareholding, Corporate Treasury Accounts, and Departmental Hierarchy.
+        </div>
+        <div class="grid-4" id="erp_kpis">
+          <div class="kpi-card"><div class="kpi-label">Legal Directors</div><div class="kpi-val" id="erp_kpi_directors">1 Active</div><div class="kpi-sub">MCA DIN Compliant</div></div>
+          <div class="kpi-card"><div class="kpi-label">Treasury Bank Accounts</div><div class="kpi-val" id="erp_kpi_banks">1 Connected</div><div class="kpi-sub">HDFC Bank Ltd</div></div>
+          <div class="kpi-card"><div class="kpi-label">Operating Treasury</div><div class="kpi-val" id="erp_kpi_treasury">₹50,00,000.00</div><div class="kpi-sub">Internal Company Capital</div></div>
+          <div class="kpi-card"><div class="kpi-label">Active Departments</div><div class="kpi-val" id="erp_kpi_depts">4 Configured</div><div class="kpi-sub">Quantitative, Prop, Fin, Legal</div></div>
+        </div>
+
+        <div class="grid-2" style="margin-top:16px;">
+          <!-- Legal Directors Table -->
+          <div class="card">
+            <div class="card-h">
+              <h3 class="card-title">Board of Directors (MCA DIN Registered)</h3>
+            </div>
+            <div class="tbl-wrap" id="erp_directors_tbl">
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>Full Name</th>
+                    <th>DIN</th>
+                    <th>Designation</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="erp_directors_body">
+                  <tr>
+                    <td><strong>Santhosh Murali</strong><br><small style="color:#64748b;">santhosh@araa.ai</small></td>
+                    <td><code>09876543</code></td>
+                    <td>Managing Director &amp; CEO</td>
+                    <td><span class="badge ok">ACTIVE</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Treasury Bank Accounts Table -->
+          <div class="card">
+            <div class="card-h">
+              <h3 class="card-title">Corporate Treasury Accounts</h3>
+            </div>
+            <div class="tbl-wrap" id="erp_banks_tbl">
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>Bank &amp; Branch</th>
+                    <th>Account (Masked)</th>
+                    <th>IFSC</th>
+                    <th>Balance</th>
+                  </tr>
+                </thead>
+                <tbody id="erp_banks_body">
+                  <tr>
+                    <td><strong>HDFC Bank Ltd</strong><br><small style="color:#64748b;">Koramangala Bangalore</small></td>
+                    <td><code>XXXXXXXXXX1122</code></td>
+                    <td>HDFC0001234</td>
+                    <td><strong style="color:#10b981;">₹50,00,000.00</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Departments & Organizational Structure -->
+        <div class="card" style="margin-top:16px;">
+          <div class="card-h">
+            <h3 class="card-title">Departments &amp; Cost Centers</h3>
+          </div>
+          <div class="tbl-wrap" id="erp_depts_tbl">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Department Name</th>
+                  <th>Operational Function</th>
+                  <th>Allocated Budget</th>
+                </tr>
+              </thead>
+              <tbody id="erp_depts_body">
+                <tr><td><code>QRA</code></td><td>Quantitative Research &amp; AI</td><td>Quantitative algorithmic models and committee scoring</td><td>₹5,00,000.00</td></tr>
+                <tr><td><code>TRD</code></td><td>Proprietary Trading Desk</td><td>Zerodha Kite Connect &amp; CoinDCX Spot Order Execution</td><td>₹10,00,000.00</td></tr>
+                <tr><td><code>FIN</code></td><td>Finance &amp; Treasury</td><td>Company General Ledger, Double-Entry &amp; Reconciliation</td><td>₹3,00,000.00</td></tr>
+                <tr><td><code>CMP</code></td><td>Legal &amp; Regulatory Compliance</td><td>MCA, PMLA &amp; Statutory Governance Registers</td><td>₹2,00,000.00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. INDIA POOL (ZERODHA) -->
+      <section id="view_india" class="view-sec hide">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-h"><h3 class="card-title">Register Zerodha Company Account</h3></div>
+            <div class="form-row">
+              <div><label class="lbl">Account Name</label><input id="zd_name" value="ARAA Zerodha Corporate" /></div>
+              <div><label class="lbl">API Key</label><input id="zd_key" placeholder="Kite API Key" /></div>
+              <div><label class="lbl">API Secret</label><input id="zd_secret" type="password" placeholder="Kite API Secret" /></div>
+              <div><label class="lbl">Static Egress IP</label><input id="zd_ip" placeholder="e.g. 13.200.x.x" /></div>
+            </div>
+            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn primary" onclick="App.registerBroker('ZERODHA')">Save Encrypted Account</button>
+              <button class="btn" onclick="App.zerodhaConnectUrl()">1. Get Kite Login URL</button>
+              <button class="btn green" onclick="App.brokerSync('zerodha')">Verify &amp; Sync Pool</button>
+              <button class="btn red" onclick="App.brokerDisconnect('zerodha')">Disconnect</button>
+            </div>
+            <div id="zd_login_box" class="hide" style="margin-top:12px; padding:10px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; font-size:12px;"></div>
+            <div class="form-row" style="margin-top:12px;">
+              <div><label class="lbl">Kite Request Token (Daily OAuth Callback)</label><input id="zd_req_token" placeholder="Paste request_token from redirect URL" /></div>
+              <div><button class="btn primary" onclick="App.zerodhaCallback()">2. Exchange Session Token</button></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h"><h3 class="card-title">India Pool Control (POOL_INDIA_INR)</h3></div>
+            <div id="zd_status_box" class="kpi-sub">Loading Zerodha status...</div>
+            <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn green" onclick="App.tradingControl('POOL_INDIA_INR', 'start')">Resume Trading</button>
+              <button class="btn amber" onclick="App.tradingControl('POOL_INDIA_INR', 'pause')">Pause New Entries</button>
+              <button class="btn red" onclick="App.tradingControl('POOL_INDIA_INR', 'emergency-stop')">Emergency Stop</button>
+              <button class="btn" onclick="App.flattenPreview('POOL_INDIA_INR', 'PAPER')">Flatten Preview (Paper)</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. CRYPTO POOL (COINDCX SPOT) -->
+      <section id="view_crypto" class="view-sec hide">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-h">
+              <h3 class="card-title">Register CoinDCX Spot Company Account</h3>
+              <span class="badge ok">SPOT ONLY · ZERO LEVERAGE</span>
+            </div>
+            <div class="form-row">
+              <div><label class="lbl">Account Name</label><input id="cdx_name" value="ARAA CoinDCX Spot Corporate" /></div>
+              <div><label class="lbl">API Key</label><input id="cdx_key" placeholder="CoinDCX Spot Key" /></div>
+              <div><label class="lbl">API Secret</label><input id="cdx_secret" type="password" placeholder="CoinDCX Secret" /></div>
+              <div><label class="lbl">Allowed Static IP</label><input id="cdx_ip" placeholder="Static Server IP" /></div>
+            </div>
+            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn primary" onclick="App.registerBroker('COINDCX')">Connect Spot Account</button>
+              <button class="btn green" onclick="App.brokerSync('coindcx')">Verify &amp; Sync Spot Pool</button>
+              <button class="btn red" onclick="App.brokerDisconnect('coindcx')">Disconnect</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h"><h3 class="card-title">Crypto Pool Control (POOL_CRYPTO_SPOT)</h3></div>
+            <div id="cdx_status_box" class="kpi-sub">Loading CoinDCX status...</div>
+            <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn green" onclick="App.tradingControl('POOL_CRYPTO_SPOT', 'start')">Resume Trading</button>
+              <button class="btn amber" onclick="App.tradingControl('POOL_CRYPTO_SPOT', 'pause')">Pause New Entries</button>
+              <button class="btn red" onclick="App.tradingControl('POOL_CRYPTO_SPOT', 'emergency-stop')">Emergency Stop</button>
+              <button class="btn" onclick="App.flattenPreview('POOL_CRYPTO_SPOT', 'PAPER')">Flatten Preview (Paper)</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3B. ARAA UNIFIED AI HUB & COPILOT -->
+      <section id="view_ai_hub" class="view-sec hide">
+        <div class="alert-banner info">
+          <strong>All AraaBot AI Connected:</strong> Combines Deep Technical Analysis, GRU Neural Forecasting, 3-Agent Committee (Alpha/Beta/Gamma), Quantum Institutional Regime, LLM Advisor (Gemini/OpenAI/Claude), Self-Learning Bot Trainer, and ARAA AI Core Copilot. All AI outputs remain trade proposals gated by Risk Guardian.
+        </div>
+
+        <div class="grid-4" id="ai_engines_grid"></div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-h">
+              <h3 class="card-title">Unified Multi-AI Consensus Analyzer</h3>
+              <span class="badge info" id="ai_llm_status_badge">Checking Providers...</span>
+            </div>
+            <div class="form-row">
+              <div><label class="lbl">Symbol</label><input id="ai_sym" value="RELIANCE" placeholder="RELIANCE / BTCINR" /></div>
+              <div>
+                <label class="lbl">Market Scope</label>
+                <select id="ai_scope">
+                  <option value="INDIA">INDIA (Zerodha Pool)</option>
+                  <option value="CRYPTO">CRYPTO (CoinDCX Spot Pool)</option>
+                </select>
+              </div>
+              <div>
+                <label class="lbl">Timeframe</label>
+                <select id="ai_tf"><option value="15m">15m</option><option value="5m">5m</option><option value="1h">1h</option></select>
+              </div>
+              <div>
+                <button class="btn primary" onclick="App.runAllAiConsensus()">Run All AraaBot AI</button>
+              </div>
+            </div>
+            <div id="ai_consensus_result" style="margin-top:12px;" class="kpi-sub">Run an evaluation to see every AraaBot AI engine's verdict side by side.</div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <h3 class="card-title">ARAA AI Core Copilot</h3>
+              <button class="btn sm" onclick="App.runAiTrainer()">Sync Bot Trainer</button>
+            </div>
+            <div id="ai_chat_log" style="height:220px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:10px; background:#f8fafc; font-size:12px; white-space:pre-wrap; margin-bottom:10px;">ARAA AI Copilot connected to all company pools, Risk Guardian, Reconciliation, and 7 AI engines.</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+              <button class="btn sm" onclick="App.quickAiPrompt('Show company portfolio and pools')">Pools &amp; Capital</button>
+              <button class="btn sm" onclick="App.quickAiPrompt('Analyze RELIANCE')">Analyze RELIANCE</button>
+              <button class="btn sm" onclick="App.quickAiPrompt('Analyze BTCINR')">Analyze BTCINR</button>
+              <button class="btn sm" onclick="App.quickAiPrompt('Check risk guardian & reconciliation status')">Risk &amp; Recon</button>
+              <button class="btn sm" onclick="App.quickAiPrompt('Show AI engine health & providers')">AI Health</button>
+            </div>
+            <div class="form-row">
+              <div style="flex:1;"><input id="ai_chat_input" placeholder="Ask ARAA AI Copilot about pools, signals, risk, or bots..." onkeydown="if(event.key==='Enter') App.sendAiChat()" /></div>
+              <div><button class="btn primary" onclick="App.sendAiChat()">Send</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">Registered AI Models &amp; Self-Learning Status</h3>
+            <div id="ai_trainer_badge" class="kpi-sub"></div>
+          </div>
+          <div class="tbl-wrap" id="ai_models_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 4. STRATEGIES & AI SIGNALS -->
+      <section id="view_strategies" class="view-sec hide">
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Create Strategy (Immutable Versioning)</h3></div>
+          <div class="form-row">
+            <div><label class="lbl">Code</label><input id="st_code" placeholder="e.g. NSE_BREAKOUT_V1" /></div>
+            <div><label class="lbl">Name</label><input id="st_name" placeholder="NSE Breakout" /></div>
+            <div>
+              <label class="lbl">Market Scope</label>
+              <select id="st_scope"><option value="INDIA">INDIA (Zerodha)</option><option value="CRYPTO">CRYPTO (CoinDCX Spot)</option></select>
+            </div>
+            <div><label class="lbl">Instruments (comma)</label><input id="st_syms" value="RELIANCE,TCS" /></div>
+            <div><label class="lbl">Stop Loss %</label><input id="st_sl" value="1.00" /></div>
+            <div><label class="lbl">Take Profit %</label><input id="st_tp" value="2.50" /></div>
+            <div><button class="btn primary" onclick="App.createStrategy()">Create Strategy</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Registered Company Strategies</h3></div>
+          <div class="tbl-wrap" id="strategies_tbl"></div>
+        </div>
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">AI Trade Proposals (Signals Never Auto-Bypass Risk Guardian)</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <select id="sig_strategy_id" style="width:190px;"></select>
+              <input id="sig_symbol" value="RELIANCE" style="width:130px;" />
+              <button class="btn primary sm" onclick="App.proposeSignal()">Generate Proposal</button>
+            </div>
+          </div>
+          <div class="tbl-wrap" id="signals_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 5. 16-STATE OMS & ORDERS -->
+      <section id="view_orders" class="view-sec hide">
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">Submit Idempotent Order Intent</h3>
+            <span class="badge info">Risk Guardian Checked</span>
+          </div>
+          <div class="form-row">
+            <div><label class="lbl">Broker Account</label><select id="ord_acc"></select></div>
+            <div><label class="lbl">Symbol</label><input id="ord_sym" value="RELIANCE" /></div>
+            <div><label class="lbl">Side</label><select id="ord_side"><option value="BUY">BUY</option><option value="SELL">SELL</option></select></div>
+            <div><label class="lbl">Order Type</label><select id="ord_type"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option></select></div>
+            <div><label class="lbl">Quantity</label><input id="ord_qty" value="2" /></div>
+            <div><label class="lbl">Stop Loss (₹ Mandatory)</label><input id="ord_sl" value="2900" /></div>
+            <div><label class="lbl">Execution Mode</label><select id="ord_mode"><option value="PAPER">PAPER (Simulated)</option><option value="LIVE">LIVE (Real Broker)</option></select></div>
+            <div><button class="btn primary" onclick="App.submitOrderIntent()">Submit Intent</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">16-State Order Book &amp; Executions</h3></div>
+          <div class="tbl-wrap" id="orders_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 6. LIVE POSITIONS -->
+      <section id="view_positions" class="view-sec hide">
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Company Open &amp; Closed Positions (Pool &amp; Mode Isolated)</h3></div>
+          <div class="tbl-wrap" id="positions_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 7. CAPITAL POOLS & FINANCE -->
+      <section id="view_finance" class="view-sec hide">
+        <div class="grid-2" id="finance_pools_cards"></div>
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">Record Authorized Capital Movement</h3>
+            <a href="#" class="btn sm" onclick="App.exportFinanceCsv(); return false;">Export Finance CSV</a>
+          </div>
+          <div class="form-row">
+            <div><label class="lbl">Capital Pool (No Cross-Pool Transfers)</label><select id="fin_pool"><option value="POOL_INDIA_INR">POOL_INDIA_INR (Zerodha)</option><option value="POOL_CRYPTO_SPOT">POOL_CRYPTO_SPOT (CoinDCX)</option></select></div>
+            <div><label class="lbl">Movement Type</label><select id="fin_type"><option value="CAPITAL_ADDITION">Capital Addition</option><option value="CAPITAL_WITHDRAWAL">Capital Withdrawal</option><option value="FEE_EXPENSE">Fee Expense</option><option value="TAX_EXPENSE">Tax / TDS Expense</option></select></div>
+            <div><label class="lbl">Amount (INR Exact)</label><input id="fin_amt" value="50000.00" /></div>
+            <div><label class="lbl">Bank / Voucher Ref</label><input id="fin_ref" placeholder="UTR / Ref No" /></div>
+            <div><button class="btn primary" onclick="App.recordCapitalMove()">Post Accounting Entry</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Pool Capital History</h3></div>
+          <div class="tbl-wrap" id="finance_mv_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 8. IMMUTABLE LEDGER -->
+      <section id="view_ledger" class="view-sec hide">
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Immutable Company Ledger (LIVE Broker-Confirmed Only)</h3></div>
+          <div class="tbl-wrap" id="ledger_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 9. RECONCILIATION -->
+      <section id="view_reconciliation" class="view-sec hide">
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">Automated Broker Reconciliation</h3>
+            <div style="display:flex; gap:8px;">
+              <select id="recon_acc" style="width:240px;"></select>
+              <button class="btn primary sm" onclick="App.runReconciliation()">Run Reconciliation Now</button>
+            </div>
+          </div>
+          <div class="tbl-wrap" id="recon_runs_tbl"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Open &amp; Historical Discrepancies</h3></div>
+          <div class="tbl-wrap" id="recon_diffs_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 10. RISK GUARDIAN -->
+      <section id="view_risk" class="view-sec hide">
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Independent Pool Risk Policies</h3></div>
+          <div class="tbl-wrap" id="risk_policies_tbl"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Risk Veto &amp; Emergency Event Log</h3></div>
+          <div class="tbl-wrap" id="risk_events_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 11. BACKTEST & ANALYTICS -->
+      <section id="view_backtest" class="view-sec hide">
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Historical Simulation Backtester (Strictly Isolated From Live)</h3></div>
+          <div class="form-row">
+            <div><label class="lbl">Symbol</label><input id="bt_sym" value="BTCUSDT" /></div>
+            <div><label class="lbl">Strategy</label><select id="bt_strat"><option value="COMMITTEE_HYBRID">3-Agent Committee</option><option value="MOMENTUM_BREAKOUT">Momentum Breakout</option><option value="MEAN_REVERSION">Mean Reversion</option></select></div>
+            <div><label class="lbl">Timeframe</label><select id="bt_tf"><option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option></select></div>
+            <div><label class="lbl">Capital (INR/USD)</label><input id="bt_cap" value="100000" /></div>
+            <div><button class="btn primary" onclick="App.runBacktest()">Run Simulated Backtest</button></div>
+          </div>
+          <div id="bt_result_box" style="margin-top:14px;"></div>
+        </div>
+      </section>
+
+      <!-- 12. COMPANY PROFILE & COMPLIANCE -->
+      <section id="view_company_profile" class="view-sec hide">
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Company Legal Profile (ARAA Prop Desk)</h3></div>
+          <div class="form-row">
+            <div><label class="lbl">Legal Name</label><input id="co_name" /></div>
+            <div><label class="lbl">CIN / Registration No</label><input id="co_cin" /></div>
+            <div><label class="lbl">PAN</label><input id="co_pan" /></div>
+            <div><label class="lbl">GSTIN</label><input id="co_gst" /></div>
+            <div><button class="btn primary" onclick="App.saveCompanyProfile()">Save Company Profile</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Regulatory &amp; Broker Readiness Evidence Checklist</h3></div>
+          <div class="tbl-wrap" id="compliance_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 13. EMPLOYEES, RBAC & MFA -->
+      <section id="view_employees" class="view-sec hide">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-h"><h3 class="card-title">Onboard Company Employee (7-Role RBAC)</h3></div>
+            <div class="form-row">
+              <div><label class="lbl">Email</label><input id="emp_email" placeholder="operator@araa.ai" /></div>
+              <div><label class="lbl">Full Name</label><input id="emp_name" placeholder="Full Name" /></div>
+              <div><label class="lbl">Temp Password (8+ chars)</label><input id="emp_pw" type="password" /></div>
+              <div><label class="lbl">Role</label><select id="emp_role"></select></div>
+              <div><button class="btn primary" onclick="App.createEmployee()">Create Employee</button></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3 class="card-title">Your TOTP MFA Security</h3></div>
+            <p class="kpi-sub">Protect your operator session with RFC-6238 Authenticator 2FA.</p>
+            <button class="btn primary sm" onclick="App.enrollMfa()">Enroll / Rotate TOTP MFA</button>
+            <div id="mfa_enroll_box" class="hide" style="margin-top:10px;"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Employees Directory</h3></div>
+          <div class="tbl-wrap" id="employees_tbl"></div>
+        </div>
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">Dual-Control Approval Queue (Maker-Checker)</h3>
+            <button class="btn sm" onclick="App.requestLiveApproval()">Request Live Mode Approval</button>
+          </div>
+          <div class="tbl-wrap" id="approvals_tbl"></div>
+        </div>
+      </section>
+
+      <!-- 14. AUDIT LOGS & HEALTH -->
+      <section id="view_audit" class="view-sec hide">
+        <div class="card">
+          <div class="card-h">
+            <h3 class="card-title">System, Worker &amp; Encryption Health</h3>
+            <button class="btn sm primary" onclick="App.runWorkerOnce()">Run Reconciliation &amp; AI Worker Cycle</button>
+          </div>
+          <div id="sys_health_box"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3 class="card-title">Immutable Company Audit Trail</h3></div>
+          <div class="tbl-wrap" id="audit_tbl"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Company Operator Auth Gate -->
+<div id="auth_overlay" class="auth-overlay hide">
+  <div class="auth-card">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+      <div class="brand-mark"><img src="/company/assets/araabot_logo_tight.png" alt="AraaBot Logo" style="width:100%; height:100%; object-fit:contain;" /></div>
+      <div>
+        <div style="font-weight:800; font-size:17px;">ARAA Company Control Center</div>
+        <div class="kpi-sub" id="auth_subtitle">Sign in with your company operator credentials</div>
+      </div>
+    </div>
+
+    <div id="auth_err" class="hide alert-banner err"></div>
+
+    <form id="auth_form" onsubmit="event.preventDefault(); App.submitAuth();">
+      <div id="bootstrap_name_wrap" class="hide" style="margin-bottom:10px;">
+        <label class="lbl">Initial Director Full Name</label>
+        <input id="auth_full_name" placeholder="e.g. Santhosh Murali" />
+      </div>
+      <div style="margin-bottom:10px;">
+        <label class="lbl">Company Email</label>
+        <input id="auth_email" type="email" required placeholder="director@araa.ai" />
+      </div>
+      <div style="margin-bottom:10px;">
+        <label class="lbl">Password</label>
+        <input id="auth_pw" type="password" required placeholder="Minimum 8 characters" />
+      </div>
+      <div id="mfa_input_wrap" class="hide" style="margin-bottom:12px;">
+        <label class="lbl">6-Digit TOTP MFA Code</label>
+        <input id="auth_totp" placeholder="123456" maxlength="10" />
+      </div>
+      <button id="auth_submit_btn" type="submit" class="btn primary" style="width:100%; justify-content:center; padding:11px;">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<script src="/company/company.js?v=20261111_p10"></script>
+</body>
+</html>
+

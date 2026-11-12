@@ -1,0 +1,17 @@
+{
+  "include": [
+    "run.py",
+    "backend",
+    "tests"
+  ],
+  "extraPaths": [
+    ".",
+    "backend"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "off",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}
+

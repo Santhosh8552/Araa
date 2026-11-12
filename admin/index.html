@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AraaBot.in — Admin Command Center</title>
+<link rel="icon" type="image/png" href="/admin/assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/admin/styles.css?v=20261021_admin_pro_v2">
+<link rel="stylesheet" href="/admin/theme.css?v=20261112_unique_v5">
+<script>
+  (function(){ try { if ((localStorage.getItem("tradepro_theme") || "dark") === "light") document.documentElement.setAttribute("data-theme","light"); } catch(e){} })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand" style="display:inline-flex; align-items:center; gap:8px;">
+    <img src="/admin/assets/araabot_logo_tight.png" alt="AraaBot Logo" style="width:28px; height:28px; object-fit:contain;" />
+    <span>ARAABOT<span style="color:#10b981;">.IN</span> &nbsp;ADMIN</span>
+  </div>
+  <span class="pill lock">SYSTEM ACTIVE</span>
+  <button id="top_admin_feed_hub" class="pill live" style="cursor:pointer; font-weight:800; background:linear-gradient(135deg, rgba(16,185,129,0.2), rgba(56,189,248,0.2)); border:1px solid #10b981; color:#34d399; display:inline-flex; align-items:center; gap:6px;" title="995 Symbols Live Status & Momentum Signals Diagnostic Hub">
+    <span class="dot" style="margin:0; background:#10b981;"></span>
+    <span id="admin_feed_stats">🟢 992 LIVE · ⚡ 952 SIGNALS</span>
+  </button>
+  <span class="pill" id="feed">FEED LIVE · 995 prices</span>
+  <div class="equity">Brokerage Revenue <b id="top_brokerage">$0.00</b></div>
+  <div class="botctl">
+    <a href="/company/" target="_blank" class="pill" style="text-decoration:none; background:rgba(16,185,129,0.18); border:1px solid #10b981; color:#34d399; font-weight:800; padding:6px 12px; border-radius:6px;" title="Open ARAA Company Proprietary Trading Control Center">🏢 PROP DESK</a>
+    <a href="/docs" target="_blank" class="pill" style="text-decoration:none; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8; font-weight:700; padding:6px 12px; border-radius:6px;" title="Open Swagger API Docs">📖 API DOCS</a>
+    <button class="pill" id="theme_toggle" style="cursor:pointer; font-weight:700;" title="Switch Light / Dark Theme">🌙 DARK</button>
+    <button class="btn on" id="bot_on">BOT ON</button>
+    <button class="btn danger" id="bot_off">BOT OFF</button>
+    <span class="pill" id="bot_state">—</span>
+    <button class="pill" id="toggle_sidepanel_btn" style="cursor:pointer; font-weight:800; background:rgba(16,185,129,0.18); border:1px solid #10b981; color:#10b981; padding:6px 12px; border-radius:6px; display:inline-flex; align-items:center; gap:6px;" title="Open Profit Link & Payment Rails Drawer">💰 PROFIT LINK</button>
+    <button class="pill" id="btn_admin_logout" style="cursor:pointer; font-weight:700; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#ef4444; padding:6px 12px; border-radius:6px;" title="Lock Admin Console">🔒 LOGOUT</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 🧭 UNIQUE LEFT COMMAND DOCK -->
+  <nav class="adm-dock" id="adm_dock">
+    <div class="adm-dock-title">COMMAND MODULES</div>
+    <button class="adm-dock-btn active" data-view="all" onclick="window.switchAdminView('all')">
+      <span class="adm-dock-ic">⚡</span><span>Full Command Desk</span><span class="adm-dock-tag">ALL</span>
+    </button>
+    <button class="adm-dock-btn" data-view="overview" onclick="window.switchAdminView('overview')">
+      <span class="adm-dock-ic">📊</span><span>Overview &amp; Master Bot</span>
+    </button>
+    <button class="adm-dock-btn" data-view="ai-gatekeeper" onclick="window.switchAdminView('ai-gatekeeper')">
+      <span class="adm-dock-ic">🛡️</span><span>AI Core &amp; Gatekeeper</span><span class="adm-dock-tag ok">6/6</span>
+    </button>
+    <button class="adm-dock-btn" data-view="neural-3d" onclick="window.switchAdminView('neural-3d')">
+      <span class="adm-dock-ic">🧠</span><span>3D Neural Pipeline</span><span class="adm-dock-tag cyan">v4.0</span>
+    </button>
+    <button class="adm-dock-btn" data-view="slack" onclick="window.switchAdminView('slack')">
+      <span class="adm-dock-ic">💬</span><span>Slack Prompt Studio</span>
+    </button>
+    <button class="adm-dock-btn" data-view="users-book" onclick="window.switchAdminView('users-book')">
+      <span class="adm-dock-ic">👥</span><span>Users &amp; Position Book</span>
+    </button>
+    <button class="adm-dock-btn" data-view="treasury" onclick="window.switchAdminView('treasury')">
+      <span class="adm-dock-ic">💰</span><span>Treasury &amp; Ledgers</span>
+    </button>
+    <button class="adm-dock-btn" data-view="security" onclick="window.switchAdminView('security')">
+      <span class="adm-dock-ic">🧱</span><span>Security &amp; Audit Logs</span>
+    </button>
+    <button class="adm-dock-btn" data-view="super-admin" onclick="window.switchAdminView('super-admin')">
+      <span class="adm-dock-ic">🏛️</span><span>Central Super Admin</span><span class="adm-dock-tag" style="background:#10b981; color:#042f2e;">SSO</span>
+    </button>
+
+    <div class="adm-dock-footer">
+      <div class="adm-dock-stat">
+        <span>ENGINE</span><b>ARAA Quant v4.0</b>
+      </div>
+      <div class="adm-dock-stat">
+        <span>LEVERAGE CAP</span><b style="color:var(--green);">500x REAL/PAPER</b>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <!-- 🎛️ STICKY WORKSPACE SEGMENTED BAR -->
+    <div class="adm-workspace-bar" id="adm_workspace_bar">
+      <div class="adm-ws-left">
+        <span class="adm-ws-eyebrow">INSTITUTIONAL ADMIN CONSOLE</span>
+        <h1 class="adm-ws-heading" id="adm_ws_heading">Full Command Center · Live Telemetry &amp; Execution Governance</h1>
+      </div>
+      <div class="adm-ws-pills">
+        <button class="adm-ws-pill active" data-view="all" onclick="window.switchAdminView('all')">⚡ All Systems</button>
+        <button class="adm-ws-pill" data-view="overview" onclick="window.switchAdminView('overview')">📊 Overview</button>
+        <button class="adm-ws-pill" data-view="ai-gatekeeper" onclick="window.switchAdminView('ai-gatekeeper')">🛡️ AI &amp; Rules</button>
+        <button class="adm-ws-pill" data-view="neural-3d" onclick="window.switchAdminView('neural-3d')">🧠 3D Pipeline</button>
+        <button class="adm-ws-pill" data-view="slack" onclick="window.switchAdminView('slack')">💬 Slack Studio</button>
+        <button class="adm-ws-pill" data-view="users-book" onclick="window.switchAdminView('users-book')">👥 Users &amp; Book</button>
+        <button class="adm-ws-pill" data-view="treasury" onclick="window.switchAdminView('treasury')">💰 Treasury</button>
+        <button class="adm-ws-pill" data-view="security" onclick="window.switchAdminView('security')">🧱 Firewall</button>
+        <button class="adm-ws-pill" data-view="super-admin" onclick="window.switchAdminView('super-admin')">🏛️ Super Admin &amp; SSO</button>
+      </div>
+    </div>
+
+    <!-- ==================== SECTION 1: OVERVIEW & MASTER BOT ==================== -->
+    <section class="adm-sec" data-adm-sec="overview">
+    <div class="card adm-card-emerald" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; background:linear-gradient(135deg, rgba(16,185,129,0.08), rgba(15,23,42,0.6)); border:1px solid rgba(16,185,129,0.3); padding:16px 20px; border-radius:12px; margin-bottom:20px;">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span style="font-size:26px;">🧠</span>
+        <div>
+          <div style="font-size:14px; font-weight:800; letter-spacing:0.05em; display:flex; align-items:center; gap:8px;">
+            <span>PLATFORM MASTER BOT CONTROL</span>
+            <span id="hero_bot_pill" class="pill live" style="font-size:11px; padding:3px 10px;">GLOBAL BOT ACTIVE</span>
+          </div>
+          <div style="font-size:12px; color:var(--muted); margin-top:3px;">
+            Controls all user bots platform-wide. When STOPPED, users cannot start trading bots and all open trades close.
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button id="hero_bot_on" class="btn on" style="padding:10px 18px; font-size:12px; font-weight:800; cursor:pointer; box-shadow:0 0 12px rgba(16,185,129,0.3);">▶ START MAIN BOT</button>
+        <button id="hero_bot_off" class="btn danger" style="padding:10px 18px; font-size:12px; font-weight:800; cursor:pointer;">⏹ STOP MAIN BOT</button>
+        <button id="hero_flush_positions" class="btn danger" style="padding:10px 18px; font-size:12px; font-weight:800; cursor:pointer; background:#dc2626;" title="Liquidate all open positions across all users immediately">⚡ EMERGENCY FLUSH ALL</button>
+      </div>
+    </div>
+
+    <!-- 📊 BENTO 8-KPI PLATFORM TELEMETRY STRIP -->
+    <div class="grid c4 adm-bento-kpis" style="margin-bottom:14px;">
+      <div class="card adm-kpi-card"><div class="k">Total users</div><div class="v" id="o_users">—</div>
+        <div class="sub" id="o_logins">— logged in today</div></div>
+      <div class="card adm-kpi-card"><div class="k">Active traders now</div><div class="v" id="o_active">—</div>
+        <div class="sub" id="o_bots">—</div></div>
+      <div class="card adm-kpi-card"><div class="k">Brokerage earned (30%)</div><div class="v green" id="o_brokerage">—</div>
+        <div class="sub" id="o_brokerage_today">—</div></div>
+      <div class="card adm-kpi-card"><div class="k">User profit held</div><div class="v" id="o_profit">—</div>
+        <div class="sub" id="o_capital">—</div></div>
+      <div class="card adm-kpi-card"><div class="k">Bot realised profit</div><div class="v" id="o_botprofit">—</div>
+        <div class="sub" id="o_botprofit_all">—</div></div>
+      <div class="card adm-kpi-card"><div class="k">Open bot positions</div><div class="v" id="o_open">—</div>
+        <div class="sub" id="o_unreal">—</div></div>
+      <div class="card adm-kpi-card"><div class="k">Closed trades / win rate</div><div class="v" id="o_trades">—</div>
+        <div class="sub" id="o_win">—</div></div>
+      <div class="card adm-kpi-card"><div class="k">Pending withdrawals</div><div class="v amber" id="o_pending">—</div>
+        <div class="sub" id="o_pending_val">—</div></div>
+    </div>
+    <div class="card cycle" style="margin-bottom:20px;"><div class="k">Bot loop</div><div id="cycle">—</div></div>
+    </section>
+
+    <!-- ==================== SECTION 2: AI CORE & 6-RULE GATEKEEPER ==================== -->
+    <section class="adm-sec" data-adm-sec="ai-gatekeeper">
+    <!-- 🧠 ENTERPRISE V3: ARAA AI CORE, TRIAL BALANCE & GLOBAL KILL SWITCH -->
+    <div class="card adm-card-violet" style="margin-bottom:20px; background:linear-gradient(135deg, rgba(168,85,247,0.10), rgba(14,165,233,0.08)); border:1px solid rgba(168,85,247,0.4); border-radius:14px; padding:18px 20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+        <div>
+          <div style="font-size:15px; font-weight:900; color:#f8fafc; display:flex; align-items:center; gap:8px;">
+            <span>✨ ARAA AI CORE — ENTERPRISE HEALTH, TRIAL BALANCE &amp; GLOBAL KILL SWITCH</span>
+            <span id="v3_adm_trial_badge" class="pill live" style="font-size:10px; padding:3px 9px;">TRIAL BALANCE: CHECKING...</span>
+            <span id="v3_adm_kill_badge" class="pill live" style="font-size:10px; padding:3px 9px;">KILL SWITCH: ARMED</span>
+          </div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:3px;" id="v3_adm_health_sub">
+            Central AI Orchestrator · Double-Entry Accounting Verification · Platform-Wide Risk Guardian
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="btn_v3_global_kill_toggle" class="btn sm danger" style="font-weight:800; padding:8px 14px; cursor:pointer;">🛑 ACTIVATE GLOBAL KILL SWITCH</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(175px, 1fr)); gap:10px; margin-bottom:14px;">
+        <div style="background:#0b1120; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+          <div style="font-size:10px; color:#94a3b8; font-weight:700;">V3 ORDERS PROCESSED</div>
+          <b id="v3_adm_orders" style="font-size:16px; color:#38bdf8;">—</b>
+        </div>
+        <div style="background:#0b1120; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+          <div style="font-size:10px; color:#94a3b8; font-weight:700;">TOTAL DEPOSIT VOLUME</div>
+          <b id="v3_adm_dep_vol" style="font-size:16px; color:#10b981;">—</b>
+        </div>
+        <div style="background:#0b1120; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+          <div style="font-size:10px; color:#94a3b8; font-weight:700;">AI CORE PRIMARY ENGINE</div>
+          <b id="v3_adm_ai_model" style="font-size:14px; color:#c084fc;">—</b>
+        </div>
+        <div style="background:#0b1120; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+          <div style="font-size:10px; color:#94a3b8; font-weight:700;">LEDGER DISCREPANCY</div>
+          <b id="v3_adm_discrepancy" style="font-size:16px; color:#10b981;">$0.00</b>
+        </div>
+      </div>
+
+      <!-- Admin ARAA AI Assistant Query Row -->
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input id="v3_adm_ai_input" type="text" placeholder="Ask ARAA AI Core (e.g. Check platform risk status, Analyze BTCUSDT, Summarize system health)..."
+               style="flex:1; min-width:260px; padding:9px 12px; border-radius:8px; background:#0b1120; border:1px solid rgba(168,85,247,0.45); color:#f8fafc; font-size:12px;">
+        <button id="btn_v3_adm_ai_ask" class="btn sm ok" style="padding:9px 16px; font-weight:800; background:linear-gradient(135deg,#a855f7,#0ea5e9); color:#fff; border:none; cursor:pointer;">✨ Ask ARAA AI</button>
+      </div>
+      <div id="v3_adm_ai_reply" style="display:none; margin-top:10px; background:#030712; border:1px solid rgba(168,85,247,0.35); border-radius:8px; padding:10px 12px; font-size:12px; color:#e2e8f0; white-space:pre-wrap;"></div>
+    </div>
+
+    <!-- 🛡️ ARAABOT ADAPTER RULES GATEKEEPER & BACKEND ANALYSIS VIEW (ADMIN ONLY) -->
+    <div class="card" style="margin-bottom:20px; background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(16,185,129,0.06)); border:1px solid rgba(16,185,129,0.4); border-radius:14px; padding:20px; box-shadow:0 12px 35px rgba(0,0,0,0.45);">
+      <!-- Card Header -->
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, rgba(16,185,129,0.3), rgba(56,189,248,0.2)); border:1px solid #10b981; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow:0 0 15px rgba(16,185,129,0.35);">🛡️</div>
+          <div>
+            <div style="font-size:16px; font-weight:900; letter-spacing:0.04em; color:#fff; display:flex; align-items:center; gap:10px;">
+              <span>ARAABOT ADAPTER RULES GATEKEEPER</span>
+              <span class="pill live" style="font-size:10px; padding:3px 10px; background:rgba(16,185,129,0.18); border-color:#10b981; color:#34d399;" id="gatekeeper_badge">● 6/6 RULES ENFORCED</span>
+              <span class="pill" style="font-size:10px; padding:3px 8px; background:rgba(56,189,248,0.12); border-color:#38bdf8; color:#38bdf8;">COINDCX LIVE ADAPTER</span>
+            </div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">
+              Strict Execution Firewall: Orders in real mode MUST satisfy every rule below before touching CoinDCX. Fails are blocked immediately.
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="btn_refresh_gatekeeper" class="btn sm" style="background:#1e293b; color:#34d399; border:1px solid rgba(16,185,129,0.4); font-weight:700; padding:6px 12px; cursor:pointer;">🔄 REFRESH RULES</button>
+        </div>
+      </div>
+
+      <!-- Architectural Workflow Diagram Flow Banner -->
+      <div style="background:rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:12px 16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-family:'JetBrains Mono', monospace; font-size:11.5px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="background:#1e293b; padding:4px 8px; border-radius:6px; color:#94a3b8; border:1px solid #334155;">[ Trade Request ]</span>
+          <span style="color:#64748b;">──▶</span>
+          <span style="background:rgba(16,185,129,0.15); padding:4px 10px; border-radius:6px; color:#34d399; border:1px solid rgba(16,185,129,0.4); font-weight:700;">[ 6-Rule Gatekeeper Filter ]</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span style="color:#f87171; display:flex; align-items:center; gap:5px;"><span style="color:#ef4444; font-weight:900;">✕</span> Any Fail ──▶ <b>REJECTED</b> (Logged in Audit &amp; Slack)</span>
+          <span style="color:#34d399; display:flex; align-items:center; gap:5px;"><span style="color:#10b981; font-weight:900;">✓</span> All Pass ──▶ <b>EXECUTED on CoinDCX</b></span>
+        </div>
+      </div>
+
+      <!-- 6 Green Tick Checklist Grid (Symmetric 3x2 Matrix) -->
+      <div id="gatekeeper_rules_grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:20px;">
+        <!-- Rule 1 -->
+        <div class="rule-box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:12px 14px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="width:20px; height:20px; border-radius:50%; background:#10b981; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">✓</span>
+              <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">1. Daily Loss Circuit Breaker</span>
+            </div>
+            <span class="pill live" style="font-size:9.5px; padding:2px 6px; background:rgba(16,185,129,0.2); color:#34d399; border-color:#10b981;">PASS</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: Net loss &gt;= -₹250.00</div>
+          <div style="font-size:10.5px; color:#34d399; margin-top:4px; font-weight:600;">✓ PASS: Within Daily Safety Limit (-₹250 Max)</div>
+        </div>
+
+        <!-- Rule 2 -->
+        <div class="rule-box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:12px 14px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="width:20px; height:20px; border-radius:50%; background:#10b981; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">✓</span>
+              <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">2. Order Margin &amp; Capital Cap</span>
+            </div>
+            <span class="pill live" style="font-size:9.5px; padding:2px 6px; background:rgba(16,185,129,0.2); color:#34d399; border-color:#10b981;">PASS</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: Clamped isolated margin</div>
+          <div style="font-size:10.5px; color:#34d399; margin-top:4px; font-weight:600;">✓ PASS: Max Isolated Exposure Clamped</div>
+        </div>
+
+        <!-- Rule 3 -->
+        <div class="rule-box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:12px 14px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="width:20px; height:20px; border-radius:50%; background:#10b981; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">✓</span>
+              <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">3. Max Positions Limit</span>
+            </div>
+            <span class="pill live" style="font-size:9.5px; padding:2px 6px; background:rgba(16,185,129,0.2); color:#34d399; border-color:#10b981;">PASS</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: Slots available</div>
+          <div style="font-size:10.5px; color:#34d399; margin-top:4px; font-weight:600;">✓ PASS: Capacity &amp; Slot Headroom Free</div>
+        </div>
+
+        <!-- Rule 4 -->
+        <div class="rule-box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:12px 14px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="width:20px; height:20px; border-radius:50%; background:#10b981; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">✓</span>
+              <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">4. Live CoinDCX Spread Guard</span>
+            </div>
+            <span class="pill live" style="font-size:9.5px; padding:2px 6px; background:rgba(16,185,129,0.2); color:#34d399; border-color:#10b981;">PASS</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: Spread &lt;= 0.45%</div>
+          <div style="font-size:10.5px; color:#34d399; margin-top:4px; font-weight:600;">✓ PASS: Anti-Slippage Active (Max 0.45%)</div>
+        </div>
+
+        <!-- Rule 5 -->
+        <div class="rule-box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:12px 14px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="width:20px; height:20px; border-radius:50%; background:#10b981; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">✓</span>
+              <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">5. Anti-Falling-Knife Filter</span>
+            </div>
+            <span class="pill live" style="font-size:9.5px; padding:2px 6px; background:rgba(16,185,129,0.2); color:#34d399; border-color:#10b981;">PASS</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: 24h change &gt;= -2% &amp; Slope &gt; 0</div>
+          <div style="font-size:10.5px; color:#34d399; margin-top:4px; font-weight:600;">✓ PASS: Anti-Dump Trend Guard Enabled</div>
+        </div>
+
+        <!-- Rule 6 -->
+        <div class="rule-box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:12px 14px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="width:20px; height:20px; border-radius:50%; background:#10b981; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">✓</span>
+              <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">6. ARAA Quant AI v4.0 Approval</span>
+            </div>
+            <span class="pill live" style="font-size:9.5px; padding:2px 6px; background:rgba(16,185,129,0.2); color:#34d399; border-color:#10b981;">PASS</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: ARAA Consensus &gt;= 75%</div>
+          <div style="font-size:10.5px; color:#34d399; margin-top:4px; font-weight:600;">✓ PASS: ARAA Quant AI (9/9 Engines + gemini-3.8-flash)</div>
+        </div>
+      </div>
+
+      <!-- Analysis Backend View (Pre-Trade Inspection Stream & AI Decisions) -->
+      <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+          <div style="font-size:12px; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.06em; display:flex; align-items:center; gap:8px;">
+            <span>🔬 ADAPTER PRE-TRADE INSPECTION STREAM (BACKEND AUDIT ANALYSIS)</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8;" id="gatekeeper_stream_count">Loading audit logs...</div>
+        </div>
+
+        <div style="max-height:220px; overflow-y:auto; border:1px solid rgba(255,255,255,0.06); border-radius:8px;">
+          <table class="tbl" style="width:100%; font-size:11.5px; border-collapse:collapse;" id="gatekeeper_audit_tbl">
+            <thead>
+              <tr style="background:#0b1120;">
+                <th style="padding:6px 10px; text-align:left;">When</th>
+                <th style="padding:6px 10px; text-align:left;">Event</th>
+                <th style="padding:6px 10px; text-align:left;">Gatekeeper Decision</th>
+                <th style="padding:6px 10px; text-align:left;">Enforced Rule / Message</th>
+              </tr>
+            </thead>
+            <tbody id="gatekeeper_audit_body">
+              <tr><td colspan="4" style="text-align:center; padding:15px; color:#64748b;">Loading live pre-trade gatekeeper inspections...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <!-- ==================== SECTION 3: SLACK WORKFLOW STUDIO ==================== -->
+    <section class="adm-sec" data-adm-sec="slack">
+    <!-- 💬 SLACK.COM WORKFLOW & NATURAL LANGUAGE PROMPT AUTOMATION STUDIO -->
+    <div class="card adm-card-rose" style="margin-bottom:20px; background:linear-gradient(135deg, rgba(74,21,75,0.22), rgba(15,23,42,0.95)); border:1px solid rgba(224,30,90,0.45); border-radius:14px; padding:20px; box-shadow:0 12px 35px rgba(0,0,0,0.4);">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg, #4A154B, #E01E5A); display:flex; align-items:center; justify-content:center; font-size:20px; box-shadow:0 0 15px rgba(224,30,90,0.5);">💬</div>
+          <div>
+            <div style="font-size:15px; font-weight:900; letter-spacing:0.04em; color:#fff; display:flex; align-items:center; gap:8px;">
+              <span>SLACK.COM WORKFLOW &amp; NATURAL LANGUAGE PROMPT STUDIO</span>
+              <span class="pill live" style="font-size:10px; padding:2px 8px; border-color:#E01E5A; color:#E01E5A; background:rgba(224,30,90,0.15);" id="slack_status_badge">● SLACK BRIDGE READY</span>
+            </div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+              Admin-Only Execution: Give instructions in plain English to automatically update the trading program and dispatch alerts to your Slack channel.
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="btn_slack_test" class="btn sm ghost" style="color:#E01E5A; border-color:rgba(224,30,90,0.5); font-weight:700; padding:6px 12px; cursor:pointer;" title="Send test ping to Slack channel">⚡ TEST SLACK PING</button>
+          <button id="btn_toggle_slack_config" class="btn sm" style="background:#1e293b; color:#38bdf8; border:1px solid rgba(56,189,248,0.4); font-weight:700; padding:6px 12px; cursor:pointer;">⚙️ CONFIGURE WEBHOOK</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1.2fr 0.8fr; gap:18px;">
+        <!-- Left Column: Natural Language Prompt Execution Studio -->
+        <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:16px;">
+          <div style="font-size:11px; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">
+            🤖 ADMIN NATURAL LANGUAGE PROMPT INTERPRETER:
+          </div>
+          <div style="font-size:11.5px; color:#cbd5e1; margin-bottom:10px; line-height:1.4;">
+            Type any prompt or instruction below. AraaBot will automatically parse the intent, update platform settings, apply risk rules, and report the results to Slack:
+          </div>
+          
+          <div style="position:relative; margin-bottom:12px;">
+            <textarea id="admin_prompt_input" rows="3" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:10px 12px; color:#fff; font-family:'JetBrains Mono', monospace; font-size:12.5px; resize:vertical;" placeholder="e.g. Set leverage to 500x and switch mode to PURE_CRYPTO&#10;or: Generate live P&amp;L report and broadcast to Slack&#10;or: Emergency close all positions and tighten stop loss"></textarea>
+          </div>
+
+          <!-- Quick Action Prompt Pills -->
+          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px;">
+            <button class="pill prompt_pill" data-prompt="Generate live P&amp;L report and broadcast to Slack" style="cursor:pointer; font-size:10.5px; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">📊 Send P&amp;L Report</button>
+            <button class="pill prompt_pill" data-prompt="Set leverage to 500x on BOOST mode" style="cursor:pointer; font-size:10.5px; background:rgba(245,158,11,0.12); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">⚡ 500x BOOST Mode</button>
+            <button class="pill prompt_pill" data-prompt="Switch bot mode to PURE_CRYPTO 24/7" style="cursor:pointer; font-size:10.5px; background:rgba(16,185,129,0.12); color:#10b981; border:1px solid rgba(16,185,129,0.3);">🪙 24/7 Pure Crypto</button>
+            <button class="pill prompt_pill" data-prompt="Enforce strict -Rs 10.00 stop loss cut on all positions" style="cursor:pointer; font-size:10.5px; background:rgba(239,68,68,0.12); color:#f87171; border:1px solid rgba(239,68,68,0.3);">🛡️ Enforce -$10 Stop</button>
+            <button class="pill prompt_pill" data-prompt="Emergency close all positions across platform" style="cursor:pointer; font-size:10.5px; background:rgba(224,30,90,0.15); color:#E01E5A; border:1px solid rgba(224,30,90,0.4);">🚨 Emergency Liquidate All</button>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:10.5px; color:#64748b;">Secured: Only Master Admin can execute updates</span>
+            <button id="btn_execute_prompt" style="background:linear-gradient(135deg, #E01E5A, #4A154B); color:#fff; font-weight:800; font-size:12px; padding:9px 18px; border-radius:8px; border:none; cursor:pointer; display:flex; align-items:center; gap:8px; box-shadow:0 0 14px rgba(224,30,90,0.4);">
+              <span>🚀 EXECUTE PROMPT &amp; SYNC TO SLACK</span>
+            </button>
+          </div>
+
+          <!-- Execution Output Console -->
+          <div id="slack_prompt_terminal" style="display:none; margin-top:12px; background:#030712; border:1px solid rgba(56,189,248,0.25); border-radius:8px; padding:10px 14px; font-family:'JetBrains Mono', monospace; font-size:11.5px; line-height:1.5; color:#a5f3fc;">
+          </div>
+        </div>
+
+        <!-- Right Column: Slack Webhook & Channel Settings -->
+        <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:16px; display:flex; flex-direction:column; justify-content:space-between;">
+          <div>
+            <div style="font-size:11px; font-weight:800; color:#E01E5A; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:12px;">
+              ⚙️ SLACK WEBHOOK &amp; CHANNEL INTEGRATION:
+            </div>
+            
+            <div style="margin-bottom:10px;">
+              <label style="font-size:10.5px; font-weight:700; color:#94a3b8; display:block; margin-bottom:4px;">Incoming Webhook URL</label>
+              <input id="slack_inp_webhook" type="text" class="inp" placeholder="https://hooks.slack.com/services/T.../B.../..." style="width:100%; box-sizing:border-box; font-family:'JetBrains Mono', monospace; font-size:11px; padding:7px 10px; border-radius:6px; background:#0b1120; border:1px solid #334155; color:#fff;" />
+              <span style="font-size:9.5px; color:#64748b; display:block; margin-top:2px;">From your Slack App's Incoming Webhooks settings</span>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+              <div>
+                <label style="font-size:10.5px; font-weight:700; color:#94a3b8; display:block; margin-bottom:4px;">Channel Name</label>
+                <input id="slack_inp_channel" type="text" class="inp" value="#araabot-trades" style="width:100%; box-sizing:border-box; font-family:'JetBrains Mono', monospace; font-size:11px; padding:7px 10px; border-radius:6px; background:#0b1120; border:1px solid #334155; color:#fff;" />
+              </div>
+              <div>
+                <label style="font-size:10.5px; font-weight:700; color:#94a3b8; display:block; margin-bottom:4px;">Notifications Switch</label>
+                <select id="slack_sel_enabled" style="width:100%; box-sizing:border-box; font-size:11px; padding:7px 10px; border-radius:6px; background:#0b1120; border:1px solid #334155; color:#10b981; font-weight:700;">
+                  <option value="1" selected>🟢 ENABLED (ACTIVE)</option>
+                  <option value="0">🔴 DISABLED</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Notification Event Toggles -->
+            <div style="background:rgba(15,23,42,0.6); padding:10px 12px; border-radius:8px; margin-bottom:12px; border:1px solid rgba(255,255,255,0.04);">
+              <span style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase; display:block; margin-bottom:6px;">AUTOMATED SLACK ALERTS:</span>
+              <div style="display:flex; flex-direction:column; gap:6px; font-size:11px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="slack_chk_trades" checked />
+                  <span>⚡ New Bot Position Entries (500x Sized)</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="slack_chk_loss" checked />
+                  <span>🛑 -$10.00 Hard Stop Cuts (`AUTO_LOSS_CUT`)</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="slack_chk_profit" checked />
+                  <span>🎯 +10% Pullback Profit Locks (`PROFIT_TRAIL_LOCK`)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button id="btn_save_slack_config" class="btn sm ok" style="font-weight:800; background:#10b981; color:#0f172a; padding:8px 16px; border-radius:6px; cursor:pointer;">
+              💾 SAVE SLACK CONFIG
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <!-- ==================== SECTION 4: 3D NEURAL EXECUTION PIPELINE ==================== -->
+    <section class="adm-sec" data-adm-sec="neural-3d">
+    <!-- 🧠 3D AI ENGINE PIPELINE VISUALIZER -->
+    <div class="ai_engine_3d_wrapper">
+      <div class="ai_engine_header">
+        <div class="ai_engine_title">
+          <div class="ai_core_orb">⚡</div>
+          <div>
+            <div class="ai_engine_name">
+              <span>🧠 ARAA AI NEURAL ENGINE — REAL-TIME 3D EXECUTION PIPELINE</span>
+              <span class="pill live" style="font-size:10px; padding:2px 8px; border-color:#38bdf8; color:#38bdf8;">NEURAL v3.8 LIVE</span>
+            </div>
+            <div class="ai_engine_subtitle">Connected Multi-Market Quantum Engine · Continuous Pipeline Execution Flow</div>
+          </div>
+        </div>
+        <div class="ai_telemetry_bar">
+          <div class="ai_stat_badge">REGIME: <b id="pipe_regime_badge">WEEKEND CRYPTO</b></div>
+          <div class="ai_stat_badge">THROUGHPUT: <b id="pipe_throughput">976 ASSETS/SEC</b></div>
+          <div class="ai_stat_badge">WIN RATIO: <b id="pipe_win_badge" style="color:#10b981;">38.0%</b></div>
+          <div class="ai_stat_badge">LATENCY: <b id="pipe_latency">14ms</b></div>
+        </div>
+      </div>
+
+      <div class="pipeline_grid">
+        <!-- STAGE 1 -->
+        <div class="pipeline_stage_node s1">
+          <div class="stage_step_num">STAGE 01 · FEED</div>
+          <div class="stage_name">Global Data Ingestion</div>
+          <div class="stage_status pulse">STREAMING</div>
+          <div class="stage_metrics">
+            <div class="stage_m_row"><span>Feed Sources</span><b>Binance, TV, CNBC</b></div>
+            <div class="stage_m_row"><span>Tick Stream</span><b id="pipe_s1_ticks">976 Assets</b></div>
+            <div class="stage_m_row"><span>Protocol</span><b>WebSocket + REST</b></div>
+          </div>
+        </div>
+
+        <!-- STAGE 2 -->
+        <div class="pipeline_stage_node s2">
+          <div class="stage_step_num">STAGE 02 · SCANNER</div>
+          <div class="stage_name">A–Z Market Scanner</div>
+          <div class="stage_status pulse">SCANNING 7-MKT</div>
+          <div class="stage_metrics">
+            <div class="stage_m_row"><span>Instruments</span><b id="pipe_s2_scanned">173 Total</b></div>
+            <div class="stage_m_row"><span>Qualified</span><b id="pipe_s2_qualified" style="color:#10b981;">61 Setups</b></div>
+            <div class="stage_m_row"><span>Trap Filter</span><b>Noise Rejected</b></div>
+          </div>
+        </div>
+
+        <!-- STAGE 3 -->
+        <div class="pipeline_stage_node s3">
+          <div class="stage_step_num">STAGE 03 · SMC ENGINE</div>
+          <div class="stage_name">Araa Quantum SMC™</div>
+          <div class="stage_status pulse" style="color:#f59e0b; border-color:#f59e0b; background:rgba(245,158,11,0.15);">ORDER BLOCK RETEST</div>
+          <div class="stage_metrics">
+            <div class="stage_m_row"><span>Displacement</span><b>≥ 1.15x Body</b></div>
+            <div class="stage_m_row"><span>Zone Retest</span><b style="color:#10b981;">Active Validated</b></div>
+            <div class="stage_m_row"><span>Risk Invalidation</span><b>0.18% Micro-Stop</b></div>
+          </div>
+        </div>
+
+        <!-- STAGE 4 -->
+        <div class="pipeline_stage_node s4">
+          <div class="stage_step_num">STAGE 04 · NEURAL CONSENSUS</div>
+          <div class="stage_name">Araa Ai Bot Core</div>
+          <div class="stage_status pulse" style="color:#c084fc; border-color:#c084fc; background:rgba(192,132,252,0.15);">ARAA AI BOT</div>
+          <div class="stage_metrics">
+            <div class="stage_m_row"><span>Min Conf</span><b>≥ 92% Win Rate</b></div>
+            <div class="stage_m_row"><span>Top Picks</span><b id="pipe_s4_picks">6 Selected</b></div>
+            <div class="stage_m_row"><span>Risk/Reward</span><b style="color:#38bdf8;">1:3 to 1:6+</b></div>
+          </div>
+        </div>
+
+        <!-- STAGE 5 -->
+        <div class="pipeline_stage_node s5">
+          <div class="stage_step_num">STAGE 05 · RISK MATRIX</div>
+          <div class="stage_name">Quantum Scalp Guard</div>
+          <div class="stage_status pulse" style="color:#f472b6; border-color:#f472b6; background:rgba(244,114,182,0.15);">500x LEVERAGE</div>
+          <div class="stage_metrics">
+            <div class="stage_m_row"><span>Hard Loss Cut</span><b style="color:#ef4444;">-$10.00 Max Limit</b></div>
+            <div class="stage_m_row"><span>Max Margin/Slot</span><b style="color:#10b981;">$50 Scalp Capped</b></div>
+            <div class="stage_m_row"><span>Safety Shield</span><b style="color:#10b981;">STRICT ACTIVE</b></div>
+          </div>
+        </div>
+
+        <!-- STAGE 6 -->
+        <div class="pipeline_stage_node s6">
+          <div class="stage_step_num">STAGE 06 · EXECUTION</div>
+          <div class="stage_name">Breakeven &amp; Harvest</div>
+          <div class="stage_status pulse" style="color:#10b981; border-color:#10b981; background:rgba(16,185,129,0.15);">PROFIT HARVESTER</div>
+          <div class="stage_metrics">
+            <div class="stage_m_row"><span>Open Positions</span><b id="pipe_s6_open">0 Active</b></div>
+            <div class="stage_m_row"><span>Unrealised P&amp;L</span><b id="pipe_s6_pnl">$0.00</b></div>
+            <div class="stage_m_row"><span>Dynamic Trail</span><b style="color:#38bdf8;">+10% Profit Lock</b></div>
+            <div class="stage_m_row"><span>Slot Refill</span><b style="color:#10b981;">∞ Continuous (100+ Trades)</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ai_stream_footer">
+        <div class="ai_stream_msg">
+          <div class="ai_pulse_dot"></div>
+          <span id="pipe_live_stream_text">AI Pipeline active: Ingesting live ticks, filtering false breakouts, evaluating Araa AI probability vectors...</span>
+        </div>
+        <div style="color:#64748b; font-family:ui-monospace,Menlo,monospace; font-size:10px;">
+          ENGINE CYCLE: <span id="pipe_cycle_stat" style="color:#38bdf8;">OPTIMAL</span>
+        </div>
+      </div>
+
+      <!-- LIVE BOT IMMEDIATE REAL-TIME ACTION FEED (3D INTERACTIVE PIPELINE MONITOR) -->
+      <div class="bot_live_3d_console" style="margin-top:16px; background:linear-gradient(135deg, rgba(15,23,42,0.85), rgba(8,10,14,0.95)); border:1px solid rgba(56,189,248,0.3); border-radius:12px; padding:16px 18px; box-shadow:0 12px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08); perspective:1000px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:10px;">
+          <div style="font-size:12px; font-weight:800; color:#38bdf8; letter-spacing:0.06em; display:flex; align-items:center; gap:10px;">
+            <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981; box-shadow:0 0 10px #10b981; animation:blink 1.2s infinite;"></span>
+            <span>⚡ WHAT THE BOT IS CURRENTLY DOING (REAL-TIME 3D LIVE STREAM):</span>
+            <span id="pipe_bot_action_badge" class="pill live" style="font-size:10px; padding:3px 10px; border-color:#10b981;">● ACTIVE TRADING &amp; SCALPING</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:10px; color:#64748b;">LAST TICK:</span>
+            <span id="pipe_action_time" style="font-size:11px; color:#38bdf8; font-family:ui-monospace,Menlo,monospace; font-weight:700;">—</span>
+          </div>
+        </div>
+        
+        <div id="pipe_bot_live_action_text" style="font-size:13px; font-family:ui-monospace,Menlo,monospace; color:#f1f5f9; line-height:1.6; margin-bottom:14px; background:rgba(0,0,0,0.3); padding:10px 14px; border-radius:8px; border-left:3px solid #38bdf8;">
+          Loading real-time bot state...
+        </div>
+
+        <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px;">
+          ACTIVE 500x POSITIONS IN QUANTUM EXECUTION FLIGHT:
+        </div>
+        
+        <!-- 3D Isometric Floating Position Cards -->
+        <div id="pipe_active_trades_chips" class="trade_cards_3d_deck" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:12px; transform-style:preserve-3d;">
+          <!-- dynamically populated live 3D position cards -->
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <!-- ==================== SECTION 5: TREASURY & LEDGERS ==================== -->
+    <section class="adm-sec" data-adm-sec="treasury">
+    <h2>Withdrawal queue — approve to book 30% brokerage</h2>
+    <div class="card">
+      <table class="tbl"><thead><tr><th>When</th><th>User</th><th class="r">Requested</th>
+        <th class="r">Fee</th><th class="r">Net Payout</th><th>Settlement Bank / Method</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="wd_rows"></tbody></table>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px; margin-bottom:8px;">
+      <h2 style="margin:0;">Deposits Ledger — Direct Bank &amp; UPI Credits</h2>
+      <button id="btn_admin_credit_dep" class="btn sm ok" style="font-weight:700; background:#10b981; color:#0f172a;">➕ Direct Credit Bank Deposit</button>
+    </div>
+    <div class="card scroll-300"><table class="tbl"><thead><tr><th>When</th><th>User</th><th>Bank / Channel</th>
+      <th>Asset</th><th class="r">Amount</th><th class="r">Credited</th><th>Ref</th><th>Status</th></tr></thead>
+      <tbody id="dep_rows"></tbody></table></div>
+
+    <h2>Brokerage ledger</h2>
+    <div class="card scroll-300"><table class="tbl"><thead><tr><th>When</th><th>Source</th><th>Ref</th><th>User</th>
+      <th class="r">Amount</th></tr></thead><tbody id="ledger_rows"></tbody></table>
+      <div class="sub" id="ledger_total">—</div></div>
+    </section>
+
+    <!-- ==================== SECTION 6: LIVE USERS & POSITION BOOK ==================== -->
+    <section class="adm-sec" data-adm-sec="users-book">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px; margin-bottom:8px;">
+      <h2 style="margin:0;">Live Users &amp; Accounts</h2>
+      <div style="display:flex; gap:8px;">
+        <button id="btn_refresh_users" class="btn sm" style="background:#1e293b; color:#38bdf8; border:1px solid rgba(56,189,248,0.4); font-weight:700;">🔄 REFRESH</button>
+        <button id="btn_wipe_all_users" class="btn sm danger" style="font-weight:700;">⚠️ REMOVE ALL USERS</button>
+      </div>
+    </div>
+    <div class="card scroll-400">
+      <table class="tbl"><thead><tr><th>User</th><th>Email</th><th>Status</th><th>Last login</th><th class="r">Logins today</th>
+        <th class="r">Capital</th><th class="r">Profit</th><th class="r">Brokerage from them</th>
+        <th class="r">Open / closed</th><th>Bot</th><th style="text-align:center;">Actions</th></tr></thead><tbody id="user_rows"></tbody></table>
+    </div>
+
+    <h2>Bot storage — live multi-position book</h2>
+    <div class="card scroll-400">
+      <table class="tbl"><thead><tr><th>User</th><th>Pair</th><th>Market</th><th>Src</th><th>Side</th><th class="r">Entry</th>
+        <th class="r">Now</th><th class="r">Margin</th><th class="r">P&amp;L</th><th>Age</th></tr></thead>
+        <tbody id="pos_rows"></tbody></table>
+    </div>
+
+    <h2>Recent closed bot trades</h2>
+    <div class="card scroll-300">
+      <table class="tbl"><thead><tr><th>Pair</th><th>Side</th><th class="r">Entry → Exit</th><th class="r">P&amp;L</th>
+        <th>Reason</th><th>Closed</th></tr></thead><tbody id="closed_rows"></tbody></table>
+    </div>
+    </section>
+
+    <!-- ==================== SECTION 7: SECURITY FIREWALL & LOGS ==================== -->
+    <section class="adm-sec" data-adm-sec="security">
+    <!-- 🛡️ SECURITY FIREWALL & ACTIVE THREAT DEFENSE -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:28px; margin-bottom:8px;">
+      <h2 style="margin:0; display:flex; align-items:center; gap:8px;">
+        <span>🛡️ ACTIVE SECURITY FIREWALL &amp; THREAT DEFENSE</span>
+        <span class="pill live" style="font-size:10px; padding:2px 8px; border-color:#10b981; color:#10b981;" id="fw_status_badge">DEFENSE ACTIVE</span>
+      </h2>
+      <button id="btn_refresh_fw" class="btn sm" style="background:#1e293b; color:#38bdf8; border:1px solid rgba(56,189,248,0.4); font-weight:700;">🔄 REFRESH TELEMETRY</button>
+    </div>
+    <div class="kpis" style="margin-bottom:14px;">
+      <div class="card"><div class="k">Requests Inspected</div><div class="v" id="fw_total_inspected">0</div>
+        <div class="sub" style="color:#10b981;">Deep Payload Inspection</div></div>
+      <div class="card"><div class="k">Hostile Attacks Blocked</div><div class="v green" id="fw_threats_blocked" style="color:#ef4444;">0</div>
+        <div class="sub">Neutralized at ingress</div></div>
+      <div class="card"><div class="k">SQLi Attempts Defended</div><div class="v" id="fw_sqli_blocked">0</div>
+        <div class="sub">Signature Injection Filter</div></div>
+      <div class="card"><div class="k">XSS Probes Filtered</div><div class="v" id="fw_xss_blocked">0</div>
+        <div class="sub">Script Sanitizer Active</div></div>
+      <div class="card"><div class="k">Rate Limit / Flood Trips</div><div class="v" id="fw_rate_limits">0</div>
+        <div class="sub">Anti-DDoS Burst Shield</div></div>
+      <div class="card"><div class="k">Active IP Bans</div><div class="v amber" id="fw_banned_ips">0</div>
+        <div class="sub">15m Cooldown</div></div>
+    </div>
+    <div class="card scroll-300" style="margin-bottom:20px;">
+      <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom:8px; display:flex; justify-content:space-between;">
+        <span>LIVE SECURITY EVENT AUDIT LOG</span>
+        <span class="tiny" style="color:var(--muted2);">Real-time intrusion prevention stream</span>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Source IP</th>
+            <th>Threat Signature</th>
+            <th>Target Path</th>
+            <th>Action Taken</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody id="fw_threat_rows">
+          <tr><td colspan="6" style="text-align:center; color:var(--muted2); padding:16px;">Firewall active. No hostile events detected.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Analysis log</h2>
+    <div class="card scroll-300 log" id="admin_logs">—</div>
+    </section>
+
+    <!-- ==================== SECTION 8: CENTRAL SUPER ADMIN, SSO & APPLICATION ECOSYSTEM ==================== -->
+    <section class="adm-sec" data-adm-sec="super-admin">
+      <div class="card" style="background:linear-gradient(135deg, rgba(16,185,129,0.1), rgba(15,23,42,0.8)); border:1.5px solid rgba(16,185,129,0.4); padding:20px; border-radius:14px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:26px;">🏛️</span>
+              <h2 style="margin:0; font-size:18px; color:#f8fafc;">ARAA Unified Super Admin &amp; Single Sign-On (SSO) Ecosystem</h2>
+              <span style="background:#10b981; color:#042f2e; font-size:10px; font-weight:900; padding:2px 8px; border-radius:12px;">MASTER CONTROL</span>
+            </div>
+            <p style="font-size:12.5px; color:#94a3b8; margin:4px 0 0 0;">
+              Centralized identity, role-based access control, dual-control approvals, and live telemetry across all 10 ARAA enterprise applications.
+            </p>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" onclick="window.loadCentralAdminData()" class="btn sm" style="background:rgba(56,189,248,0.18); border:1px solid #38bdf8; color:#38bdf8; font-weight:800; cursor:pointer;">↻ Refresh Telemetry</button>
+            <button type="button" onclick="window.openCreateAdminModal()" class="btn sm primary" style="background:#10b981; color:#fff; font-weight:800; cursor:pointer;">+ Add Administrator</button>
+          </div>
+        </div>
+
+        <!-- Ecosystem Metrics Row -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-top:16px;">
+          <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(56,189,248,0.25); border-radius:10px; padding:12px 14px;">
+            <span style="font-size:10px; color:#94a3b8; font-weight:800;">APPLICATIONS CONNECTED</span>
+            <div id="cs_metric_apps" style="font-size:22px; font-weight:900; color:#38bdf8; font-family:'JetBrains Mono',monospace; margin-top:2px;">10 / 10</div>
+            <span style="font-size:10px; color:#10b981;">100% Integrated</span>
+          </div>
+          <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(168,85,247,0.25); border-radius:10px; padding:12px 14px;">
+            <span style="font-size:10px; color:#94a3b8; font-weight:800;">ACTIVE ADMINISTRATORS</span>
+            <div id="cs_metric_admins" style="font-size:22px; font-weight:900; color:#c084fc; font-family:'JetBrains Mono',monospace; margin-top:2px;">1</div>
+            <span style="font-size:10px; color:#64748b;">Individual identities</span>
+          </div>
+          <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(245,158,11,0.25); border-radius:10px; padding:12px 14px;">
+            <span style="font-size:10px; color:#94a3b8; font-weight:800;">PENDING APPROVALS</span>
+            <div id="cs_metric_approvals" style="font-size:22px; font-weight:900; color:#fbbf24; font-family:'JetBrains Mono',monospace; margin-top:2px;">0</div>
+            <span style="font-size:10px; color:#64748b;">Dual-control queue</span>
+          </div>
+          <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(239,68,68,0.25); border-radius:10px; padding:12px 14px;">
+            <span style="font-size:10px; color:#94a3b8; font-weight:800;">SECURITY ALERTS</span>
+            <div id="cs_metric_security" style="font-size:22px; font-weight:900; color:#f87171; font-family:'JetBrains Mono',monospace; margin-top:2px;">0</div>
+            <span style="font-size:10px; color:#10b981;">No active threats</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- App Registry Grid -->
+      <h3 style="font-size:15px; color:#cbd5e1; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+        <span>🌐</span> <span>Connected Applications &amp; Health Registry (10 Platforms)</span>
+      </h3>
+      <div id="cs_applications_grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; margin-bottom:24px;">
+        <div style="padding:20px; color:#94a3b8; text-align:center;">Loading application registry...</div>
+      </div>
+
+      <!-- Administrator Directory & Pending Approvals Split -->
+      <div style="display:grid; grid-template-columns:1.2fr 0.8fr; gap:16px; margin-bottom:24px;">
+        
+        <!-- Admins Table -->
+        <div class="card" style="padding:16px;">
+          <h3 style="font-size:14px; color:#f8fafc; margin-top:0; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+            <span>👥 Central Administrator Directory</span>
+            <span style="font-size:11px; color:#94a3b8;">Granular 15-Role RBAC</span>
+          </h3>
+          <div style="overflow-x:auto;">
+            <table class="tbl" style="width:100%; font-size:11.5px;">
+              <thead>
+                <tr>
+                  <th>Administrator</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Approval Cap</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cs_admins_tbody">
+                <tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">Loading administrator directory...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pending Dual-Control Approvals -->
+        <div class="card" style="padding:16px;">
+          <h3 style="font-size:14px; color:#f8fafc; margin-top:0; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+            <span>🛡️ Central Approval Inbox</span>
+            <span style="font-size:10px; background:rgba(245,158,11,0.2); color:#fbbf24; padding:2px 6px; border-radius:4px; font-weight:800;">MAKER-CHECKER</span>
+          </h3>
+          <div id="cs_approvals_list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;">
+            <div style="text-align:center; padding:20px; color:#94a3b8; font-size:12px;">No pending approvals in queue.</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Immutable Central Audit Trail -->
+      <div class="card" style="padding:16px;">
+        <h3 style="font-size:14px; color:#f8fafc; margin-top:0; margin-bottom:10px;">📋 Cross-Application Audit Trail</h3>
+        <div style="overflow-x:auto;">
+          <table class="tbl" style="width:100%; font-size:11px; font-family:'JetBrains Mono',monospace;">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>User / Identity</th>
+                <th>Action</th>
+                <th>Module</th>
+                <th>Status</th>
+                <th>IP Address</th>
+              </tr>
+            </thead>
+            <tbody id="cs_audit_tbody">
+              <tr><td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">Loading audit trail...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="sidepanel" id="admin_sidepanel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:8px;">
+      <h3 style="margin:0; font-size:15px; display:flex; align-items:center; gap:6px;">💰 <span>Create Profit Link</span></h3>
+      <button id="close_sidepanel_btn" class="btn sm" style="background:transparent; border:1px solid var(--line); color:var(--muted); font-size:14px; cursor:pointer; padding:2px 8px; border-radius:6px;">✕</button>
+    </div>
+    <p class="sub" style="margin-top:0;">Credits 70% to the user's withdrawable profit, keeps 30% as platform brokerage.</p>
+    <label>User email</label><input id="pl_email" value="user@gmail.com">
+    <label>Profit amount $</label><input id="pl_amount" type="number" value="500">
+    <label>Reason</label><input id="pl_reason" value="Admin bonus">
+    <div class="split">
+      <div><span class="sub">Brokerage to admin</span><b class="green" id="pl_fee">$150</b></div>
+      <div><span class="sub">User receives</span><b id="pl_net">$350</b></div>
+    </div>
+    <button class="btn primary wide" id="pl_go">Create profit link</button>
+    <div class="msg" id="pl_msg"></div>
+    <div class="card tight"><h4>Recent links</h4><div id="pl_list" class="sub"></div></div>
+
+    <h3 class="mt">⚡ UPI & Payment Gateway Setup</h3>
+    <div class="card tight" style="background:#1e293b; border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:12px; margin-top:8px;">
+      <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">Configure official Google Pay & PhonePe settlement credentials for user deposits.</div>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:4px;">Merchant UPI ID (VPA)
+        <input id="adm_upi_vpa" type="text" value="tradepro.corp@okhdfcbank" style="font-family:monospace; margin-top:2px;">
+      </label>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:6px;">Merchant Payee Name
+        <input id="adm_upi_name" type="text" value="TradePro Capital Markets" style="margin-top:2px;">
+      </label>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:6px;">PhonePe Merchant ID
+        <input id="adm_phonepe_mid" type="text" value="MERCHANTUAT" style="font-family:monospace; margin-top:2px;">
+      </label>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:6px;">PhonePe Salt Key / Secret
+        <input id="adm_phonepe_key" type="password" value="••••••••••••••••" style="margin-top:2px;">
+      </label>
+      <div style="display:flex; gap:6px; margin-top:10px;">
+        <button id="btn_save_upi_config" class="btn sm ok" style="flex:1; font-weight:700; background:#10b981; color:#0f172a;">💾 Save Gateway</button>
+        <button id="btn_test_upi_qr" class="btn sm" style="background:#0284c7; color:#fff; font-weight:700;">📱 Test QR</button>
+      </div>
+      <div id="adm_upi_msg" class="tiny" style="margin-top:6px;"></div>
+    </div>
+
+    <h3 class="mt">💳 Razorpay Payment Gateway</h3>
+    <div class="card tight" style="background:#1e293b; border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:12px; margin-top:8px;">
+      <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">Connect official Razorpay API credentials for Credit Cards, NetBanking, and UPI checkout.</div>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:4px;">Razorpay Key ID
+        <input id="adm_rzp_key_id" type="text" placeholder="rzp_live_... or rzp_test_..." style="font-family:monospace; margin-top:2px;">
+      </label>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:6px;">Razorpay Key Secret
+        <input id="adm_rzp_key_secret" type="password" placeholder="••••••••••••••••" style="margin-top:2px;">
+      </label>
+      <label style="font-size:11px; color:#cbd5e1; display:block; margin-top:6px;">Gateway Mode
+        <select id="adm_rzp_mode" style="width:100%; margin-top:2px; padding:6px; background:#0b1120; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:4px;">
+          <option value="TEST">TEST (Sandbox)</option>
+          <option value="LIVE">LIVE (Real Money)</option>
+        </select>
+      </label>
+      <div style="display:flex; gap:6px; margin-top:10px;">
+        <button id="btn_save_rzp_config" class="btn sm ok" style="flex:1; font-weight:700; background:#0284c7; color:#fff;">💾 Save Razorpay</button>
+      </div>
+      <div id="adm_rzp_msg" class="tiny" style="margin-top:6px;"></div>
+    </div>
+
+    <h3 class="mt">Brokerage split</h3>
+    <div class="bar"><span class="b1" id="bar_admin"></span><span class="b2" id="bar_user"></span></div>
+    <div class="sub" id="bar_lbl">—</div>
+    <h3 class="mt">Links</h3>
+    <div class="sub">User app: <a href="/" target="_blank">Live Terminal (/)</a><br>
+      API: <a href="/api/health" target="_blank">Health &amp; Telemetry (/api/health)</a></div>
+  </aside>
+</div>
+
+<div class="sidepanel-overlay" id="sidepanel_overlay"></div>
+
+<!-- User EOD Performance Statement Modal -->
+<div id="modal_eod_statement" class="modal_overlay hide">
+  <div class="modal_box" style="background:#0f172a; border:1px solid rgba(56,189,248,0.3); border-radius:12px; width:95%; max-width:960px; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.8);">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">📊</span>
+        <div>
+          <b id="modal_eod_user_title" style="font-size:15px; color:#f8fafc;">EOD Performance Statement</b>
+          <div id="modal_eod_user_sub" style="font-size:11px; color:#94a3b8;">User Account Audit &amp; Capital Ledger</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button id="modal_eod_csv_btn" class="btn sm ok" style="font-size:11px; font-weight:700;">📥 Export CSV</button>
+        <button id="modal_eod_close_btn" class="btn sm" style="background:#1e293b; color:#cbd5e1; border:none; font-size:14px; font-weight:700; cursor:pointer;">✕</button>
+      </div>
+    </div>
+    <div id="modal_eod_body" style="padding:20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+      <!-- Loaded dynamically via JS -->
+      <div style="text-align:center; padding:40px; color:#94a3b8;">Loading statement...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Admin 995 Symbols Live Feed & Signals Diagnostics Modal -->
+<div id="modal_admin_feed_hub" class="modal_overlay hide">
+  <div class="modal_box" style="background:#0f172a; border:1px solid rgba(16,185,129,0.35); border-radius:14px; width:95%; max-width:980px; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 25px 60px rgba(0,0,0,0.85); overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1px solid rgba(255,255,255,0.08); background:#1e293b;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:24px;">📡</span>
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <b style="font-size:16px; color:#f8fafc; letter-spacing:0.3px;">ADMIN 995 SYMBOLS FEED &amp; SIGNALS DIAGNOSTIC</b>
+            <span class="pill live" style="font-size:10px; padding:2px 8px;">ALL FEEDS ACTIVE</span>
+          </div>
+          <div style="font-size:11.5px; color:#94a3b8; margin-top:2px;">Real-time feed stream monitor · Buy/Sell signals · Source connectivity audit</div>
+        </div>
+      </div>
+      <button id="close_admin_feed_hub_btn" class="btn sm" style="background:rgba(255,255,255,0.08); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); font-size:14px; font-weight:700; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:6px;">✕</button>
+    </div>
+
+    <!-- Telemetry Cards -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; padding:14px 22px; background:#0b1120; border-bottom:1px solid rgba(255,255,255,0.06);">
+      <div style="background:#1e293b; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">TOTAL TRACKED</div>
+        <b id="adm_hub_total" style="display:block; font-size:18px; color:#38bdf8; font-family:monospace; margin-top:2px;">995</b>
+      </div>
+      <div style="background:#1e293b; border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">LIVE STREAMING</div>
+        <b id="adm_hub_live" style="display:block; font-size:18px; color:#10b981; font-family:monospace; margin-top:2px;">992</b>
+      </div>
+      <div style="background:#1e293b; border:1px solid rgba(239,68,68,0.25); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">OFFLINE / SIM</div>
+        <b id="adm_hub_offline" style="display:block; font-size:18px; color:#94a3b8; font-family:monospace; margin-top:2px;">3</b>
+      </div>
+      <div style="background:#1e293b; border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">BUY SIGNALS</div>
+        <b id="adm_hub_buy" style="display:block; font-size:18px; color:#34d399; font-family:monospace; margin-top:2px;">472</b>
+      </div>
+      <div style="background:#1e293b; border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">SELL SIGNALS</div>
+        <b id="adm_hub_sell" style="display:block; font-size:18px; color:#f87171; font-family:monospace; margin-top:2px;">473</b>
+      </div>
+      <div style="background:#1e293b; border:1px solid rgba(192,132,252,0.3); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">FEED SOURCES</div>
+        <b style="display:block; font-size:12px; color:#c084fc; font-family:monospace; margin-top:4px;">BINANCE · TV · CNBC</b>
+      </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 22px; border-bottom:1px solid rgba(255,255,255,0.08); background:#131c31;">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="adm_filter_all" class="btn sm" onclick="setAdminHubFilter('ALL')" style="padding:4px 12px; font-size:11px; font-weight:800; border-radius:6px; background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#38bdf8; cursor:pointer;">ALL (995)</button>
+        <button id="adm_filter_live" class="btn sm" onclick="setAdminHubFilter('LIVE')" style="padding:4px 12px; font-size:11px; font-weight:800; border-radius:6px; background:transparent; border:1px solid rgba(255,255,255,0.1); color:#34d399; cursor:pointer;">🟢 LIVE (992)</button>
+        <button id="adm_filter_buy" class="btn sm" onclick="setAdminHubFilter('BUY')" style="padding:4px 12px; font-size:11px; font-weight:800; border-radius:6px; background:transparent; border:1px solid rgba(255,255,255,0.1); color:#10b981; cursor:pointer;">▲ BUY SIGNALS</button>
+        <button id="adm_filter_sell" class="btn sm" onclick="setAdminHubFilter('SELL')" style="padding:4px 12px; font-size:11px; font-weight:800; border-radius:6px; background:transparent; border:1px solid rgba(255,255,255,0.1); color:#ef4444; cursor:pointer;">▼ SELL SIGNALS</button>
+        <button id="adm_filter_offline" class="btn sm" onclick="setAdminHubFilter('OFFLINE')" style="padding:4px 12px; font-size:11px; font-weight:800; border-radius:6px; background:transparent; border:1px solid rgba(255,255,255,0.1); color:#94a3b8; cursor:pointer;">○ OFFLINE / SIM (3)</button>
+      </div>
+      <input id="adm_hub_search" type="text" placeholder="Filter symbol / source..." style="width:210px; padding:6px 12px; border-radius:6px; background:#0b1120; border:1px solid rgba(255,255,255,0.15); color:#f8fafc; font-size:12px;">
+    </div>
+
+    <!-- Symbols Table -->
+    <div style="flex:1; overflow-y:auto; overscroll-behavior:contain; padding:12px 22px;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;">
+        <thead>
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.08); color:#94a3b8; font-size:11px; text-transform:uppercase;">
+            <th style="padding:8px 6px;">Symbol &amp; Asset Name</th>
+            <th style="padding:8px 6px;">Category</th>
+            <th style="padding:8px 6px;">Feed Status</th>
+            <th style="padding:8px 6px;">Source</th>
+            <th style="padding:8px 6px;">Live Price</th>
+            <th style="padding:8px 6px;">24h %</th>
+            <th style="padding:8px 6px;">Signal Engine</th>
+            <th style="padding:8px 6px; text-align:right;">User Terminal Link</th>
+          </tr>
+        </thead>
+        <tbody id="adm_hub_tbody">
+          <!-- Populated dynamically via JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 22px; border-top:1px solid rgba(255,255,255,0.08); background:#1e293b;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="dot" style="background:#10b981;"></span>
+        <span style="font-size:11px; color:#94a3b8;">Admin Engine connected to background feed stream loop (interval 1s)</span>
+      </div>
+      <button id="done_admin_feed_hub_btn" class="btn sm ok" style="padding:7px 18px; font-weight:700; cursor:pointer;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 🛡️ ADMIN AUTHENTICATION GATE MODAL ==================== -->
+<div id="modal_admin_auth" class="modal_overlay hide" style="position:fixed; inset:0; background:rgba(4,6,9,0.85); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); z-index:999999; display:none; align-items:center; justify-content:center; padding:16px;">
+  <div class="card" style="width:100%; max-width:440px; background:linear-gradient(145deg, #121620 0%, #0d1017 100%); border:1px solid rgba(56,189,248,0.35); border-radius:18px; padding:32px 28px; box-shadow:0 25px 60px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.1); position:relative; overflow:hidden;">
+    <div style="position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg, #38bdf8, #10b981, #6366f1);"></div>
+    <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:24px;">
+      <div style="width:54px; height:54px; border-radius:50%; background:radial-gradient(circle, rgba(56,189,248,0.2) 0%, rgba(16,185,129,0.1) 70%, transparent 100%); border:1px solid rgba(56,189,248,0.4); display:flex; align-items:center; justify-content:center; font-size:26px; margin-bottom:12px; box-shadow:0 0 20px rgba(56,189,248,0.25);">
+        🛡️
+      </div>
+      <div style="font-size:18px; font-weight:900; letter-spacing:0.04em; color:#ffffff; font-family:'Space Grotesk',sans-serif;">ARAABOT<span style="color:#10b981;">.IN</span> ADMIN GATE</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">Master Administrator Access Verification</div>
+    </div>
+
+    <form id="form_admin_login" onsubmit="return false;" style="display:flex; flex-direction:column; gap:14px;">
+      <div>
+        <label style="display:block; font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Administrator Username</label>
+        <div style="position:relative;">
+          <input id="admin_login_username" type="text" placeholder="Enter admin username" value="" autocomplete="username" required
+                 style="width:100%; padding:12px 14px; background:#080b11; border:1px solid #1e293b; border-radius:10px; color:#f1f5f9; font-size:13px; font-weight:600; outline:none; transition:border-color 0.2s;">
+        </div>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Password</label>
+        <div style="position:relative;">
+          <input id="admin_login_password" type="password" placeholder="Enter admin password" value="" autocomplete="current-password" required
+                 style="width:100%; padding:12px 14px; background:#080b11; border:1px solid #1e293b; border-radius:10px; color:#f1f5f9; font-size:13px; font-weight:600; outline:none; transition:border-color 0.2s;">
+        </div>
+      </div>
+
+      <div id="admin_auth_error" style="font-size:12px; color:#ef4444; font-weight:600; display:none; padding:8px 12px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); border-radius:8px;"></div>
+
+      <button id="btn_submit_admin_login" type="submit" class="btn on" style="width:100%; padding:14px; font-size:13px; font-weight:800; letter-spacing:0.06em; margin-top:8px; border-radius:10px; cursor:pointer; background:linear-gradient(135deg, #10b981 0%, #059669 100%); color:#04110b; border:none; box-shadow:0 0 16px rgba(16,185,129,0.35);">
+        🔓 UNLOCK ADMIN COMMAND CENTER
+      </button>
+    </form>
+  </div>
+</div>
+
+<script src="/admin/admin.js?v=20261111_v3_enterprise"></script>
+<script>
+  window.switchAdminView = function(view) {
+    var titles = {
+      'all': 'Full Command Center · Live Telemetry & Execution Governance',
+      'overview': 'Platform Overview · Master Bot & 8-KPI Bento Telemetry',
+      'ai-gatekeeper': 'ARAA AI Core · 6-Rule Execution Firewall & Pre-Trade Audit',
+      'neural-3d': '3D Neural Execution Pipeline · 6-Stage Quantum Flight Deck',
+      'slack': 'Slack Workflow Studio · Natural Language Prompt Interpreter',
+      'users-book': 'Live Users, Accounts & Multi-Position Book',
+      'treasury': 'Treasury, Withdrawals, Direct Deposits & 30% Brokerage Ledger',
+      'security': 'Active Security Firewall, Threat Defense & Engine Analysis Log'
+    };
+    document.querySelectorAll('.adm-sec').forEach(function(sec) {
+      if (view === 'all' || sec.getAttribute('data-adm-sec') === view) {
+        sec.style.display = '';
+      } else {
+        sec.style.display = 'none';
+      }
+    });
+    document.querySelectorAll('.adm-dock-btn, .adm-ws-pill').forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-view') === view);
+    });
+    var h = document.getElementById('adm_ws_heading');
+    if (h && titles[view]) h.textContent = titles[view];
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+</script>
+</body>
+</html>

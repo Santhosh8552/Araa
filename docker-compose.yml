@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: araa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-araa_trading}
+      POSTGRES_USER: ${POSTGRES_USER:-araa_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_before_prod}
+    volumes:
+      - araa_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: araa-redis
+    restart: unless-stopped
+    volumes:
+      - araa_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  araabot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: araabot-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "5050:5050"
+    environment:
+      - DOCKER_CONTAINER=1
+      - HOST=0.0.0.0
+      - PORT=5050
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - DB_PATH=/app/data/tradepro.db
+      - DATABASE_URL=${DATABASE_URL:-postgresql://araa_admin:change_me_before_prod@postgres:5432/araa_trading}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - TRADING_MODE=${TRADING_MODE:-PAPER}
+      - AUTH_STRICT=${AUTH_STRICT:-1}
+      - REQUIRE_ENCRYPTION=${REQUIRE_ENCRYPTION:-1}
+      - SEED_DEMO_USERS=0
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - SECRETS_KEY=${SECRETS_KEY:-}
+    volumes:
+      - araabot_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5050/api/v1/company/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: araa-nginx
+    restart: unless-stopped
+    depends_on:
+      - araabot
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    profiles: ["prod-tls"]
+
+volumes:
+  araabot_data:
+  araa_pg_data:
+  araa_redis_data:

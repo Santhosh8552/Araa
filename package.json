@@ -1,0 +1,13 @@
+{
+  "name": "araabot-production-platform",
+  "version": "2.0.0",
+  "private": true,
+  "description": "AraaBot.in — AI Quantum Boost 500x Paper & Exness MT4/MT5 Live Trading Platform",
+  "scripts": {
+    "setup": "python3 -m pip install -r requirements.txt || (python3 -m venv .venv && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt)",
+    "start": "if [ -x .venv/bin/python ]; then .venv/bin/python -B -u run.py; else python3 -B -u run.py; fi",
+    "test": "if [ -x .venv/bin/python ]; then .venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v; else python3 -B -m unittest discover -s tests -p 'test_*.py' -v; fi",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up"
+  }
+}
