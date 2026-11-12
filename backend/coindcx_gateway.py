@@ -1868,7 +1868,7 @@ def verify_coindcx_risk(user_id: int, symbol: str, requested_amount_inr: float =
     # Rule 1: Real-Money Daily Loss Hard Cap (-$250.00)
     day_pnl = (query_one("SELECT COALESCE(SUM(realized_pnl), 0) as s FROM positions WHERE user_id=? AND status='CLOSED' AND is_live=1 AND closed_at >= ?",
                          (user_id, time.time() - 86400)) or {}).get("s", 0.0)
-    effective_max_daily_loss = min(float(u_cfg.get("max_daily_loss") or 250.0), 250.0)
+    effective_max_daily_loss = min(float((u_cfg or {}).get("max_daily_loss") or 250.0), 250.0)
     if day_pnl <= -abs(effective_max_daily_loss):
         msg = f"AraaBot Rule 1: Daily loss limit reached (Today's Net: -${abs(day_pnl):,.2f} vs Limit: -${effective_max_daily_loss:,.2f}). Trading locked to preserve capital."
         log_audit_event(user_id, "ORDER_REJECTED_RISK", msg, severity="WARNING", details={"day_pnl": day_pnl, "limit": effective_max_daily_loss})
@@ -2039,14 +2039,20 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
     write("UPDATE users SET bot_market_focus='FUTURES_USD', bot_leverage=? WHERE id=?", (preserved_lev, user_id))
     write("UPDATE wallets SET deposit_balance=?, starting_balance=? WHERE user_id=?", (usd_total, usd_total, user_id))
 
-    cfg_exists = query_one("SELECT user_id FROM real_bot_configs WHERE user_id=?", (user_id,))
-    if not cfg_exists:
-        write("""
-            INSERT INTO real_bot_configs(user_id, is_enabled, strategy_name, symbol, timeframe, max_order_size, max_daily_loss, max_positions, emergency_shutdown, updated_at)
-            VALUES (?, 1, 'EMA_SCALP', 'BTCUSDT', '1m', 25000.0, 250.0, 5, 0, ?)
-        """, (user_id, now))
-    else:
-        write("UPDATE real_bot_configs SET emergency_shutdown=0, updated_at=? WHERE user_id=?", (now, user_id))
+    write("""
+        INSERT INTO real_bot_configs(
+            user_id, provider_id, strategy_mode, max_order_size, max_daily_loss,
+            max_positions, bot_status, emergency_shutdown, verified_funds, verified_margin,
+            created_at, updated_at
+        )
+        VALUES (?, 'COINDCX', 'PURE_CRYPTO', 25000.0, 250.0, 5, 'PAUSED', 0, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            provider_id='COINDCX',
+            verified_funds=?,
+            verified_margin=?,
+            emergency_shutdown=0,
+            updated_at=?
+    """, (user_id, usd_total, usd_free, now, now, usd_total, usd_free, now))
 
     log_audit_event(
         user_id=user_id,
