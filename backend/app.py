@@ -6,6 +6,7 @@ call site already goes through query()/write(). Port 5000 is intentionally unuse
 macOS ControlCenter (AirPlay Receiver) already listens there.
 """
 import os, sys, time, threading, secrets, json
+from typing import Any, Dict, List, Optional, Tuple
 
 # Ensure backend directory is in sys.path for direct script execution on Render / Linux
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
