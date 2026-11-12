@@ -3298,19 +3298,24 @@
           <!-- Public IP Banner (Mandatory for CoinDCX IP Binding) -->
           <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.3); border-radius:10px; padding:12px 16px; margin-bottom:16px; text-align:left; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
             <div>
-              <span style="font-size:10.5px; color:#94a3b8; font-weight:700; display:block; letter-spacing:0.3px;">YOUR CURRENT PUBLIC IP ADDRESS (ENTER THIS IN COINDCX):</span>
+              <span style="font-size:10.5px; color:#94a3b8; font-weight:700; display:block; letter-spacing:0.3px;">ARAA SERVER OUTBOUND IP (WHITELIST THIS IN COINDCX — NOT YOUR HOME/ISP IP):</span>
               <span id="coindcx_detected_ip_val" style="font-family:'JetBrains Mono', monospace; font-size:15px; font-weight:800; color:#38bdf8; letter-spacing:0.5px;">Detecting IP...</span>
             </div>
-            <button type="button" id="btn_copy_detected_ip" style="background:#38bdf8; color:#0f172a; font-weight:800; font-size:11px; padding:7px 14px; border-radius:6px; border:none; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
-              <span>📋</span> COPY IP FOR COINDCX
-            </button>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <button type="button" id="btn_refresh_detected_ip" style="background:rgba(56,189,248,0.14); color:#38bdf8; font-weight:800; font-size:11px; padding:7px 11px; border-radius:6px; border:1px solid rgba(56,189,248,0.45); cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="Re-fetch current backend outbound IP">
+                <span>🔄</span> Refresh IP
+              </button>
+              <button type="button" id="btn_copy_detected_ip" style="background:#38bdf8; color:#0f172a; font-weight:800; font-size:11px; padding:7px 14px; border-radius:6px; border:none; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">
+                <span>📋</span> COPY IP FOR COINDCX
+              </button>
+            </div>
           </div>
 
           <!-- API Key Input Form -->
           <div class="exness_card_box_darker" style="padding:18px 20px; text-align:left;">
             <div style="margin-bottom:14px;">
               <label class="exness_label" style="display:block; margin-bottom:6px; font-size:11.5px; font-weight:700; color:#cbd5e1;">CoinDCX API Key</label>
-              <input type="text" id="coindcx_inp_api_key" class="exness_input" placeholder="Paste your 48-character CoinDCX API Key" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+              <input type="text" autocomplete="off" spellcheck="false" name="cdx_api_key_noconflict" id="coindcx_inp_api_key" class="exness_input" placeholder="Paste your CoinDCX API Key" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px;" />
             </div>
 
             <div style="margin-bottom:14px;">
@@ -3318,7 +3323,7 @@
                 <label class="exness_label" style="font-size:11.5px; font-weight:700; color:#cbd5e1;">CoinDCX API Secret</label>
                 <button type="button" id="btn_toggle_secret_vis" style="background:none; border:none; color:#38bdf8; font-size:11px; cursor:pointer; font-weight:700;">👁 Show Secret</button>
               </div>
-              <input type="password" autocomplete="current-password" id="coindcx_inp_api_secret" class="exness_input" placeholder="Paste your real CoinDCX API Secret (NOT asterisks ***)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+              <input type="password" autocomplete="new-password" spellcheck="false" name="cdx_api_secret_noconflict" id="coindcx_inp_api_secret" class="exness_input" placeholder="Paste your real CoinDCX API Secret (NOT asterisks ***)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px;" />
               <span style="font-size:11px; color:#f59e0b; display:block; margin-top:4px;">⚠️ Do not copy <code>*********</code> asterisks from the CoinDCX list. Secret is only visible in the one-time popup when created.</span>
             </div>
 
@@ -3327,15 +3332,16 @@
                 <label class="exness_label" style="font-size:11.5px; font-weight:700; color:#cbd5e1;">CoinDCX Account Profile Name (Optional)</label>
                 <span style="font-size:10.5px; color:#38bdf8;">Displays on Terminal &amp; Dashboard</span>
               </div>
-              <input type="text" id="coindcx_inp_profile_name" class="exness_input" placeholder="e.g. Karthik / TradePro (Auto-detects from CoinDCX if blank)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.8);" />
+              <input type="text" autocomplete="off" name="cdx_profile_name_noconflict" id="coindcx_inp_profile_name" class="exness_input" placeholder="e.g. Karthik / TradePro (Auto-detects from CoinDCX if blank)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.8);" />
             </div>
 
             <div style="margin-bottom:16px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="exness_label" style="font-size:11.5px; font-weight:700; color:#cbd5e1;">Whitelisted IP Address (Customizable)</label>
-                <span style="font-size:10.5px; color:#38bdf8;">Matches what you entered on CoinDCX</span>
+                <label class="exness_label" style="font-size:11.5px; font-weight:700; color:#cbd5e1;">Whitelisted IP Address (Server Outbound IP)</label>
+                <span style="font-size:10.5px; color:#38bdf8;">Must match the Server IP above on CoinDCX</span>
               </div>
-              <input type="text" id="coindcx_inp_bound_ip" class="exness_input" placeholder="Auto-detected server public IP (whitelist on CoinDCX)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.8);" />
+              <input type="text" autocomplete="off" spellcheck="false" name="cdx_bound_ip_noconflict" id="coindcx_inp_bound_ip" class="exness_input" placeholder="Auto-detected server public IP (whitelist on CoinDCX)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.8);" />
+              <span id="coindcx_ip_mismatch_note" style="display:none; font-size:11px; margin-top:5px; line-height:1.45;"></span>
             </div>
 
             <div style="margin-bottom:16px;">
@@ -3343,7 +3349,7 @@
                 <label class="exness_label" style="font-size:11.5px; font-weight:700; color:#cbd5e1;">CoinDCX Wallet Balance (USD / USDT)</label>
                 <span style="font-size:10.5px; color:#10b981;">Futures Balance</span>
               </div>
-              <input type="number" id="coindcx_inp_real_balance" class="exness_input" placeholder="e.g. 100 USDT (auto-synced from CoinDCX)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.8);" />
+              <input type="number" autocomplete="off" id="coindcx_inp_real_balance" class="exness_input" placeholder="e.g. 100 USDT (auto-synced from CoinDCX)" style="width:100%; font-family:'JetBrains Mono', monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.8);" />
               <span style="font-size:10.5px; color:#94a3b8; display:block; margin-top:4px;">Auto-synced from CoinDCX API. AraaBot operates in pure USD/USDT Futures.</span>
             </div>
 
@@ -5746,6 +5752,6 @@
   border-top-color: rgba(130, 180, 0, 0.25) !important;
 }
 </style>
-<script src="app.js?v=20261111_v5_enterprise_core"></script>
+<script src="app.js?v=20261112_coindcx_ip_fix"></script>
 </body>
 </html>

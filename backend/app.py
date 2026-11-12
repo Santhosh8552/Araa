@@ -2586,16 +2586,17 @@ _COINDCX_LIVE_STATE_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 
 def _detect_server_outbound_ip() -> str:
     """Returns the backend server's current outbound public IPv4 address."""
-    try:
-        import requests
-        ip = requests.get("https://api.ipify.org", timeout=3).text.strip()
-        if ip:
-            return ip
-    except Exception:
-        pass
+    for ip_url in ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://ifconfig.me/ip"):
+        try:
+            import requests
+            ip = requests.get(ip_url, timeout=2.5).text.strip()
+            if ip:
+                return ip
+        except Exception:
+            pass
     try:
         import urllib.request
-        with urllib.request.urlopen("https://ifconfig.me/ip", timeout=3) as r:
+        with urllib.request.urlopen("https://api.ipify.org", timeout=2.5) as r:
             ip = r.read().decode("utf-8").strip()
             if ip:
                 return ip
@@ -3019,10 +3020,11 @@ def coindcx_connect():
     data = request.get_json(silent=True) or {}
     api_key = str(data.get("api_key") or "").strip()
     api_secret = str(data.get("api_secret") or "").strip()
+    bound_ip = str(data.get("bound_ip") or "").strip()
     custom_profile = str(data.get("profile_name") or data.get("account_name") or "").strip()
     offline_mode = bool(data.get("offline_mode") or data.get("mode") == "OFFLINE")
 
-    print(f"[COINDCX_CONNECT] Attempt from user {u['id']}: mode={'OFFLINE' if offline_mode else 'ONLINE'}, profile='{custom_profile}', key_len={len(api_key)}, secret_len={len(api_secret)}, key_prefix={api_key[:8]}...")
+    print(f"[COINDCX_CONNECT] Attempt from user {u['id']}: mode={'OFFLINE' if offline_mode else 'ONLINE'}, profile='{custom_profile}', bound_ip='{bound_ip}', key_len={len(api_key)}, secret_len={len(api_secret)}, key_prefix={api_key[:8]}...")
 
     if not api_key or not api_secret:
         return fail("Please provide both CoinDCX API Key and API Secret.", 400)
@@ -3078,13 +3080,21 @@ def coindcx_connect():
     is_valid, msg, summary = verify_coindcx_credentials(api_key, api_secret)
     if not is_valid:
         server_ip = _detect_server_outbound_ip()
-        print(f"[COINDCX_CONNECT] Direct REST verification failed for user {u['id']}: {msg} (outbound_ip={server_ip})")
-        ip_hint = (
-            f" Server Outbound IP: {server_ip} — whitelist this IP on CoinDCX (or create a key without IP restriction), "
-            "or click 'CONNECT OFFLINE MODE' below."
-            if server_ip
-            else " Whitelist this server's IP on CoinDCX (or remove IP restriction), or click 'CONNECT OFFLINE MODE' below."
-        )
+        print(f"[COINDCX_CONNECT] Direct REST verification failed for user {u['id']}: {msg} (bound_ip={bound_ip}, outbound_ip={server_ip})")
+        if bound_ip and server_ip and bound_ip != server_ip:
+            ip_hint = (
+                f" ⚠️ IP Mismatch: you entered '{bound_ip}' (likely your personal/ISP IP), "
+                f"whereas AraaBot connects from Server Outbound IP '{server_ip}'. "
+                f"On CoinDCX API Dashboard, whitelist '{server_ip}' (or disable IP restriction), "
+                "ensure the Secret was NOT auto-filled by your browser, or click 'CONNECT OFFLINE MODE' below."
+            )
+        elif server_ip:
+            ip_hint = (
+                f" Server Outbound IP: {server_ip} — whitelist this IP on CoinDCX (or create a key without IP restriction), "
+                "click '👁 Show Secret' to verify your browser did not autofill your login password, or click 'CONNECT OFFLINE MODE' below."
+            )
+        else:
+            ip_hint = " Whitelist this server's IP on CoinDCX (or remove IP restriction), or click 'CONNECT OFFLINE MODE' below."
         return fail(f"{msg}{ip_hint}", 400)
 
     manual_real_bal = float(data.get("real_balance") or data.get("balance") or 0.0)

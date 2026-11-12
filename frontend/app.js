@@ -3905,6 +3905,13 @@ async function refreshExnessTerminal() {
 
   } catch (err) {
     console.error("Error refreshing CoinDCX terminal:", err);
+    const statusBadge = $("exness_status_badge");
+    if (statusBadge && (statusBadge.textContent === "CHECKING..." || statusBadge.textContent === "READY FOR SETUP")) {
+      statusBadge.textContent = "⚪ COINDCX DISCONNECTED";
+      statusBadge.style.background = "rgba(100,116,139,0.2)";
+      statusBadge.style.color = "#94a3b8";
+      statusBadge.style.borderColor = "#475569";
+    }
   }
 }
 
@@ -4158,18 +4165,16 @@ function showRealBotDevModal(isFullScreen = false) {
         termPanel.style.display = "none";
       }
     }
+    const statusBadge = $("exness_status_badge");
     if (statusBadge && statusBadge.textContent === "CHECKING...") {
       statusBadge.textContent = "READY FOR SETUP";
       statusBadge.style.background = "rgba(56,189,248,0.15)";
       statusBadge.style.color = "#38bdf8";
       statusBadge.style.borderColor = "#38bdf8";
     }
-    // Load Multi-Broker Connection Center state
-    if (typeof window.loadMultiBrokerDashboard === "function") {
-      window.loadMultiBrokerDashboard();
-    }
-    refreshExnessTerminal();
-    loadCoinDcxPublicIp();
+    // Load Multi-Broker Connection Center & CoinDCX Terminal state
+    try { refreshExnessTerminal(); } catch (e) {}
+    try { loadCoinDcxPublicIp(); } catch (e) {}
     if (_exnessPollTimer) clearInterval(_exnessPollTimer);
     _exnessPollTimer = setInterval(refreshExnessTerminal, 1000);
   }
@@ -4178,14 +4183,18 @@ window.showRealBotDevModal = showRealBotDevModal;
 
 window.openCoinDCXApiSetup = function() {
   showRealBotDevModal(false);
-  const loginPanel = $("exness_login_panel");
-  const termPanel = $("exness_terminal_panel");
-  if (loginPanel) {
-    loginPanel.dataset.manualOpen = "1";
-    loginPanel.style.display = "block";
+  if (typeof window.switchBrokerCenterTab === "function") {
+    window.switchBrokerCenterTab("COINDCX");
+  } else {
+    const loginPanel = $("exness_login_panel");
+    const termPanel = $("exness_terminal_panel");
+    if (loginPanel) {
+      loginPanel.dataset.manualOpen = "1";
+      loginPanel.style.display = "block";
+    }
+    if (termPanel) termPanel.style.display = "none";
+    loadCoinDcxPublicIp();
   }
-  if (termPanel) termPanel.style.display = "none";
-  loadCoinDcxPublicIp();
   if ($("coindcx_inp_api_key")) $("coindcx_inp_api_key").focus();
 };
 
@@ -4313,37 +4322,108 @@ window.selectMtPlatform = function(platform) {
   }
 };
 
-// Auto-detect public IP for CoinDCX IP Binding
+// Auto-detect Server Outbound IP for CoinDCX IP Binding
 let _cachedCoinDcxIp = "";
+function updateCoinDcxIpMismatchNote() {
+  const note = $("coindcx_ip_mismatch_note");
+  const inp = $("coindcx_inp_bound_ip");
+  if (!note || !inp) return;
+  const entered = (inp.value || "").trim();
+  if (_cachedCoinDcxIp && entered && entered !== _cachedCoinDcxIp) {
+    note.style.display = "block";
+    note.style.color = "#f59e0b";
+    note.textContent = `⚠️ '${entered}' does not match AraaBot's Server Outbound IP (${_cachedCoinDcxIp}). CoinDCX requests come from ${_cachedCoinDcxIp} — whitelist ${_cachedCoinDcxIp} on CoinDCX (not your personal ISP IP).`;
+  } else if (_cachedCoinDcxIp && entered === _cachedCoinDcxIp) {
+    note.style.display = "block";
+    note.style.color = "#10b981";
+    note.textContent = `✓ Matches AraaBot's current Server Outbound IP (${_cachedCoinDcxIp}).`;
+  } else {
+    note.style.display = "none";
+    note.textContent = "";
+  }
+}
 if ($("coindcx_inp_bound_ip") && !$("coindcx_inp_bound_ip").dataset.boundListener) {
   $("coindcx_inp_bound_ip").dataset.boundListener = "1";
   $("coindcx_inp_bound_ip").addEventListener("input", () => {
     $("coindcx_inp_bound_ip").dataset.userEdited = "1";
+    updateCoinDcxIpMismatchNote();
   });
 }
-async function loadCoinDcxPublicIp() {
+async function loadCoinDcxPublicIp(forceResetInput = false) {
+  const ipValEl = $("coindcx_detected_ip_val");
+  const inp = $("coindcx_inp_bound_ip");
+  if (ipValEl && !_cachedCoinDcxIp) {
+    ipValEl.textContent = "Detecting IP...";
+    ipValEl.style.color = "#38bdf8";
+  }
   try {
-    const res = await call("/api/real-bot/coindcx/my-ip").catch(() => null);
+    const base = (typeof API === "string" ? API : "");
+    let res = null;
+    try {
+      const r = await fetch(base + "/api/real-bot/coindcx/my-ip", { cache: "no-store" });
+      if (r.ok) res = await r.json().catch(() => null);
+    } catch (e) {}
+    if (!res || !res.ip) {
+      res = await call("/api/real-bot/coindcx/my-ip").catch(() => null);
+    }
     if (res && res.ip) {
       _cachedCoinDcxIp = res.ip;
-      if ($("coindcx_detected_ip_val")) $("coindcx_detected_ip_val").textContent = res.ip;
-      const inp = $("coindcx_inp_bound_ip");
-      if (inp && inp.dataset.userEdited !== "1") {
-        inp.value = res.ip;
+      if (ipValEl) {
+        ipValEl.textContent = res.ip;
+        ipValEl.style.color = "#38bdf8";
       }
+      if (inp && (forceResetInput || inp.dataset.userEdited !== "1" || !inp.value.trim())) {
+        inp.value = res.ip;
+        if (forceResetInput) delete inp.dataset.userEdited;
+      }
+      updateCoinDcxIpMismatchNote();
+      return res.ip;
     }
-  } catch (e) {}
+    if (ipValEl && !_cachedCoinDcxIp) {
+      ipValEl.textContent = "Unavailable — click Refresh";
+      ipValEl.style.color = "#f59e0b";
+    }
+  } catch (e) {
+    if (ipValEl && !_cachedCoinDcxIp) {
+      ipValEl.textContent = "Unavailable — click Refresh";
+      ipValEl.style.color = "#f59e0b";
+    }
+  }
+  return _cachedCoinDcxIp;
+}
+
+if ($("btn_refresh_detected_ip")) {
+  $("btn_refresh_detected_ip").onclick = async () => {
+    const ipValEl = $("coindcx_detected_ip_val");
+    if (ipValEl) ipValEl.textContent = "Refreshing...";
+    const ip = await loadCoinDcxPublicIp(true);
+    if (ip) toast(`🌐 Server Outbound IP synced: ${ip}`, "blue");
+    else toast("⚠️ Could not reach IP detection service. Try again.", "red");
+  };
 }
 
 if ($("btn_copy_detected_ip")) {
   $("btn_copy_detected_ip").onclick = () => {
-    const ip = _cachedCoinDcxIp || ($("coindcx_detected_ip_val") ? $("coindcx_detected_ip_val").textContent : "");
-    if (ip && ip !== "Detecting IP...") {
-      navigator.clipboard.writeText(ip).then(() => {
-        toast(`📋 Copied Public IP (${ip}) to clipboard!`, "green");
-      }).catch(() => {
-        toast(`Copy IP manually: ${ip}`, "blue");
-      });
+    const rawText = $("coindcx_detected_ip_val") ? $("coindcx_detected_ip_val").textContent.trim() : "";
+    const ip = _cachedCoinDcxIp || (rawText && !rawText.includes("Detecting") && !rawText.includes("Unavailable") && !rawText.includes("Refreshing") ? rawText : "");
+    if (ip) {
+      if ($("coindcx_inp_bound_ip")) {
+        $("coindcx_inp_bound_ip").value = ip;
+        delete $("coindcx_inp_bound_ip").dataset.userEdited;
+        updateCoinDcxIpMismatchNote();
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ip).then(() => {
+          toast(`📋 Copied Server IP (${ip}) to clipboard!`, "green");
+        }).catch(() => {
+          toast(`Copy Server IP manually: ${ip}`, "blue");
+        });
+      } else {
+        toast(`Copy Server IP manually: ${ip}`, "blue");
+      }
+    } else {
+      loadCoinDcxPublicIp(true);
+      toast("⏳ Detecting server IP, please try Copy again in a second.", "blue");
     }
   };
 }
@@ -4936,6 +5016,7 @@ window.switchBrokerCenterTab = function(tabName) {
     if (termPanel) termPanel.style.display = "none";
     if (tabBtnMb) { tabBtnMb.style.background = "transparent"; tabBtnMb.style.color = "#94a3b8"; }
     if (tabBtnCdx) { tabBtnCdx.style.background = "#0284c7"; tabBtnCdx.style.color = "#fff"; }
+    if (typeof loadCoinDcxPublicIp === "function") loadCoinDcxPublicIp();
   } else if (tabName === "TERMINAL") {
     if (mbPanel) mbPanel.style.display = "none";
     if (loginPanel) loginPanel.style.display = "none";
