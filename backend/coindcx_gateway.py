@@ -1325,6 +1325,15 @@ class CoinDCXFuturesAdapter:
                 continue
         return None
 
+    def exit_position_by_id(self, position_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Closes a CoinDCX futures position directly by its exchange UUID."""
+        if self.is_offline:
+            return True, {"status": "closed_offline"}
+        ok, res = self._call("/exchange/v1/derivatives/futures/positions/exit", body={"id": str(position_id)}, attempts=3)
+        if ok:
+            log_audit_event(self.user_id, "FUTURES_POSITION_EXITED", f"CoinDCX futures position {position_id} exited", severity="INFO", details=res if isinstance(res, dict) else {"raw": res})
+        return ok, res if isinstance(res, dict) else {"raw": res}
+
     def exit_position(self, symbol: str) -> Tuple[bool, Dict[str, Any]]:
         """Closes the whole futures position on this contract using CoinDCX's own exit endpoint."""
         if self.is_offline:
@@ -1336,6 +1345,24 @@ class CoinDCXFuturesAdapter:
         if ok:
             log_audit_event(self.user_id, "FUTURES_POSITION_EXITED", f"CoinDCX futures position closed on {pos.get('pair')}", severity="INFO", details=res if isinstance(res, dict) else {"raw": res})
         return ok, res if isinstance(res, dict) else {"raw": res}
+
+    def exit_all_positions(self) -> int:
+        """Exits every active CoinDCX futures position directly on the exchange."""
+        if self.is_offline:
+            return 0
+        ok, pos_list = self.get_positions()
+        if not ok or not isinstance(pos_list, list):
+            return 0
+        exited = 0
+        for r in pos_list:
+            try:
+                if abs(float(r.get("active_pos") or 0)) > 0 and r.get("id"):
+                    ex_ok, _ = self.exit_position_by_id(str(r.get("id")))
+                    if ex_ok:
+                        exited += 1
+            except Exception:
+                continue
+        return exited
 
     def place_futures_order(self, symbol: str, side: str, quantity: float,
                             leverage: float = 10.0, order_type: str = "market_order",

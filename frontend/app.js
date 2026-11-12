@@ -3771,7 +3771,7 @@ async function refreshExnessTerminal() {
               <div style="font-weight:800; color:${pnlColor}; font-size:12px;">${pPnl>=0?'+':''}$${pPnl.toFixed(2)} <span style="font-size:10px;">(${pRoi>=0?'+':''}${pRoi.toFixed(1)}%)</span></div>
               <div style="font-size:9.5px; color:${pnlColor}; font-weight:700;">Float: ${pPnl>=0?'+':''}$${pPnl.toFixed(2)}</div>
             </td>
-            <td style="text-align:right;"><button class="btn_close_pos" data-ticket="${p.id}" style="background:rgba(239,68,68,0.18); border:1px solid #ef4444; color:#f87171; padding:4px 10px; border-radius:4px; font-size:11px; font-weight:800; cursor:pointer;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff'" onmouseout="this.style.background='rgba(239,68,68,0.18)'; this.style.color='#f87171'">Close</button></td>
+            <td style="text-align:right;"><button class="btn_close_pos" data-ticket="${p.id || p.order_id || ''}" data-symbol="${p.symbol || ''}" style="background:rgba(239,68,68,0.18); border:1px solid #ef4444; color:#f87171; padding:4px 10px; border-radius:4px; font-size:11px; font-weight:800; cursor:pointer;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff'" onmouseout="this.style.background='rgba(239,68,68,0.18)'; this.style.color='#f87171'">Close</button></td>
           </tr>`;
         }).join("");
 
@@ -3781,9 +3781,10 @@ async function refreshExnessTerminal() {
             btn.dataset.closing = "1";
             btn.disabled = true;
             btn.textContent = "Closing…";
-            const ticket = Number(btn.dataset.ticket);
+            const ticket = String(btn.dataset.ticket || "").trim();
+            const sym = String(btn.dataset.symbol || "").trim();
             try {
-              const res = await call("/api/trade/close", {method: "POST", body: {position_id: ticket}});
+              const res = await call("/api/trade/close", {method: "POST", body: {position_id: ticket, symbol: sym}});
               const pnlNum = Number(res?.realized_pnl || 0);
               toast(`Closed position #${ticket} on CoinDCX · P&L: ${pnlNum >= 0 ? '+' : ''}$${pnlNum.toFixed(2)}`, pnlNum >= 0 ? "green" : "red");
               await refreshExnessTerminal();

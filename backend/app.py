@@ -3605,14 +3605,18 @@ def coindcx_control():
     elif action == "PAUSE":
         write("UPDATE users SET bot_enabled=0 WHERE id=?", (u["id"],))
         flush_pnl, closed_count = bot.close_all_for(u["id"], reason="COINDCX_BOT_PAUSED", include_manual=True)
+        exited_exch = cdx.futures.exit_all_positions() if cdx else 0
         cancelled = cdx.cancel_all_orders() if cdx else 0
-        bot._log(u["id"], "COINDCX_BOT_PAUSED", f"⏸ Araa AI Auto-Trader PAUSED on CoinDCX. Closed {closed_count} positions on the spot (P&L: ${flush_pnl:+.2f}, {cancelled} orders cancelled).")
-        return ok(success=True, bot_status="PAUSED", closed_positions=closed_count, flush_pnl=flush_pnl, message=f"⏸ Bot Paused & All {closed_count} trades closed on the spot!")
+        total_closed = max(closed_count, exited_exch)
+        bot._log(u["id"], "COINDCX_BOT_PAUSED", f"⏸ Araa AI Auto-Trader PAUSED on CoinDCX. Closed {total_closed} positions on the spot (P&L: ${flush_pnl:+.2f}, {cancelled} orders cancelled).")
+        return ok(success=True, bot_status="PAUSED", closed_positions=total_closed, flush_pnl=flush_pnl, message=f"⏸ Bot Paused & All {total_closed} trades closed on the spot!")
 
     elif action == "CLOSE_ALL":
         cancelled = cdx.cancel_all_orders() if cdx else 0
         flush_pnl, closed_count = bot.close_all_for(u["id"], reason="COINDCX_EMERGENCY_FLUSH", include_manual=True)
-        bot._log(u["id"], "COINDCX_FLUSH", f"🚨 Close All Positions: {closed_count} open positions closed (P&L: ${flush_pnl:+.2f}), {cancelled} resting orders cancelled.")
+        exited_exch = cdx.futures.exit_all_positions() if cdx else 0
+        total_closed = max(closed_count, exited_exch)
+        bot._log(u["id"], "COINDCX_FLUSH", f"🚨 Close All Positions: {total_closed} open positions closed (P&L: ${flush_pnl:+.2f}), {cancelled} resting orders cancelled.")
         return ok(success=True, closed_positions=closed_count, flush_pnl=flush_pnl, message=f"✓ Closed {closed_count} open positions (Net P&L: ${flush_pnl:+.2f}) and cancelled {cancelled} orders.")
 
     return fail("Unknown action", 400)
@@ -5161,11 +5165,30 @@ def manual_close():
     if not u:
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
-    pid = int(data.get("position_id") or data.get("ticket") or data.get("id") or 0)
-    p = query_one("SELECT * FROM positions WHERE id=? AND user_id=? AND status='OPEN'", (pid, u["id"]))
+    raw_pid = str(data.get("position_id") or data.get("ticket") or data.get("id") or "").strip()
+    sym_hint = str(data.get("symbol") or "").strip().upper()
+    pid = int(raw_pid) if raw_pid.isdigit() else 0
+    p = query_one("SELECT * FROM positions WHERE id=? AND user_id=? AND status='OPEN'", (pid, u["id"])) if pid > 0 else None
+    if not p and (raw_pid or sym_hint):
+        # Handle live CoinDCX exchange UUID positions (not yet in local SQLite)
+        try:
+            from coindcx_gateway import get_user_coindcx_client
+            cdx = get_user_coindcx_client(u["id"])
+            if cdx and not cdx.is_offline:
+                ex_ok, ex_res = (cdx.futures.exit_position_by_id(raw_pid) if raw_pid and not raw_pid.isdigit()
+                                 else (False, {}))
+                if not ex_ok and sym_hint:
+                    ex_ok, ex_res = cdx.futures.exit_position(sym_hint)
+                if ex_ok:
+                    bot._log(u["id"], "MANUAL_CLOSE", f"Closed live CoinDCX position {sym_hint or raw_pid} directly on exchange.")
+                    return ok(realized_pnl=0.0, portfolio=portfolio(u["id"]), wallet=wallet_of(u["id"]),
+                              message=f"Closed CoinDCX position {sym_hint or raw_pid} successfully")
+                return fail((ex_res or {}).get("message") or f"Could not close CoinDCX position {sym_hint or raw_pid}", 400)
+        except Exception as cdx_err:
+            return fail(f"Exchange close error: {cdx_err}", 500)
     if not p:
         # Check if the position was already closed moments ago (e.g. duplicate click or automated stop/target)
-        already = query_one("SELECT * FROM positions WHERE id=? AND user_id=? AND status='CLOSED'", (pid, u["id"]))
+        already = query_one("SELECT * FROM positions WHERE id=? AND user_id=? AND status='CLOSED'", (pid, u["id"])) if pid > 0 else None
         if already:
             return ok(realized_pnl=already.get("realized_pnl", 0),
                       portfolio=portfolio(u["id"]),

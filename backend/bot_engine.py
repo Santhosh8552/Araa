@@ -989,30 +989,33 @@ class Bot:
                 pnl = -p["margin"]
 
             pos_margin = float(p.get("margin") or 1.0)
+            pos_lev = float(p.get("leverage") or 100.0)
+            est_fee = round(pos_margin * pos_lev * 0.0011, 4) if p.get("is_live") else 0.0
             roi_pct = (pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
             # Dynamic min take profit: 5% of isolated margin, minimum $0.005 for micro-wallets
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
 
             # =========================================================================
-            # RULE 0: BIG-PROFIT TRAILING ENGINE (LET WINNERS RUN, LOCK PEAKS!)
-            # Never cap winners at $0.03! Once green, trail the peak upward so trades
-            # capture $0.15, $0.50, $1.00, $3.00+ while guaranteeing profit lock!
+            # RULE 0: BIG-PROFIT TRAILING ENGINE (FEE-AWARE + PEAK LOCK!)
+            # Only locks profit once gross P&L exceeds estimated CoinDCX round-trip fee,
+            # guaranteeing every closed green trade increases your real wallet balance!
             # =========================================================================
-            if roi_pct >= 40.0 and pnl > 0:
+            if roi_pct >= 40.0 and pnl > (est_fee + 0.02):
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             trail_floor = None
-            if peak_cash >= 1.00:
-                trail_floor = round(peak_cash * 0.85, 3)
-            elif peak_cash >= 0.30:
-                trail_floor = round(peak_cash * 0.78, 3)
-            elif peak_cash >= 0.10:
-                trail_floor = round(peak_cash * 0.70, 3)
-            elif peak_cash >= 0.04:
-                trail_floor = 0.02
+            min_net_peak = est_fee + 0.05
+            if peak_cash >= max(1.00, min_net_peak):
+                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.85, 3))
+            elif peak_cash >= max(0.30, min_net_peak):
+                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.78, 3))
+            elif peak_cash >= max(0.10, min_net_peak):
+                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.70, 3))
+            elif peak_cash >= max(0.04, min_net_peak):
+                trail_floor = max(round(est_fee + 0.01, 3), 0.02)
 
-            if trail_floor is not None and pnl <= trail_floor and time_held >= 2.0:
+            if trail_floor is not None and pnl <= trail_floor and pnl > est_fee and time_held >= 2.0:
                 self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
@@ -1280,28 +1283,31 @@ class Bot:
                 current_pnl = -p["margin"]
 
             pos_margin = float(p.get("margin") or 1.0)
+            pos_lev = float(p.get("leverage") or 100.0)
+            est_fee = round(pos_margin * pos_lev * 0.0011, 4) if p.get("is_live") else 0.0
             roi_pct = (current_pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
             # Dynamic min take profit: 5% of isolated margin, minimum $0.005 for micro-wallets
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
 
             # =========================================================================
-            # RULE 0: BIG-PROFIT TRAILING ENGINE (LET WINNERS RUN, LOCK PEAKS!)
+            # RULE 0: BIG-PROFIT TRAILING ENGINE (FEE-AWARE + PEAK LOCK!)
             # =========================================================================
-            if roi_pct >= 40.0 and current_pnl > 0:
+            if roi_pct >= 40.0 and current_pnl > (est_fee + 0.02):
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             trail_floor = None
-            if peak_cash >= 1.00:
-                trail_floor = round(peak_cash * 0.85, 3)
-            elif peak_cash >= 0.30:
-                trail_floor = round(peak_cash * 0.78, 3)
-            elif peak_cash >= 0.10:
-                trail_floor = round(peak_cash * 0.70, 3)
-            elif peak_cash >= 0.04:
-                trail_floor = 0.02
+            min_net_peak = est_fee + 0.05
+            if peak_cash >= max(1.00, min_net_peak):
+                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.85, 3))
+            elif peak_cash >= max(0.30, min_net_peak):
+                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.78, 3))
+            elif peak_cash >= max(0.10, min_net_peak):
+                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.70, 3))
+            elif peak_cash >= max(0.04, min_net_peak):
+                trail_floor = max(round(est_fee + 0.01, 3), 0.02)
 
-            if trail_floor is not None and current_pnl <= trail_floor and time_held >= 2.0:
+            if trail_floor is not None and current_pnl <= trail_floor and current_pnl > est_fee and time_held >= 2.0:
                 self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
