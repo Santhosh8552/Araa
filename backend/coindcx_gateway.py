@@ -112,7 +112,7 @@ def _request(endpoint: str, method: str = "GET", body: Optional[dict] = None,
             if method == "POST":
                 resp = _SESSION.post(url, data=payload_str, headers=headers, timeout=timeout)
             else:
-                resp = _SESSION.get(url, headers=headers, timeout=timeout)
+                resp = _SESSION.get(url, data=payload_str if payload_str else None, headers=headers, timeout=timeout)
 
             # Handle 429 rate limit with exponential backoff retry
             if resp.status_code == 429 and attempt < retries:
@@ -283,8 +283,118 @@ def fetch_coindcx_user_info(api_key: str, api_secret: str) -> Dict[str, Any]:
     return {}
 
 
+def _empty_balance_summary(usdt_inr_rate: float = 90.0) -> Dict[str, Any]:
+    return {
+        "inr_free": 0.0, "inr_locked": 0.0, "inr_total": 0.0,
+        "usdt_free": 0.0, "usdt_locked": 0.0, "usdt_total": 0.0,
+        "fut_inr_free": 0.0, "fut_inr_locked": 0.0, "fut_inr_total": 0.0,
+        "fut_usdt_free": 0.0, "fut_usdt_locked": 0.0, "fut_usdt_total": 0.0,
+        "total_portfolio_inr": 0.0, "total_portfolio_usd": 0.0,
+        "usdt_inr_rate": round(float(usdt_inr_rate or 90.0), 2),
+        "holdings": [], "futures_wallets": [],
+    }
+
+
+def _get_live_usdt_inr_rate() -> float:
+    tickers = get_live_tickers()
+    if "USDTINR" in tickers and float(tickers["USDTINR"].get("last_price") or 0) > 0:
+        return float(tickers["USDTINR"]["last_price"])
+    return 90.0
+
+
+def parse_futures_wallets(raw_wallets: Any, usdt_inr_rate: Optional[float] = None) -> Dict[str, Any]:
+    """Parses CoinDCX GET /exchange/v1/derivatives/futures/wallets response."""
+    rate = float(usdt_inr_rate or _get_live_usdt_rate())
+    rows = raw_wallets if isinstance(raw_wallets, list) else (
+        raw_wallets.get("wallets") if isinstance(raw_wallets, dict) and isinstance(raw_wallets.get("wallets"), list) else []
+    )
+    fut_usdt_free = fut_usdt_locked = 0.0
+    fut_inr_free = fut_inr_locked = 0.0
+    normalized: List[Dict[str, Any]] = []
+
+    for w in rows:
+        if not isinstance(w, dict):
+            continue
+        cur = str(w.get("currency_short_name") or w.get("currency") or "").upper()
+        free = float(w.get("balance") if w.get("balance") is not None else (w.get("available_balance") or 0.0))
+        locked = (
+            float(w.get("locked_balance") or 0.0)
+            + float(w.get("cross_user_margin") or 0.0)
+            + float(w.get("cross_order_margin") or 0.0)
+        )
+        tot = free + locked
+        if cur == "USDT":
+            fut_usdt_free += free
+            fut_usdt_locked += locked
+        elif cur == "INR":
+            fut_inr_free += free
+            fut_inr_locked += locked
+        normalized.append({
+            "currency": cur,
+            "free": round(free, 6),
+            "locked": round(locked, 6),
+            "total": round(tot, 6),
+        })
+
+    tot_inr = (fut_usdt_free + fut_usdt_locked) * rate + (fut_inr_free + fut_inr_locked)
+    tot_usd = (fut_usdt_free + fut_usdt_locked) + ((fut_inr_free + fut_inr_locked) / rate)
+    free_usd = fut_usdt_free + (fut_inr_free / rate)
+    return {
+        "fut_usdt_free": round(fut_usdt_free, 4),
+        "fut_usdt_locked": round(fut_usdt_locked, 4),
+        "fut_usdt_total": round(fut_usdt_free + fut_usdt_locked, 4),
+        "fut_inr_free": round(fut_inr_free, 2),
+        "fut_inr_locked": round(fut_inr_locked, 2),
+        "fut_inr_total": round(fut_inr_free + fut_inr_locked, 2),
+        "usdt_free": round(free_usd, 2),
+        "usdt_locked": round(fut_usdt_locked + (fut_inr_locked / rate), 2),
+        "usdt_total": round(tot_usd, 2),
+        "total_portfolio_inr": round(tot_inr, 2),
+        "total_portfolio_usd": round(tot_usd, 2),
+        "usdt_inr_rate": round(rate, 2),
+        "futures_wallets": normalized,
+    }
+
+
+def _merge_spot_and_futures_summary(spot_summary: Optional[Dict[str, Any]], fut_summary: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Combines Spot balances and Derivatives Futures wallet balances into one unified portfolio summary."""
+    spot = spot_summary or {}
+    fut = fut_summary or {}
+    rate = float(spot.get("usdt_inr_rate") or fut.get("usdt_inr_rate") or _get_live_usdt_rate())
+
+    inr_free = float(spot.get("inr_free") or 0.0) + float(fut.get("fut_inr_free") or 0.0)
+    inr_locked = float(spot.get("inr_locked") or 0.0) + float(fut.get("fut_inr_locked") or 0.0)
+    spot_usd_free = float(spot.get("usdt_free") or 0.0)
+    fut_usd_free = float(fut.get("usdt_free") or 0.0)
+    spot_usd_locked = float(spot.get("usdt_locked") or 0.0)
+    fut_usd_locked = float(fut.get("usdt_locked") or 0.0)
+
+    total_inr = float(spot.get("total_portfolio_inr") or 0.0) + float(fut.get("total_portfolio_inr") or 0.0)
+    total_usd = float(spot.get("total_portfolio_usd") or 0.0) + float(fut.get("total_portfolio_usd") or 0.0)
+
+    return {
+        "inr_free": round(inr_free, 2),
+        "inr_locked": round(inr_locked, 2),
+        "inr_total": round(inr_free + inr_locked, 2),
+        "usdt_free": round(spot_usd_free + fut_usd_free, 2),
+        "usdt_locked": round(spot_usd_locked + fut_usd_locked, 2),
+        "usdt_total": round(total_usd, 2),
+        "fut_usdt_free": round(float(fut.get("fut_usdt_free") or 0.0), 4),
+        "fut_usdt_locked": round(float(fut.get("fut_usdt_locked") or 0.0), 4),
+        "fut_usdt_total": round(float(fut.get("fut_usdt_total") or 0.0), 4),
+        "fut_inr_free": round(float(fut.get("fut_inr_free") or 0.0), 2),
+        "fut_inr_locked": round(float(fut.get("fut_inr_locked") or 0.0), 2),
+        "fut_inr_total": round(float(fut.get("fut_inr_total") or 0.0), 2),
+        "total_portfolio_inr": round(total_inr, 2),
+        "total_portfolio_usd": round(total_usd, 2),
+        "usdt_inr_rate": round(rate, 2),
+        "holdings": list(spot.get("holdings") or []),
+        "futures_wallets": list(fut.get("futures_wallets") or []),
+    }
+
+
 def verify_coindcx_credentials(api_key: str, api_secret: str) -> Tuple[bool, str, Dict[str, Any]]:
-    """Tests CoinDCX API key & secret by attempting to read wallet balances or account info."""
+    """Tests CoinDCX API key & secret by reading Spot balances, User Info, and Futures wallets/positions."""
     clean_key = api_key.strip()
     clean_secret = api_secret.strip()
 
@@ -299,60 +409,71 @@ def verify_coindcx_credentials(api_key: str, api_secret: str) -> Tuple[bool, str
 
     logger.info(f"Verifying CoinDCX credentials: key_len={len(clean_key)}, sec_len={len(clean_secret)}")
 
-    # Primary test: /exchange/v1/users/balances
-    ok, res = _request(
+    rate = _get_live_usdt_inr_rate()
+    err_msgs: List[str] = []
+
+    # 1. Spot Wallet Balances
+    ok_spot, res_spot = _request(
         "/exchange/v1/users/balances",
         method="POST",
         body={},
         api_key=clean_key,
         api_secret=clean_secret
     )
-    if ok and isinstance(res, list):
-        summary = parse_balances(res)
-    else:
-        # Secondary check: /exchange/v1/users/info
-        ok_info, res_info = _request(
-            "/exchange/v1/users/info",
-            method="POST",
-            body={},
-            api_key=clean_key,
-            api_secret=clean_secret
-        )
-        if ok_info and isinstance(res_info, dict):
-            summary = {
-                "inr_free": 0.0, "inr_locked": 0.0, "inr_total": 0.0,
-                "usdt_free": 0.0, "usdt_locked": 0.0, "usdt_total": 0.0,
-                "total_portfolio_inr": 0.0, "total_portfolio_usd": 0.0,
-                "holdings": []
-            }
-        else:
-            msg = (res.get("message") if isinstance(res, dict) else None) or \
-                  (res_info.get("message") if isinstance(res_info, dict) else None) or \
-                  "Invalid credentials"
-            return False, f"CoinDCX verification failed: {msg}. Please check that the Secret matches the one-time popup and that your public IP address was correctly whitelisted on CoinDCX.", {}
+    spot_summary = parse_balances(res_spot) if (ok_spot and isinstance(res_spot, list)) else None
+    if not ok_spot and isinstance(res_spot, dict) and res_spot.get("message"):
+        err_msgs.append(str(res_spot["message"]))
 
-    # Fetch and attach User Profile Information
+    # 2. Dedicated Futures Wallets (USDT & INR)
+    ok_fut_wal, res_fut_wal = _request(
+        "/exchange/v1/derivatives/futures/wallets",
+        method="GET",
+        body={},
+        api_key=clean_key,
+        api_secret=clean_secret
+    )
+    fut_summary = parse_futures_wallets(res_fut_wal, usdt_inr_rate=rate) if ok_fut_wal else None
+    if not ok_fut_wal and isinstance(res_fut_wal, dict) and res_fut_wal.get("message"):
+        err_msgs.append(str(res_fut_wal["message"]))
+
+    # 3. Account Profile Info
     u_info = fetch_coindcx_user_info(clean_key, clean_secret)
+
+    # 4. Futures Positions Eligibility
+    ok_fut_pos, res_fut_pos = _request(
+        "/exchange/v1/derivatives/futures/positions",
+        method="POST",
+        body={"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]},
+        api_key=clean_key,
+        api_secret=clean_secret
+    )
+    if not ok_fut_pos and isinstance(res_fut_pos, dict) and res_fut_pos.get("message"):
+        err_msgs.append(str(res_fut_pos["message"]))
+
+    if not (spot_summary or fut_summary or u_info or ok_fut_pos):
+        best_msg = next((m for m in err_msgs if m), "Invalid credentials")
+        return False, (
+            f"CoinDCX rejected the API request ({best_msg}). "
+            "Check that your API Secret matches the one-time popup and that the server's outbound IP is whitelisted (or IP restriction is disabled) on CoinDCX."
+        ), {}
+
+    summary = _merge_spot_and_futures_summary(spot_summary, fut_summary)
+    summary["verified_online"] = True
     if u_info:
         summary["user_info"] = u_info
         summary["profile_name"] = u_info.get("full_name") or u_info.get("email")
         summary["account_email"] = u_info.get("email")
 
-    # Check Futures Eligibility
-    ok_fut, res_fut = _request(
-        "/exchange/v1/derivatives/futures/positions",
-        method="POST",
-        body={},
-        api_key=clean_key,
-        api_secret=clean_secret
+    summary["spot_status"] = "ACTIVE" if spot_summary is not None else "RESTRICTED"
+    summary["futures_status"] = "ACTIVE" if (ok_fut_pos or fut_summary is not None) else "RESTRICTED"
+    summary["futures_eligible"] = bool(ok_fut_pos or fut_summary is not None)
+    summary["futures_message"] = (
+        "CoinDCX Authenticated Futures (100x/30x USDT Derivatives) Active."
+        if summary["futures_eligible"]
+        else "Spot/Read permission active. Enable Futures permission on CoinDCX to view Futures positions."
     )
-    # Futures adapter is active for all accounts (Demo and Authenticated)
-    summary["spot_status"] = "ACTIVE"
-    summary["futures_status"] = "ACTIVE"
-    summary["futures_eligible"] = True
-    summary["futures_message"] = "CoinDCX Authenticated Futures (100x/30x USDT Derivatives) Active."
 
-    return True, "CoinDCX API Connected Successfully (Spot & Futures Active)!", summary
+    return True, "CoinDCX API Connected Successfully (Live Account Sync Active)!", summary
 
 
 def parse_balances(raw_balances: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -903,19 +1024,36 @@ class CoinDCXFuturesAdapter:
         return out
 
     def get_positions(self) -> Tuple[bool, List[Dict[str, Any]]]:
-        """Fetches active futures positions from CoinDCX."""
+        """Fetches active futures positions from CoinDCX across USDT and INR margin wallets."""
         if self.is_offline:
             pos = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' AND is_live=1 AND leverage > 1", (self.user_id,))
             return True, pos
 
-        ok, res = self._call("/exchange/v1/derivatives/futures/positions",
-                             body={"page": "1", "size": "50", "margin_currency_short_name": ["USDT"]}, attempts=3)
-        if ok and isinstance(res, list):
-            return True, res
+        combined: List[Dict[str, Any]] = []
+        seen_ids = set()
+        any_ok = False
+        for margin_cur in ("USDT", "INR"):
+            ok, res = self._call(
+                "/exchange/v1/derivatives/futures/positions",
+                body={"page": "1", "size": "50", "margin_currency_short_name": [margin_cur]},
+                attempts=2,
+            )
+            if ok and isinstance(res, list):
+                any_ok = True
+                for item in res:
+                    if not isinstance(item, dict):
+                        continue
+                    pid = item.get("id") or f"{item.get('pair')}:{margin_cur}"
+                    if pid in seen_ids:
+                        continue
+                    seen_ids.add(pid)
+                    combined.append(item)
+        if any_ok:
+            return True, combined
         return False, []
 
-    def get_futures_balances(self) -> Tuple[bool, Dict[str, Any]]:
-        """Retrieves dedicated futures wallet balance and margin."""
+    def get_futures_balances(self) -> Tuple[bool, Any]:
+        """Retrieves dedicated futures wallet balance and margin from CoinDCX."""
         if self.is_offline:
             conn = query_one("SELECT live_balance, free_margin FROM broker_connections WHERE user_id=?", (self.user_id,))
             bal = float(conn.get("live_balance") or 10000.0) if conn else 10000.0
@@ -927,13 +1065,13 @@ class CoinDCXFuturesAdapter:
             }
 
         ok, res = _request(
-            "/exchange/v1/derivatives/futures/balances",
-            method="POST",
+            "/exchange/v1/derivatives/futures/wallets",
+            method="GET",
             body={},
             api_key=self.api_key,
             api_secret=self.api_secret
         )
-        if ok and (isinstance(res, dict) or isinstance(res, list)):
+        if ok and (isinstance(res, list) or isinstance(res, dict)):
             return True, res
         return False, {}
 
@@ -944,21 +1082,11 @@ class CoinDCXFuturesAdapter:
         try:
             ok, res = self.get_futures_balances()
             if ok:
-                usdt_avail = 0.0
-                inr_avail = 0.0
-                if isinstance(res, list):
-                    for item in res:
-                        if isinstance(item, dict):
-                            cur = str(item.get("currency_short_name") or item.get("currency") or "").upper()
-                            val = float(item.get("available_balance") or item.get("balance") or 0.0)
-                            if cur == "USDT":
-                                usdt_avail += val
-                            elif cur == "INR":
-                                inr_avail += val
-                    tot = round(usdt_avail + (inr_avail / 90.0), 4)
-                    if tot > 0:
-                        return tot
-                elif isinstance(res, dict):
+                parsed = parse_futures_wallets(res)
+                avail = float(parsed.get("usdt_free") or 0.0)
+                if avail > 0:
+                    return avail
+                if isinstance(res, dict):
                     for k in ("available_balance", "free_margin", "usdt_free", "balance"):
                         if res.get(k) is not None:
                             try:
@@ -1460,10 +1588,30 @@ class CoinDCXClient:
         self.spot = CoinDCXSpotAdapter(api_key, api_secret, user_id, is_offline)
         self.futures = CoinDCXFuturesAdapter(api_key, api_secret, user_id, is_offline)
         self.adapter = AraaCoinDCXRuleAdapter(self)
+        self._combined_bal_cache: Optional[Dict[str, Any]] = None
+        self._combined_bal_time: float = 0.0
 
     # Delegated methods for backward compatibility
-    def get_balances(self) -> Tuple[bool, Dict[str, Any]]:
-        return self.spot.get_balances()
+    def get_balances(self, force: bool = False) -> Tuple[bool, Dict[str, Any]]:
+        if self.is_offline:
+            return self.spot.get_balances(force=force)
+
+        now = time.time()
+        if not force and self._combined_bal_cache is not None and (now - self._combined_bal_time) < 2.5:
+            return True, self._combined_bal_cache
+
+        ok_spot, spot_res = self.spot.get_balances(force=force)
+        ok_fut, fut_res = self.futures.get_futures_balances()
+        if not ok_spot and not ok_fut:
+            err = spot_res if isinstance(spot_res, dict) else {"message": "Failed to fetch CoinDCX balances"}
+            return False, err
+
+        rate = (spot_res.get("usdt_inr_rate") if (ok_spot and isinstance(spot_res, dict)) else None) or _get_live_usdt_inr_rate()
+        fut_parsed = parse_futures_wallets(fut_res, usdt_inr_rate=rate) if ok_fut else None
+        merged = _merge_spot_and_futures_summary(spot_res if ok_spot else None, fut_parsed)
+        self._combined_bal_cache = merged
+        self._combined_bal_time = now
+        return True, merged
 
     def get_active_orders(self) -> Tuple[bool, List[Dict[str, Any]]]:
         return self.spot.get_active_orders()
@@ -1981,21 +2129,28 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
     default_bal = float(wallet["deposit_balance"] if (wallet and wallet.get("deposit_balance")) else (wallet["starting_balance"] if (wallet and wallet.get("starting_balance")) else 100.0))
     if default_bal > 15000.0:
         default_bal = round(default_bal / 90.0, 2)
+    is_verified_live = (not is_offline) and bool(summary.get("verified_online"))
     rate = float(summary.get("usdt_inr_rate") or 90.0)
     inr_total = float(summary.get("total_portfolio_inr") if summary.get("total_portfolio_inr") is not None else (summary.get("inr_total") if summary.get("inr_total") is not None else round(default_bal * rate, 2)))
     usd_total = float(summary.get("total_portfolio_usd") if summary.get("total_portfolio_usd") is not None else (inr_total / rate))
     if usd_total > 15000.0 and abs(usd_total - inr_total) < 1.0:
         usd_total = round(usd_total / rate, 2)
-    if usd_total <= 0.0:
+    if usd_total <= 0.0 and not is_verified_live:
         usd_total = round(default_bal if default_bal > 0 else 100.0, 2)
-    usd_total = round(usd_total, 2)
+    usd_total = round(max(0.0, usd_total), 2)
 
-    usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None and summary.get("usdt_free") > 0 else usd_total)
-    if usd_free > 15000.0 and abs(usd_free - float(summary.get("inr_free") or 0.0)) < 1.0:
-        usd_free = round(usd_free / rate, 2)
-    if usd_free <= 0.0 or usd_free < usd_total * 0.1:
-        usd_free = usd_total
-    usd_free = round(usd_free, 2)
+    if is_verified_live:
+        usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None else usd_total)
+        if usd_free > 15000.0 and abs(usd_free - float(summary.get("inr_free") or 0.0)) < 1.0:
+            usd_free = round(usd_free / rate, 2)
+        usd_free = round(max(0.0, usd_free), 2)
+    else:
+        usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None and summary.get("usdt_free") > 0 else usd_total)
+        if usd_free > 15000.0 and abs(usd_free - float(summary.get("inr_free") or 0.0)) < 1.0:
+            usd_free = round(usd_free / rate, 2)
+        if usd_free <= 0.0 or usd_free < usd_total * 0.1:
+            usd_free = usd_total
+        usd_free = round(usd_free, 2)
 
     status_str = "CONNECTED_OFFLINE" if is_offline else "CONNECTED"
     masked_key = (api_key[:4] + "..." + api_key[-4:]) if len(api_key) > 8 else "***"

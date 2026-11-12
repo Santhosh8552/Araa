@@ -1841,10 +1841,10 @@ def broker_status():
                     real_free_usd = float(balances.get("usdt_free") or (float(balances.get("inr_free") or 0.0) / rate))
                     if real_free_usd > 15000.0:
                         real_free_usd = round(real_free_usd / rate, 2)
-                    if real_tot_usd > 0:
+                    if real_tot_usd >= 0:
                         live_bal = round(real_tot_usd, 2)
                         live_eq = round(real_tot_usd, 2)
-                        free_margin = round(real_free_usd, 2)
+                        free_margin = round(max(0.0, real_free_usd), 2)
                         write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'",
                               (live_bal, live_eq, free_margin, time.time(), u["id"]))
         except Exception:
@@ -2580,20 +2580,156 @@ def bot_train_rules():
 # COINDCX REAL BOT GATEWAY & TERMINAL ENDPOINTS
 # =====================================================================
 
+_COINDCX_LIVE_STATE_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+
+
+def _detect_server_outbound_ip() -> str:
+    """Returns the backend server's current outbound public IPv4 address."""
+    try:
+        import requests
+        ip = requests.get("https://api.ipify.org", timeout=3).text.strip()
+        if ip:
+            return ip
+    except Exception:
+        pass
+    try:
+        import urllib.request
+        with urllib.request.urlopen("https://ifconfig.me/ip", timeout=3) as r:
+            ip = r.read().decode("utf-8").strip()
+            if ip:
+                return ip
+    except Exception:
+        pass
+    return ""
+
+
+def _normalize_cdx_pair_to_symbol(pair: str) -> str:
+    raw = str(pair or "").upper().strip()
+    if raw.startswith("B-") and "_" in raw:
+        return raw[2:].replace("_", "")
+    return raw.replace("-", "").replace("_", "").replace("/", "")
+
+
+def _fetch_live_coindcx_positions_and_trades(cdx, user_id: int) -> Dict[str, Any]:
+    """Fetches & caches (2.5s TTL) real open Futures positions, Spot active orders, and trade history from CoinDCX."""
+    now = time.time()
+    cached = _COINDCX_LIVE_STATE_CACHE.get(user_id)
+    if cached and (now - cached[0]) < 2.5:
+        return cached[1]
+
+    live_positions: List[Dict[str, Any]] = []
+    active_orders: List[Dict[str, Any]] = []
+    live_trades: List[Dict[str, Any]] = []
+
+    try:
+        from coindcx_gateway import get_live_tickers
+        tickers = get_live_tickers()
+    except Exception:
+        tickers = {}
+
+    try:
+        ok_pos, raw_pos = cdx.futures.get_positions()
+        if ok_pos and isinstance(raw_pos, list):
+            for fp in raw_pos:
+                if not isinstance(fp, dict):
+                    continue
+                active_qty = float(fp.get("active_pos") or 0.0)
+                if abs(active_qty) <= 0:
+                    continue
+                pair = str(fp.get("pair") or "")
+                sym = _normalize_cdx_pair_to_symbol(pair)
+                side = "LONG" if active_qty > 0 else "SHORT"
+                qty = abs(active_qty)
+                entry_p = float(fp.get("avg_price") or fp.get("entry_price") or 0.0)
+                mark_p = float(fp.get("mark_price") or 0.0)
+                if mark_p <= 0 and pair in tickers:
+                    mark_p = float(tickers[pair].get("last_price") or 0.0)
+                if mark_p <= 0 and sym in tickers:
+                    mark_p = float(tickers[sym].get("last_price") or 0.0)
+                if mark_p <= 0:
+                    mark_p = entry_p
+                lev = max(1.0, float(fp.get("leverage") or 1.0))
+                margin = float(
+                    fp.get("locked_user_margin")
+                    or fp.get("locked_margin")
+                    or fp.get("isolated_margin")
+                    or ((entry_p * qty) / lev if entry_p > 0 else 0.0)
+                )
+                if fp.get("unrealized_pnl") is not None:
+                    upnl = float(fp["unrealized_pnl"])
+                elif fp.get("pnl") is not None:
+                    upnl = float(fp["pnl"])
+                else:
+                    dir_m = 1.0 if side == "LONG" else -1.0
+                    upnl = (mark_p - entry_p) * qty * dir_m
+                liq_p = float(fp.get("liquidation_price") or 0.0)
+                live_positions.append({
+                    "id": fp.get("id") or f"cdx_{sym}",
+                    "order_id": fp.get("id"),
+                    "symbol": sym,
+                    "pair": pair,
+                    "side": side,
+                    "qty": qty,
+                    "entry_price": entry_p,
+                    "current_price": mark_p,
+                    "mark_price": mark_p,
+                    "liquidation_price": liq_p,
+                    "leverage": lev,
+                    "margin": round(margin, 4),
+                    "unrealized_pnl": round(upnl, 4),
+                    "is_live": 1,
+                    "source": "COINDCX_API",
+                })
+    except Exception:
+        pass
+
+    try:
+        ok_ord, raw_ord = cdx.get_active_orders()
+        if ok_ord and isinstance(raw_ord, list):
+            active_orders = raw_ord[:50]
+    except Exception:
+        pass
+
+    try:
+        ok_hist, raw_hist = cdx.get_trade_history(limit=30)
+        if ok_hist and isinstance(raw_hist, list):
+            for t in raw_hist[:30]:
+                if not isinstance(t, dict):
+                    continue
+                sym = str(t.get("symbol") or t.get("market") or "").upper()
+                side = str(t.get("side") or "BUY").upper()
+                price = float(t.get("price") or 0.0)
+                qty = float(t.get("quantity") or 0.0)
+                fee = float(t.get("fee_amount") or 0.0)
+                live_trades.append({
+                    "id": t.get("id") or t.get("order_id"),
+                    "order_id": t.get("order_id") or t.get("id"),
+                    "symbol": sym,
+                    "side": "LONG" if side == "BUY" else ("SHORT" if side == "SELL" else side),
+                    "qty": qty,
+                    "entry_price": price,
+                    "exit_price": price,
+                    "margin": round(price * qty, 4),
+                    "realized_pnl": round(-fee, 4),
+                    "close_reason": f"COINDCX_SPOT_{side}",
+                    "closed_at": float(t.get("timestamp") or 0.0) / 1000.0 if t.get("timestamp") else time.time(),
+                    "source": "COINDCX_API",
+                })
+    except Exception:
+        pass
+
+    out = {"positions": live_positions, "active_orders": active_orders, "trades": live_trades}
+    _COINDCX_LIVE_STATE_CACHE[user_id] = (now, out)
+    return out
+
+
 @api.route("/api/real-bot/coindcx/my-ip", methods=["GET"])
 def coindcx_my_ip():
     """Returns the exact current public IPv4 address that AraaBot sends to CoinDCX."""
-    try:
-        import requests
-        ip = requests.get("https://api.ipify.org", timeout=4).text.strip()
+    ip = _detect_server_outbound_ip()
+    if ip:
         return ok(ip=ip)
-    except Exception:
-        try:
-            import urllib.request
-            with urllib.request.urlopen("https://ifconfig.me/ip", timeout=4) as r:
-                return ok(ip=r.read().decode("utf-8").strip())
-        except Exception:
-            return ok(ip="157.51.71.170")
+    return ok(ip="")
 
 
 @api.route("/api/real-bot/coindcx/state", methods=["GET"])
@@ -2638,7 +2774,10 @@ def coindcx_state():
     is_live_mode = bool(conn.get("is_live_active"))
     execution_mode = "REAL" if is_live_mode else "DEMO"
     is_offline = (conn.get("status") == "CONNECTED_OFFLINE" or not conn.get("coindcx_key"))
-        
+    active_orders: List[Dict[str, Any]] = []
+    live_sync_ok = False
+    live_sync_error = ""
+
     if is_offline:
         opens = query("SELECT * FROM positions WHERE user_id=? AND status IN ('OPEN', 'PENDING_BROKER') ORDER BY opened_at DESC", (u["id"],))
         closed = query("SELECT * FROM positions WHERE user_id=? AND status='CLOSED' ORDER BY closed_at DESC LIMIT 50", (u["id"],))
@@ -2648,20 +2787,44 @@ def coindcx_state():
         )
     else:
         pos_filter = "is_live=1" if is_live_mode else "(is_live=0 OR is_live IS NULL)"
-        opens = query(f"SELECT * FROM positions WHERE user_id=? AND status IN ('OPEN', 'PENDING_BROKER') AND {pos_filter} ORDER BY opened_at DESC", (u["id"],))
-        closed = query(f"SELECT * FROM positions WHERE user_id=? AND status='CLOSED' AND {pos_filter} ORDER BY closed_at DESC LIMIT 50", (u["id"],))
+        db_opens = query(f"SELECT * FROM positions WHERE user_id=? AND status IN ('OPEN', 'PENDING_BROKER') AND {pos_filter} ORDER BY opened_at DESC", (u["id"],))
+        db_closed = query(f"SELECT * FROM positions WHERE user_id=? AND status='CLOSED' AND {pos_filter} ORDER BY closed_at DESC LIMIT 50", (u["id"],))
         all_closed_row = query_one(
             f"SELECT COALESCE(SUM(realized_pnl), 0.0) as sum_pnl FROM positions WHERE user_id=? AND status='CLOSED' AND {pos_filter}",
             (u["id"],)
         )
+        live_feed = _fetch_live_coindcx_positions_and_trades(cdx, u["id"])
+        live_pos = live_feed.get("positions") or []
+        active_orders = live_feed.get("active_orders") or []
+        live_trades = live_feed.get("trades") or []
+
+        opens = list(live_pos)
+        seen_open_keys = {str(p.get("order_id") or p.get("id") or "") for p in opens}
+        seen_open_syms = {str(p.get("symbol") or "").upper() for p in opens}
+        for p in db_opens:
+            k = str(p.get("broker_order_id") or p.get("order_id") or p.get("id") or "")
+            sym_u = str(p.get("symbol") or "").upper()
+            if (k and k in seen_open_keys) or (sym_u and sym_u in seen_open_syms):
+                continue
+            opens.append(p)
+
+        closed = list(db_closed)
+        seen_closed_ids = {str(c.get("broker_order_id") or c.get("order_id") or c.get("id") or "") for c in closed}
+        for lt in live_trades:
+            lk = str(lt.get("order_id") or lt.get("id") or "")
+            if lk and lk in seen_closed_ids:
+                continue
+            closed.append(lt)
+        closed = closed[:50]
+
     cum_realized_pnl = round(float(all_closed_row["sum_pnl"] or 0.0), 2) if all_closed_row else 0.0
 
-    # Open floating unrealized P&L and locked margins
+    # Open floating unrealized P&L and locked margins (after live CoinDCX sync)
     open_float_pnl = round(sum(float(p.get("unrealized_pnl") or 0.0) for p in opens), 2)
     open_locked_margin = round(sum(float(p.get("margin") or 0.0) for p in opens), 2)
 
     ok_bal, balances = cdx.get_balances()
-    if not ok_bal or is_offline:
+    if is_offline:
         # Starting Capital + Accumulated Realized Profit directly added to Wallet Balance:
         base_stored = float(conn.get("live_balance") or 0.0)
         if base_stored > 15000.0:
@@ -2689,21 +2852,51 @@ def coindcx_state():
             "realized_pnl": cum_realized_pnl,
             "floating_pnl": open_float_pnl,
             "usdt_inr_rate": rate,
-            "holdings": []
+            "holdings": [],
+            "futures_wallets": []
+        }
+    elif not ok_bal:
+        live_sync_error = balances.get("message") if isinstance(balances, dict) else "CoinDCX balance sync failed"
+        base_stored = float(conn.get("live_balance") or 0.0)
+        if base_stored > 15000.0:
+            base_stored = round(base_stored / 90.0, 2)
+        free_stored = float(conn.get("free_margin") if conn.get("free_margin") is not None else base_stored)
+        if free_stored > 15000.0:
+            free_stored = round(free_stored / 90.0, 2)
+        rate = 90.0
+        balances = {
+            "inr_free": round(free_stored * rate, 2),
+            "inr_total": round(base_stored * rate, 2),
+            "usdt_free": round(free_stored, 2),
+            "usdt_total": round(base_stored, 2),
+            "total_portfolio_inr": round(base_stored * rate, 2),
+            "total_portfolio_usd": round(base_stored, 2),
+            "cash_balance": round(base_stored, 2),
+            "locked_margin": open_locked_margin,
+            "realized_pnl": cum_realized_pnl,
+            "floating_pnl": open_float_pnl,
+            "usdt_inr_rate": rate,
+            "holdings": [],
+            "futures_wallets": [],
+            "sync_error": live_sync_error
         }
     else:
+        live_sync_ok = True
         rate = float(balances.get("usdt_inr_rate") or 90.0)
         tot_inr = round(float(balances.get("total_portfolio_inr") or balances.get("inr_total") or 0.0), 2)
-        tot_usd = round(float(balances.get("total_portfolio_usd") or (tot_inr / rate)) + cum_realized_pnl, 2)
+        tot_usd = round(float(balances.get("total_portfolio_usd") if balances.get("total_portfolio_usd") is not None else (tot_inr / rate)), 2)
         if tot_usd > 15000.0 and abs(tot_usd - tot_inr) < 1.0:
             tot_usd = round(tot_usd / rate, 2)
 
-        free_usd = float(balances.get("usdt_free") or 0.0)
-        if free_usd <= 0.0 and balances.get("inr_free"):
+        free_usd = float(balances.get("usdt_free") if balances.get("usdt_free") is not None else 0.0)
+        if free_usd <= 0.0 and float(balances.get("inr_free") or 0.0) > 0.0:
             free_usd = round(float(balances["inr_free"]) / rate, 2)
-        if free_usd > 15000.0:
+        if free_usd > 15000.0 and abs(free_usd - float(balances.get("inr_free") or 0.0)) < 1.0:
             free_usd = round(free_usd / rate, 2)
-        free_usd = round(max(0.0, free_usd - open_locked_margin), 2)
+        free_usd = round(max(0.0, free_usd), 2)
+
+        exch_locked_usd = round(float(balances.get("usdt_locked") or 0.0), 2)
+        effective_locked = round(max(exch_locked_usd, open_locked_margin), 2)
 
         tot_inr = round(tot_usd * rate, 2)
         free_inr = round(free_usd * rate, 2)
@@ -2718,7 +2911,7 @@ def coindcx_state():
         balances["usdt_free"] = free_usd
         balances["usdt_total"] = tot_usd
         balances["cash_balance"] = tot_usd
-        balances["locked_margin"] = open_locked_margin
+        balances["locked_margin"] = effective_locked
         balances["realized_pnl"] = cum_realized_pnl
         balances["floating_pnl"] = open_float_pnl
         balances["usdt_inr_rate"] = rate
@@ -2779,6 +2972,9 @@ def coindcx_state():
         total_portfolio_usd=balances.get("total_portfolio_usd", 0.0),
         open_positions=opens,
         closed_positions=closed,
+        active_orders=active_orders,
+        live_sync_ok=live_sync_ok,
+        live_sync_error=live_sync_error,
         max_positions=user_max_pos,
         is_live_mode=is_live_mode,
         execution_mode=execution_mode
@@ -2877,40 +3073,40 @@ def coindcx_connect():
             summary=summary
         )
 
-    # Online Mode: Try strict HMAC verification with CoinDCX first; if CoinDCX rejects due to IP binding or Futures-only scope,
-    # automatically fall back to Hybrid Live-Feed Connection so the user's API key always connects from the frontend.
+    # Online Mode: Require real CoinDCX REST verification — never fake Offline Simulation when user chooses Online.
     is_valid, msg, summary = verify_coindcx_credentials(api_key, api_secret)
     if not is_valid:
-        print(f"[COINDCX_CONNECT] Direct REST returned '{msg}' — auto-activating Hybrid Live-Feed Mode for user {u['id']} (${usd_bal:,.2f} USDT)")
-        summary = _build_default_summary(usd_bal, inr_bal)
-        save_user_coindcx_connection(u["id"], api_key, api_secret, summary, is_offline=True, custom_profile_name=custom_profile)
-        eff_profile = custom_profile or u.get("name") or "CoinDCX Trader"
-        bot._log(u["id"], "REAL_BOT_COINDCX", f"🟢 CoinDCX API Key Linked (Hybrid Live-Feed Mode) for '{eff_profile}'! Balance: ${usd_bal:,.2f} USDT")
-        return ok(
-            success=True,
-            mode="ONLINE_HYBRID",
-            profile_name=eff_profile,
-            message=f"🟢 CoinDCX API Connected for {eff_profile}! Live Balance: ${usd_bal:,.2f} USDT",
-            summary=summary
+        server_ip = _detect_server_outbound_ip()
+        print(f"[COINDCX_CONNECT] Direct REST verification failed for user {u['id']}: {msg} (outbound_ip={server_ip})")
+        ip_hint = (
+            f" Server Outbound IP: {server_ip} — whitelist this IP on CoinDCX (or create a key without IP restriction), "
+            "or click 'CONNECT OFFLINE MODE' below."
+            if server_ip
+            else " Whitelist this server's IP on CoinDCX (or remove IP restriction), or click 'CONNECT OFFLINE MODE' below."
         )
+        return fail(f"{msg}{ip_hint}", 400)
 
-    if float(summary.get("total_portfolio_usd") or 0.0) <= 0.0 and usd_bal > 0:
-        summary["usdt_free"] = usd_bal
-        summary["usdt_total"] = usd_bal
-        summary["total_portfolio_usd"] = usd_bal
-        summary["inr_free"] = inr_bal
-        summary["inr_total"] = inr_bal
-        summary["total_portfolio_inr"] = inr_bal
+    manual_real_bal = float(data.get("real_balance") or data.get("balance") or 0.0)
+    if float(summary.get("total_portfolio_usd") or 0.0) <= 0.0 and manual_real_bal > 0:
+        manual_usd = round(manual_real_bal / 90.0, 2) if manual_real_bal > 15000.0 else round(manual_real_bal, 2)
+        manual_inr = round(manual_usd * 90.0, 2)
+        summary["usdt_free"] = manual_usd
+        summary["usdt_total"] = manual_usd
+        summary["total_portfolio_usd"] = manual_usd
+        summary["inr_free"] = manual_inr
+        summary["inr_total"] = manual_inr
+        summary["total_portfolio_inr"] = manual_inr
 
     save_user_coindcx_connection(u["id"], api_key, api_secret, summary, is_offline=False, custom_profile_name=custom_profile)
     eff_profile = custom_profile or summary.get("profile_name") or u.get("name") or "CoinDCX Trader"
-    bot._log(u["id"], "REAL_BOT_COINDCX", f"🟢 CoinDCX API connected successfully for '{eff_profile}'! Portfolio: ${summary.get('total_portfolio_usd', usd_bal):,.2f} USDT")
+    live_usd_val = float(summary.get("total_portfolio_usd") or 0.0)
+    bot._log(u["id"], "REAL_BOT_COINDCX", f"🟢 CoinDCX Live Account Connected for '{eff_profile}'! Portfolio: ${live_usd_val:,.2f} USDT")
 
     return ok(
         success=True,
         mode="ONLINE",
         profile_name=eff_profile,
-        message=f"CoinDCX API Connected Successfully for {eff_profile} (Live Mode)!",
+        message=f"CoinDCX Live Account Connected for {eff_profile}! Synced Balance: ${live_usd_val:,.2f} USDT",
         summary=summary
     )
 

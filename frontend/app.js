@@ -3573,16 +3573,21 @@ async function refreshExnessTerminal() {
 
     // Total Futures Equity in USD (normalized if raw INR was returned)
     const rate = Number(bal.usdt_inr_rate || 90.0);
+    const isOnlineCoinDcx = (res.mode === "ONLINE");
     let rawEq = Number(bal.total_portfolio_usd || 0.0);
     if (rawEq <= 0.0 && bal.total_portfolio_inr) rawEq = Number(bal.total_portfolio_inr) / rate;
-    if (rawEq > 15000.0) rawEq = rawEq / rate;
-    const totalEquity = Math.max(0, (rawEq > 0 ? rawEq : (7.0 + totalProfitMoney)));
+    if (rawEq > 15000.0 && Math.abs(rawEq - Number(bal.total_portfolio_inr || 0)) < 1.0) rawEq = rawEq / rate;
+    const totalEquity = isOnlineCoinDcx
+      ? Math.max(0, rawEq)
+      : Math.max(0, (rawEq > 0 ? rawEq : (7.0 + totalProfitMoney)));
 
     // Available Free Margin in USDT
     let rawFree = (bal.usdt_free != null) ? Number(bal.usdt_free) : 0.0;
     if (rawFree <= 0.0 && bal.inr_free) rawFree = Number(bal.inr_free) / rate;
-    if (rawFree > 15000.0) rawFree = rawFree / rate;
-    const availMargin = Math.max(0, rawFree > 0 ? rawFree : (totalEquity - lockedMargin));
+    if (rawFree > 15000.0 && Math.abs(rawFree - Number(bal.inr_free || 0)) < 1.0) rawFree = rawFree / rate;
+    const availMargin = isOnlineCoinDcx
+      ? Math.max(0, rawFree)
+      : Math.max(0, rawFree > 0 ? rawFree : (totalEquity - lockedMargin));
 
     const totalEquityINR = Math.round(totalEquity * rate);
     const availMarginINR = (availMargin * rate).toFixed(2);
@@ -3651,7 +3656,13 @@ async function refreshExnessTerminal() {
       $("ex_pos_limit_select").value = isUnlimited ? "999" : String(rawSlots);
     }
     if ($("ex_val_heartbeat_info")) {
-      $("ex_val_heartbeat_info").textContent = `Live Rest Sync: Active`;
+      if (res.live_sync_error) {
+        $("ex_val_heartbeat_info").textContent = `Sync Warning: ${String(res.live_sync_error).slice(0, 48)}`;
+        $("ex_val_heartbeat_info").style.color = "#f59e0b";
+      } else {
+        $("ex_val_heartbeat_info").textContent = res.mode === "ONLINE" ? "Live CoinDCX Sync: Active" : "Live Rest Sync: Active";
+        $("ex_val_heartbeat_info").style.color = "";
+      }
     }
 
     const curLev = String(Math.round(Number(res.bot_leverage || S.user?.bot_leverage || 500)));
@@ -3729,9 +3740,12 @@ async function refreshExnessTerminal() {
           const currP = parseFloat(p.current_price || p.entry_price) || entryP;
           const dirP = (p.side === 'BUY' || p.side === 'LONG') ? 1.0 : -1.0;
           const pLev = parseFloat(p.leverage) || 30.0;
-          const liqPrice = (dirP > 0) 
-            ? (entryP * Math.max(0.01, (1.0 - (1.0 / pLev) * 0.90)))
-            : (entryP * (1.0 + (1.0 / pLev) * 0.90));
+          const exchLiq = parseFloat(p.liquidation_price) || 0.0;
+          const liqPrice = exchLiq > 0
+            ? exchLiq
+            : ((dirP > 0)
+                ? (entryP * Math.max(0.01, (1.0 - (1.0 / pLev) * 0.90)))
+                : (entryP * (1.0 + (1.0 / pLev) * 0.90)));
           const pnlColor = pPnl >= 0 ? "#10b981" : "#ef4444";
           const slP = entryP * (1.0 - (parseFloat(p.stop_pct) || 0.85) / 100.0 * dirP);
           const tpP = entryP * (1.0 + (parseFloat(p.target_pct) || 0.80) / 100.0 * dirP);
@@ -4171,6 +4185,7 @@ window.openCoinDCXApiSetup = function() {
     loginPanel.style.display = "block";
   }
   if (termPanel) termPanel.style.display = "none";
+  loadCoinDcxPublicIp();
   if ($("coindcx_inp_api_key")) $("coindcx_inp_api_key").focus();
 };
 
@@ -4300,14 +4315,21 @@ window.selectMtPlatform = function(platform) {
 
 // Auto-detect public IP for CoinDCX IP Binding
 let _cachedCoinDcxIp = "";
+if ($("coindcx_inp_bound_ip") && !$("coindcx_inp_bound_ip").dataset.boundListener) {
+  $("coindcx_inp_bound_ip").dataset.boundListener = "1";
+  $("coindcx_inp_bound_ip").addEventListener("input", () => {
+    $("coindcx_inp_bound_ip").dataset.userEdited = "1";
+  });
+}
 async function loadCoinDcxPublicIp() {
   try {
     const res = await call("/api/real-bot/coindcx/my-ip").catch(() => null);
     if (res && res.ip) {
       _cachedCoinDcxIp = res.ip;
       if ($("coindcx_detected_ip_val")) $("coindcx_detected_ip_val").textContent = res.ip;
-      if ($("coindcx_inp_bound_ip") && !$("coindcx_inp_bound_ip").value) {
-        $("coindcx_inp_bound_ip").value = res.ip;
+      const inp = $("coindcx_inp_bound_ip");
+      if (inp && inp.dataset.userEdited !== "1") {
+        inp.value = res.ip;
       }
     }
   } catch (e) {}
