@@ -1015,15 +1015,13 @@ class Bot:
                 continue
 
             trail_floor = None
-            min_net_peak = est_fee + 0.05
-            if peak_cash >= max(1.00, min_net_peak):
-                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.85, 3))
-            elif peak_cash >= max(0.30, min_net_peak):
-                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.78, 3))
-            elif peak_cash >= max(0.10, min_net_peak):
-                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.70, 3))
-            elif peak_cash >= max(0.08, min_net_peak, est_fee * 3.0):
-                trail_floor = max(round(est_fee + 0.02, 3), 0.03)
+            min_net_peak = est_fee + 0.10
+            if peak_cash >= max(3.00, min_net_peak):
+                trail_floor = max(round(est_fee + 0.25, 3), round(peak_cash * 0.85, 3))
+            elif peak_cash >= max(1.00, min_net_peak):
+                trail_floor = max(round(est_fee + 0.10, 3), round(peak_cash * 0.80, 3))
+            elif peak_cash >= max(0.50, min_net_peak, est_fee * 4.0):
+                trail_floor = max(round(est_fee + 0.05, 3), round(peak_cash * 0.72, 3))
 
             if trail_floor is not None and pnl <= trail_floor and pnl > est_fee and time_held >= 5.0:
                 self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
@@ -1325,15 +1323,13 @@ class Bot:
                 continue
 
             trail_floor = None
-            min_net_peak = est_fee + 0.05
-            if peak_cash >= max(1.00, min_net_peak):
-                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.85, 3))
-            elif peak_cash >= max(0.30, min_net_peak):
-                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.78, 3))
-            elif peak_cash >= max(0.10, min_net_peak):
-                trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.70, 3))
-            elif peak_cash >= max(0.08, min_net_peak, est_fee * 3.0):
-                trail_floor = max(round(est_fee + 0.02, 3), 0.03)
+            min_net_peak = est_fee + 0.10
+            if peak_cash >= max(3.00, min_net_peak):
+                trail_floor = max(round(est_fee + 0.25, 3), round(peak_cash * 0.85, 3))
+            elif peak_cash >= max(1.00, min_net_peak):
+                trail_floor = max(round(est_fee + 0.10, 3), round(peak_cash * 0.80, 3))
+            elif peak_cash >= max(0.50, min_net_peak, est_fee * 4.0):
+                trail_floor = max(round(est_fee + 0.05, 3), round(peak_cash * 0.72, 3))
 
             if trail_floor is not None and current_pnl <= trail_floor and current_pnl > est_fee and time_held >= 5.0:
                 self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
