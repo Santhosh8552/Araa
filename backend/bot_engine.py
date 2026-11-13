@@ -1214,6 +1214,11 @@ class Bot:
             notify_order_closed(symbol=p["symbol"], side=p["side"], pnl=pnl, roi_pct=roi_pct, reason=reason, user_id=p["user_id"])
         except Exception:
             pass
+        try:
+            from coindcx_adapter import CoinDCXExecutionAdapter
+            CoinDCXExecutionAdapter.cancel_obsolete_protection(p["user_id"], str(p.get("id") or ""), p.get("symbol") or "")
+        except Exception:
+            pass
         if pnl < 0:
             if not hasattr(self, "_symbol_cooldown"):
                 self._symbol_cooldown = {}

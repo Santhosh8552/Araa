@@ -3923,15 +3923,18 @@ window.switchTerminalTab = function(tabName) {
   const tabClosed = $("tab_content_closed");
   const tabAudit = $("tab_content_audit");
   const tabTrainer = $("tab_content_trainer");
+  const tabStrat = $("tab_content_strategy_tv");
   const btnPos = $("tab_btn_active_pos");
   const btnClosed = $("tab_btn_closed_pos");
   const btnAudit = $("tab_btn_audit_logs");
   const btnTrainer = $("tab_btn_trainer");
+  const btnStrat = $("tab_btn_strategy_tv");
 
   if (tabPos) tabPos.style.display = (tabName === "POSITIONS") ? "block" : "none";
   if (tabClosed) tabClosed.style.display = (tabName === "CLOSED") ? "block" : "none";
   if (tabAudit) tabAudit.style.display = (tabName === "AUDIT") ? "block" : "none";
   if (tabTrainer) tabTrainer.style.display = (tabName === "TRAINER") ? "block" : "none";
+  if (tabStrat) tabStrat.style.display = (tabName === "STRATEGY") ? "block" : "none";
 
   if (btnPos) {
     btnPos.style.background = (tabName === "POSITIONS") ? "rgba(56,189,248,0.15)" : "rgba(255,255,255,0.04)";
@@ -3953,9 +3956,96 @@ window.switchTerminalTab = function(tabName) {
     btnTrainer.style.borderColor = (tabName === "TRAINER") ? "#a855f7" : "rgba(168,85,247,0.3)";
     btnTrainer.style.color = (tabName === "TRAINER") ? "#e9d5ff" : "#c084fc";
   }
+  if (btnStrat) {
+    btnStrat.style.background = (tabName === "STRATEGY") ? "rgba(16,185,129,0.22)" : "rgba(16,185,129,0.08)";
+    btnStrat.style.borderColor = (tabName === "STRATEGY") ? "#10b981" : "rgba(16,185,129,0.3)";
+    btnStrat.style.color = (tabName === "STRATEGY") ? "#a7f3d0" : "#34d399";
+  }
   if (tabName === "TRAINER") {
     window.loadBotTrainingState && window.loadBotTrainingState();
   }
+  if (tabName === "STRATEGY") {
+    window.refreshStrategyControlPanel && window.refreshStrategyControlPanel();
+  }
+};
+
+window.refreshStrategyControlPanel = async function() {
+  try {
+    const [execRes, tvRes] = await Promise.all([
+      call("/api/execution/status"),
+      call("/api/strategy/tradingview/config"),
+    ]);
+    const badgesEl = $("strat_exec_badges");
+    if (badgesEl && execRes) {
+      const cdx = execRes.coindcx || {};
+      const perm = cdx.permissions || {};
+      badgesEl.innerHTML = `
+        <span style="padding:3px 8px; border-radius:6px; background:${cdx.connected?'rgba(16,185,129,0.15)':'rgba(239,68,68,0.15)'}; color:${cdx.connected?'#10b981':'#f87171'}; font-weight:700;">CoinDCX: ${cdx.connected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+        <span style="padding:3px 8px; border-radius:6px; background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700;">Permissions: R:${perm.read?'✓':'✕'} T:${perm.trade?'✓':'✕'} F:${perm.futures?'✓':'✕'}</span>
+        <span style="padding:3px 8px; border-radius:6px; background:${execRes.mode==='REAL'?'rgba(239,68,68,0.2)':'rgba(56,189,248,0.15)'}; color:${execRes.mode==='REAL'?'#f87171':'#38bdf8'}; font-weight:800;">Mode: ${execRes.mode || 'PAPER'}</span>
+        <span style="padding:3px 8px; border-radius:6px; background:${execRes.emergency_stop?'rgba(239,68,68,0.25)':'rgba(16,185,129,0.15)'}; color:${execRes.emergency_stop?'#fca5a5':'#34d399'}; font-weight:700;">${execRes.emergency_stop ? '🛑 EMERGENCY STOP' : '🛡️ Risk Guard Active'}</span>
+      `;
+    }
+    const stratEl = $("strat_list_container");
+    if (stratEl && execRes && Array.isArray(execRes.strategies)) {
+      stratEl.innerHTML = execRes.strategies.map(s => `
+        <div style="padding:8px 10px; border-radius:6px; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div>
+            <div style="font-weight:800; color:#f8fafc;">${s.name} <span style="font-size:10px; color:#38bdf8;">[${s.market_type}]</span></div>
+            <div style="font-size:10.5px; color:#94a3b8;">SL: ${s.stop_loss_pct}% · TP: ${s.take_profit_pct}% · MaxPos: ${s.max_open_positions} · MaxLoss: $${s.max_daily_loss_usd} · Cool: ${s.cooldown_seconds}s</div>
+          </div>
+          <button type="button" onclick="window.toggleStrategyEnabled('${s.strategy_id}', ${s.enabled ? 0 : 1})" style="padding:4px 10px; border-radius:5px; border:1px solid ${s.enabled?'#10b981':'#64748b'}; background:${s.enabled?'rgba(16,185,129,0.18)':'rgba(100,116,139,0.18)'}; color:${s.enabled?'#34d399':'#94a3b8'}; font-size:10.5px; font-weight:800; cursor:pointer;">${s.enabled ? 'ENABLED' : 'DISABLED'}</button>
+        </div>
+      `).join("");
+    }
+    if (tvRes) {
+      if ($("tv_webhook_url_inp")) $("tv_webhook_url_inp").value = tvRes.webhook_url || "";
+      if ($("tv_webhook_sec_inp")) $("tv_webhook_sec_inp").value = tvRes.secret || "";
+      const evEl = $("tv_webhook_events_list");
+      if (evEl) {
+        const evs = tvRes.events || [];
+        evEl.innerHTML = evs.length ? evs.map(ev => `
+          <div style="padding:4px 6px; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <span style="color:${String(ev.status).startsWith('EXECUTED')?'#10b981':'#f87171'}; font-weight:700;">[${ev.status}]</span> ${ev.symbol} ${ev.side} ${ev.error_detail ? '· ' + ev.error_detail : ''}
+          </div>
+        `).join("") : "No webhook signals received yet.";
+      }
+    }
+    const ordEl = $("strat_orders_prot_list");
+    if (ordEl && execRes) {
+      const ords = execRes.orders || [];
+      const prots = execRes.protections || [];
+      const protMap = {};
+      prots.forEach(p => { protMap[p.position_id] = p; });
+      ordEl.innerHTML = ords.length ? ords.slice(0, 12).map(o => {
+        const pr = protMap[o.position_id] || {};
+        return `<div style="padding:5px 6px; border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span style="color:${o.status==='FILLED'?'#10b981':(o.status==='REJECTED'?'#ef4444':'#fbbf24')}; font-weight:700;">[${o.status}]</span>
+          ${o.mode} ${o.market_type} ${o.symbol} ${o.side} · Qty: ${o.filled_qty}/${o.requested_qty} · Fee: $${Number(o.fee_usd||0).toFixed(4)}
+          ${pr.protection_status ? ` · SL/TP: <b style="color:${pr.protection_verified?'#10b981':'#f87171'}">${pr.protection_status}</b>` : ''}
+          ${o.rejection_reason ? `<div style="color:#fca5a5; margin-top:2px;">❌ ${o.endpoint}: ${o.rejection_reason}</div>` : ''}
+        </div>`;
+      }).join("") : "No StrategyEngine orders recorded yet.";
+    }
+  } catch (e) {
+    console.warn("Strategy panel sync error:", e);
+  }
+};
+
+window.toggleStrategyEnabled = async function(strategyId, enabled) {
+  try {
+    const res = await call("/api/strategy/toggle", {method: "POST", body: {strategy_id: strategyId, enabled}});
+    toast(res.message || "Strategy updated", "green");
+    await window.refreshStrategyControlPanel();
+  } catch (e) { toast(e.message, "red"); }
+};
+
+window.rotateTvSecret = async function() {
+  try {
+    const res = await call("/api/strategy/tradingview/rotate-secret", {method: "POST"});
+    toast(res.message || "Webhook secret rotated", "amber");
+    await window.refreshStrategyControlPanel();
+  } catch (e) { toast(e.message, "red"); }
 };
 
 window.renderBotTrainingStateUI = function(tr, isAutoPoll) {

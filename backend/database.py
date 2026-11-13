@@ -1075,6 +1075,97 @@ CREATE TABLE IF NOT EXISTS event_outbox(
   processed_at REAL
 );
 CREATE INDEX IF NOT EXISTS ix_event_outbox_st ON event_outbox(status, created_at);
+
+CREATE TABLE IF NOT EXISTS strategy_configs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  strategy_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'CUSTOM', -- AI, TRADINGVIEW, CUSTOM
+  market_type TEXT NOT NULL DEFAULT 'FUTURES', -- FUTURES, SPOT, MARGIN
+  enabled INTEGER NOT NULL DEFAULT 1,
+  entry_rules_json TEXT NOT NULL DEFAULT '{}',
+  exit_rules_json TEXT NOT NULL DEFAULT '{}',
+  risk_per_trade_pct REAL NOT NULL DEFAULT 2.0,
+  max_open_positions INTEGER NOT NULL DEFAULT 3,
+  max_daily_loss_usd REAL NOT NULL DEFAULT 15.0,
+  cooldown_seconds REAL NOT NULL DEFAULT 60.0,
+  stop_loss_pct REAL NOT NULL DEFAULT 0.50,
+  take_profit_pct REAL NOT NULL DEFAULT 1.00,
+  trailing_stop_pct REAL NOT NULL DEFAULT 0.25,
+  position_size_usd REAL NOT NULL DEFAULT 8.0,
+  leverage REAL NOT NULL DEFAULT 20.0,
+  allowed_directions TEXT NOT NULL DEFAULT 'BOTH', -- BOTH, LONG, SHORT
+  updated_at REAL NOT NULL,
+  created_at REAL NOT NULL,
+  UNIQUE(user_id, strategy_id)
+);
+CREATE INDEX IF NOT EXISTS ix_strategy_cfg_user ON strategy_configs(user_id, enabled);
+
+CREATE TABLE IF NOT EXISTS webhook_events(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  strategy_id TEXT NOT NULL DEFAULT '',
+  signal_id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  side TEXT NOT NULL,
+  market_type TEXT NOT NULL DEFAULT 'FUTURES',
+  price REAL NOT NULL DEFAULT 0.0,
+  signal_timestamp REAL NOT NULL DEFAULT 0.0,
+  status TEXT NOT NULL, -- EXECUTED_PAPER, EXECUTED_LIVE, REJECTED_AUTH, REJECTED_EXPIRED, REJECTED_DUPLICATE, REJECTED_RISK, REJECTED_SYMBOL, FAILED_EXCHANGE
+  error_detail TEXT NOT NULL DEFAULT '',
+  payload_sanitized TEXT NOT NULL DEFAULT '{}',
+  order_id TEXT NOT NULL DEFAULT '',
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_webhook_events_user ON webhook_events(user_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_webhook_signal ON webhook_events(user_id, signal_id);
+
+CREATE TABLE IF NOT EXISTS order_mappings(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  client_order_id TEXT NOT NULL UNIQUE,
+  exchange_order_id TEXT NOT NULL DEFAULT '',
+  position_id TEXT NOT NULL DEFAULT '',
+  strategy_id TEXT NOT NULL DEFAULT '',
+  symbol TEXT NOT NULL,
+  market_type TEXT NOT NULL DEFAULT 'FUTURES',
+  side TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'PAPER', -- PAPER, REAL
+  requested_qty REAL NOT NULL DEFAULT 0.0,
+  filled_qty REAL NOT NULL DEFAULT 0.0,
+  avg_fill_price REAL NOT NULL DEFAULT 0.0,
+  fee_usd REAL NOT NULL DEFAULT 0.0,
+  status TEXT NOT NULL DEFAULT 'NEW', -- NEW, PARTIALLY_FILLED, FILLED, REJECTED, CANCELLED
+  rejection_reason TEXT NOT NULL DEFAULT '',
+  endpoint TEXT NOT NULL DEFAULT '',
+  sanitized_request TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_order_map_user ON order_mappings(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS position_protections(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  position_id TEXT NOT NULL,
+  exchange_position_id TEXT NOT NULL DEFAULT '',
+  symbol TEXT NOT NULL,
+  market_type TEXT NOT NULL DEFAULT 'FUTURES',
+  entry_price REAL NOT NULL DEFAULT 0.0,
+  filled_qty REAL NOT NULL DEFAULT 0.0,
+  stop_loss_price REAL NOT NULL DEFAULT 0.0,
+  take_profit_price REAL NOT NULL DEFAULT 0.0,
+  trailing_stop_pct REAL NOT NULL DEFAULT 0.0,
+  sl_order_id TEXT NOT NULL DEFAULT '',
+  tp_order_id TEXT NOT NULL DEFAULT '',
+  protection_verified INTEGER NOT NULL DEFAULT 0,
+  protection_status TEXT NOT NULL DEFAULT 'UNPROTECTED', -- VERIFIED, MONITORED_BACKEND, UNPROTECTED, FAILED, CANCELLED
+  failure_reason TEXT NOT NULL DEFAULT '',
+  updated_at REAL NOT NULL,
+  UNIQUE(user_id, position_id)
+);
+CREATE INDEX IF NOT EXISTS ix_pos_prot_user ON position_protections(user_id, protection_status);
 """
 
 

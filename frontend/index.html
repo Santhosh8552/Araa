@@ -3605,6 +3605,9 @@
           <button id="tab_btn_trainer" onclick="window.switchTerminalTab('TRAINER')" style="background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.4); border-bottom:none; color:#c084fc; font-weight:800; font-size:12px; padding:8px 16px; border-radius:8px 8px 0 0; cursor:pointer;">
             🧠 AI Self-Learning Trainer &amp; Custom Rules
           </button>
+          <button id="tab_btn_strategy_tv" onclick="window.switchTerminalTab('STRATEGY')" style="background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.4); border-bottom:none; color:#34d399; font-weight:800; font-size:12px; padding:8px 16px; border-radius:8px 8px 0 0; cursor:pointer;">
+            ⚙️ Strategy Engine, Risk &amp; TradingView
+          </button>
         </div>
 
         <!-- TAB 1: ACTIVE FUTURES POSITIONS -->
@@ -3684,6 +3687,47 @@
           </div>
           <div id="coindcx_audit_logs_list" style="max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; font-family:'JetBrains Mono',monospace; font-size:11px;">
             <div style="text-align:center; padding:16px; color:#64748b;">Loading audit events...</div>
+          </div>
+        </div>
+
+        <!-- TAB 5: STRATEGY ENGINE, RISK, TRADINGVIEW & ORDER LIFECYCLE -->
+        <div id="tab_content_strategy_tv" class="exness_card_box" style="display:none; padding:18px; background:rgba(15,23,42,0.85); border:1px solid rgba(16,185,129,0.35); border-radius:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; border-bottom:1px solid rgba(16,185,129,0.2); padding-bottom:10px;">
+            <div>
+              <b style="font-size:15px; color:#f8fafc;">⚙️ AraaBot Centralized StrategyEngine, Risk &amp; TradingView Hub</b>
+              <div id="strat_exec_badges" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; font-size:11px;">
+                <span style="padding:3px 8px; border-radius:6px; background:rgba(56,189,248,0.12); color:#38bdf8;">Loading status...</span>
+              </div>
+            </div>
+            <button type="button" onclick="window.refreshStrategyControlPanel && window.refreshStrategyControlPanel()" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8; font-weight:700; font-size:11px; padding:6px 12px; border-radius:6px; cursor:pointer;">↻ Sync Engine Status</button>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:14px;">
+            <!-- Strategies List & Config -->
+            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+              <b style="font-size:12px; color:#34d399; display:block; margin-bottom:8px;">📋 Active Strategies &amp; Hard Risk Rules</b>
+              <div id="strat_list_container" style="display:flex; flex-direction:column; gap:8px; font-size:11.5px;">Loading strategies...</div>
+            </div>
+
+            <!-- TradingView Webhook Configurator -->
+            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+              <b style="font-size:12px; color:#38bdf8; display:block; margin-bottom:8px;">📡 TradingView Pine Script Webhook</b>
+              <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">Webhook URL:</div>
+              <input id="tv_webhook_url_inp" type="text" readonly style="width:100%; padding:6px 8px; background:#080b11; border:1px solid #1e293b; border-radius:6px; color:#38bdf8; font-family:'JetBrains Mono',monospace; font-size:11px; margin-bottom:8px;">
+              <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">Webhook Secret Token:</div>
+              <div style="display:flex; gap:6px; margin-bottom:8px;">
+                <input id="tv_webhook_sec_inp" type="text" readonly style="flex:1; padding:6px 8px; background:#080b11; border:1px solid #1e293b; border-radius:6px; color:#10b981; font-family:'JetBrains Mono',monospace; font-size:11px;">
+                <button type="button" onclick="window.rotateTvSecret && window.rotateTvSecret()" style="padding:6px 10px; background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24; border-radius:6px; font-size:10.5px; font-weight:700; cursor:pointer;">↻ Rotate</button>
+              </div>
+              <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">Recent Webhook Signals &amp; Errors:</div>
+              <div id="tv_webhook_events_list" style="max-height:140px; overflow-y:auto; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#cbd5e1;">No webhook events yet.</div>
+            </div>
+          </div>
+
+          <!-- Order Lifecycle, Protection & Rejection Diagnostics -->
+          <div style="margin-top:14px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+            <b style="font-size:12px; color:#fbbf24; display:block; margin-bottom:8px;">🛡️ Order Lifecycle, Execution Fees, Protection Status &amp; Rejection Diagnostics</b>
+            <div id="strat_orders_prot_list" style="max-height:200px; overflow-y:auto; font-family:'JetBrains Mono',monospace; font-size:11px; color:#cbd5e1;">No orders recorded yet.</div>
           </div>
         </div>
 

@@ -4196,38 +4196,186 @@ _TV_WEBHOOK_SEEN = {}
 
 @api.route("/api/webhooks/tradingview", methods=["POST"])
 def api_tradingview_webhook():
-    """Dedicated TradingView Pine Script Webhook with authentication, deduplication, and execution."""
+    """Dedicated TradingView Pine Script Webhook routed through StrategyEngine."""
     data = request.get_json(silent=True) or {}
-    secret = str(data.get("secret") or data.get("token") or request.headers.get("X-Webhook-Secret") or "").strip()
-    
-    # Deduplication key
-    ticker = str(data.get("ticker") or data.get("symbol") or "BTCUSDT").upper().strip()
-    action = str(data.get("action") or data.get("side") or "BUY").upper().strip()
-    price = float(data.get("price") or 0.0)
-    user_id = int(data.get("user_id") or 3)
-    
-    sig_key = f"{user_id}_{ticker}_{action}"
+    from strategy_engine import StrategyEngine
+    status_code, res = StrategyEngine.process_tradingview_webhook(data, dict(request.headers), feed=feed)
+    return jsonify(res), status_code
+
+
+@api.route("/api/strategy/list", methods=["GET"])
+def strategy_list():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    strategies = StrategyEngine.ensure_user_strategies(u["id"])
+    return ok(strategies=strategies)
+
+
+@api.route("/api/strategy/save", methods=["POST"])
+def strategy_save():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    data = request.get_json(silent=True) or {}
+    from strategy_engine import StrategyEngine
+    try:
+        saved = StrategyEngine.save_strategy(u["id"], data)
+        return ok(strategy=saved, message=f"Strategy '{saved.get('name')}' saved.")
+    except Exception as exc:
+        return fail(str(exc), 400)
+
+
+@api.route("/api/strategy/toggle", methods=["POST"])
+def strategy_toggle():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    data = request.get_json(silent=True) or {}
+    sid = str(data.get("strategy_id") or "").strip()
+    enabled = 1 if data.get("enabled") else 0
+    from strategy_engine import StrategyEngine
+    strat = StrategyEngine.get_strategy(u["id"], sid)
+    if not strat:
+        return fail(f"Unknown strategy_id '{sid}'", 404)
+    saved = StrategyEngine.save_strategy(u["id"], {"strategy_id": sid, "enabled": enabled})
+    return ok(strategy=saved, message=f"Strategy '{sid}' {'enabled' if enabled else 'disabled'}.")
+
+
+@api.route("/api/strategy/tradingview/config", methods=["GET"])
+def strategy_tv_config():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    sec = StrategyEngine.get_or_create_webhook_secret(u["id"])
+    events = query(
+        "SELECT * FROM webhook_events WHERE user_id=? ORDER BY id DESC LIMIT 30",
+        (u["id"],),
+    )
+    base_url = request.host_url.rstrip("/")
+    sample_payload = {
+        "secret": sec,
+        "user_id": u["id"],
+        "strategy_id": "tv_pine_default",
+        "ticker": "{{ticker}}",
+        "action": "{{strategy.order.action}}",
+        "price": "{{close}}",
+        "timestamp": "{{timenow}}",
+    }
+    return ok(
+        webhook_url=f"{base_url}/api/webhooks/tradingview",
+        secret=sec,
+        sample_payload=sample_payload,
+        events=events,
+    )
+
+
+@api.route("/api/strategy/tradingview/rotate-secret", methods=["POST"])
+def strategy_tv_rotate():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    sec = StrategyEngine.rotate_webhook_secret(u["id"])
+    return ok(secret=sec, message="TradingView webhook secret rotated.")
+
+
+@api.route("/api/execution/status", methods=["GET"])
+def execution_status():
+    """Unified execution, CoinDCX permissions, strategy, protection, and order lifecycle status."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    from coindcx_adapter import CoinDCXExecutionAdapter
+
+    strategies = StrategyEngine.ensure_user_strategies(u["id"])
+    real_mode, mode_state = StrategyEngine.is_real_mode_active(u["id"])
+    cdx_status = CoinDCXExecutionAdapter.verify_connection(u["id"]) if real_mode or query_one("SELECT id FROM broker_connections WHERE user_id=? AND status != 'DISCONNECTED'", (u["id"],)) else {
+        "connected": False, "mode": "PAPER", "permissions": {"read": False, "trade": False, "futures": False},
+        "available_balance_usd": 0.0, "total_balance_usd": 0.0, "error": "",
+    }
+    orders = query("SELECT * FROM order_mappings WHERE user_id=? ORDER BY id DESC LIMIT 30", (u["id"],))
+    protections = query("SELECT * FROM position_protections WHERE user_id=? ORDER BY id DESC LIMIT 30", (u["id"],))
+    rejections = [o for o in orders if o.get("status") == "REJECTED"][:5]
+    webhooks = query("SELECT * FROM webhook_events WHERE user_id=? ORDER BY id DESC LIMIT 15", (u["id"],))
+    w = wallet_of(u["id"])
+    return ok(
+        mode="REAL" if real_mode else "PAPER",
+        emergency_stop=(mode_state == "EMERGENCY_STOP_ACTIVE"),
+        bot_running=bool(u.get("bot_enabled")),
+        coindcx=cdx_status,
+        strategies=strategies,
+        active_strategies=[s["strategy_id"] for s in strategies if int(s.get("enabled") or 0) == 1],
+        orders=orders,
+        rejections=rejections,
+        protections=protections,
+        webhook_events=webhooks,
+        paper_wallet=w,
+    )
+
+
+@api.route("/api/execution/manual-order", methods=["POST"])
+def execution_manual_order():
+    """Execute a manual order through StrategyEngine -> RiskEngine -> Paper or CoinDCXExecutionAdapter."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    data = request.get_json(silent=True) or {}
+    symbol = str(data.get("symbol") or "BTCUSDT").upper().strip()
+    side = str(data.get("side") or "BUY").upper().strip()
+    sid = str(data.get("strategy_id") or "araa_ai_default").strip()
+    qty = float(data.get("quantity") or 0.0)
+    margin = float(data.get("margin_usd") or 0.0)
+    price = float(data.get("price") or feed.live_price(symbol) or feed.price(symbol) or 0.0)
+
+    from strategy_engine import StrategyEngine
+    strat = StrategyEngine.get_strategy(u["id"], sid)
+    if not strat:
+        return fail(f"Unknown strategy_id '{sid}'", 404)
+    res = StrategyEngine.execute_order_intent(
+        user_id=u["id"],
+        strategy=strat,
+        symbol=symbol,
+        side=side,
+        ref_price=price,
+        quantity=qty,
+        margin_usd=margin,
+        source_label="MANUAL",
+        reason=f"Manual order via {strat['name']}",
+    )
+    if not res.get("success"):
+        return jsonify(res), 400
+    return ok(**res)
+
+
+@api.route("/api/execution/emergency-stop", methods=["POST"])
+def execution_emergency_stop():
+    """Activate or clear Emergency Stop; cancels pending exchange orders when activated."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    data = request.get_json(silent=True) or {}
+    active = 1 if data.get("active", True) else 0
     now = time.time()
-    last_seen = _TV_WEBHOOK_SEEN.get(sig_key, 0.0)
-    if now - last_seen < 60.0:
-        return ok(received=True, action="IGNORED_DUPLICATE", message="Duplicate signal within 60s cooldown.")
-    _TV_WEBHOOK_SEEN[sig_key] = now
-    
-    from coindcx_gateway import get_user_coindcx_client, to_coindcx_market, verify_coindcx_risk
-    cdx = get_user_coindcx_client(user_id)
-    if not cdx:
-        return ok(received=True, action="PAPER_SIMULATED", message="Live CoinDCX account not connected for user.")
-    
-    # Risk check
-    risk_ok, risk_msg = verify_coindcx_risk(user_id, ticker, requested_amount_inr=1000.0)
-    if not risk_ok:
-        return ok(received=True, action="REJECTED_BY_RISK_ENGINE", reason=risk_msg)
-    
-    mkt = to_coindcx_market(ticker)
-    qty = float(data.get("quantity") or 0.001)
-    ok_ord, res_ord = cdx.place_order(side=action, market=mkt, quantity=qty, price=price if price > 0 else None)
-    
-    return ok(received=True, action="EXECUTED_LIVE", order=res_ord)
+    write(
+        """INSERT INTO real_bot_configs(user_id, provider_id, emergency_shutdown, bot_status, created_at, updated_at)
+           VALUES (?, 'COINDCX', ?, ?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET emergency_shutdown=?, bot_status=?, updated_at=?""",
+        (u["id"], active, "STOPPED" if active else "PAUSED", now, now, active, "STOPPED" if active else "PAUSED", now),
+    )
+    if active:
+        write("UPDATE users SET bot_enabled=0 WHERE id=?", (u["id"],))
+        from coindcx_gateway import get_user_coindcx_client
+        cdx = get_user_coindcx_client(u["id"])
+        if cdx and not cdx.is_offline:
+            try:
+                cdx.cancel_all_orders()
+            except Exception:
+                pass
+    return ok(emergency_stop=bool(active), message="Emergency Stop ACTIVATED" if active else "Emergency Stop CLEARED")
 
 
 # =====================================================================
