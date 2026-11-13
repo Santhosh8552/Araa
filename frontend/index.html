@@ -1850,7 +1850,7 @@
         <span id="top_feed_hub_lbl">992 LIVE · 945 SIGNALS</span>
       </button>
       <button id="btn_paper_mode" class="tp-chip tp-paper tp-hide-sm" title="Active: Paper Bot Mode (Virtual Capital, 100% Free Live Prices)">PAPER BOT ACTIVE</button>
-      <button id="mode_toggle" class="tp-chip tp-real tp-hide-sm" title="Real Bot Mode — MT4 Live Trading Terminal">🔴 REAL BOT MODE</button>
+      <button id="mode_toggle" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal();" class="tp-chip tp-real tp-hide-sm" title="Real Bot Mode — MT4 Live Trading Terminal">🔴 REAL BOT MODE</button>
       <div id="top_user_profile_pill" class="tp-chip tp-hide-sm" style="display:none; background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-weight:800; font-size:11px; padding:3px 10px; border-radius:20px; align-items:center; gap:6px; box-shadow:0 0 10px rgba(16,185,129,0.25);" title="Connected CoinDCX Verified User Profile">
         <span style="font-size:12px;">👤</span>
         <span id="top_user_profile_name">User Profile</span>
@@ -2618,7 +2618,7 @@
         </button>
 
         <!-- Option 3: Real Bot Mode -->
-        <button type="button" id="drawer_mode_toggle" class="drawer_hub_item real_mode" title="Real Bot Mode — Demat &amp; Broker Onboarding Wizard" style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-radius:9px; border:1px solid rgba(var(--red-rgb),.3); background:rgba(var(--red-rgb),.06); color:var(--text); cursor:pointer; text-align:left; transition:all .2s ease;">
+        <button type="button" id="drawer_mode_toggle" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal();" class="drawer_hub_item real_mode" title="Real Bot Mode — Demat &amp; Broker Onboarding Wizard" style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-radius:9px; border:1px solid rgba(var(--red-rgb),.3); background:rgba(var(--red-rgb),.06); color:var(--text); cursor:pointer; text-align:left; transition:all .2s ease;">
           <span style="display:flex; align-items:center; gap:9px;">
             <span style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:6px; background:rgba(var(--red-rgb),.2); color:var(--red); font-size:10px; font-weight:900;">⚡</span>
             <span style="display:block;">
@@ -5844,6 +5844,6 @@
   border-top-color: rgba(130, 180, 0, 0.25) !important;
 }
 </style>
-<script src="app.js?v=20261114_coindcx_instant_v11"></script>
+<script src="app.js?v=20261114_coindcx_instant_v12"></script>
 </body>
 </html>

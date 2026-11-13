@@ -4337,21 +4337,24 @@ window.selectFuturesContract = function(sym) {
 };
 
 function showRealBotDevModal(isFullScreen = false) {
-  if (realBotDevModal) {
-    realBotDevModal.classList.remove("hide");
-    const modalCard = realBotDevModal.querySelector(".exness_modal_card");
-    if (modalCard && (isFullScreen || location.hash === "#real-terminal" || location.hash === "#terminal")) {
+  const modal = $("real_bot_dev_modal") || (typeof realBotDevModal !== "undefined" ? realBotDevModal : null);
+  if (modal) {
+    if (typeof closeDrawers === "function") closeDrawers();
+    modal.style.display = "flex";
+    modal.classList.remove("hide");
+    const modalCard = modal.querySelector(".exness_modal_card");
+    if (modalCard && (isFullScreen || location.hash === "#real-terminal")) {
       modalCard.classList.add("exness_fullscreen");
       const fsBtn = $("btn_exness_fullscreen");
       if (fsBtn) { fsBtn.textContent = "⤓"; fsBtn.title = "Exit Full Screen"; }
     }
-    // Multi-Broker panel is the default dashboard view
+    // Open CoinDCX Setup tab directly so user can connect API keys immediately
     if (typeof window.switchBrokerCenterTab === "function") {
-      window.switchBrokerCenterTab("DASHBOARD");
+      window.switchBrokerCenterTab("COINDCX");
     } else {
       const loginPanel = $("exness_login_panel");
       const termPanel = $("exness_terminal_panel");
-      if (loginPanel) loginPanel.style.display = "block";
+      if (loginPanel) { loginPanel.dataset.manualOpen = "1"; loginPanel.style.display = "block"; }
       if (termPanel && (!termPanel.dataset || termPanel.dataset.active !== "1")) {
         termPanel.style.display = "none";
       }
