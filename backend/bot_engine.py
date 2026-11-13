@@ -1020,13 +1020,12 @@ class Bot:
                 continue
 
             # =========================================================================
-            # RULE 0B: SMART PROPORTIONAL DOWNSIDE CUT
-            # Gives 5s spread breathing room, then cuts adverse trades tightly at ~5-6% ROI
-            # or -0.12% move so losses stay small while winners run big.
+            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO 5s NOISE CHURN)
+            # Gives trades 30s to clear entry spread & develop momentum before cutting,
+            # while hard-protecting capital if price invalidates by -0.28% or -28% ROI.
             # =========================================================================
-            fast_cut_usd = max(0.03, round(pos_margin * 0.06, 3))
-            if (time_held >= 5.0 and pnl <= -fast_cut_usd) or move_pct <= -0.12 or roi_pct <= -7.0:
-                self.close(p, price, f"FAST_MICRO_CUT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
+            if (time_held >= 30.0 and (move_pct <= -0.28 or roi_pct <= -28.0)) or move_pct <= -0.45:
+                self.close(p, price, f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
                 continue
 
             # =========================================================================
@@ -1215,6 +1214,10 @@ class Bot:
             notify_order_closed(symbol=p["symbol"], side=p["side"], pnl=pnl, roi_pct=roi_pct, reason=reason, user_id=p["user_id"])
         except Exception:
             pass
+        if pnl < 0:
+            if not hasattr(self, "_symbol_cooldown"):
+                self._symbol_cooldown = {}
+            self._symbol_cooldown[(p["user_id"], p["symbol"])] = time.time() + 180.0
         self._log(p["user_id"], "WIN" if pnl >= 0 else "LOSS",
                   f"CLOSED {p['source']} {p['side']} {p['symbol']} @ {price} | {reason} | P&L ${pnl:+.2f}")
         try:
@@ -1312,11 +1315,10 @@ class Bot:
                 continue
 
             # =========================================================================
-            # RULE 0B: SMART PROPORTIONAL DOWNSIDE CUT
+            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO 5s NOISE CHURN)
             # =========================================================================
-            fast_cut_usd = max(0.03, round(pos_margin * 0.06, 3))
-            if (time_held >= 5.0 and current_pnl <= -fast_cut_usd) or move_pct <= -0.12 or roi_pct <= -7.0:
-                self.close(p, price, f"FAST_MICRO_CUT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
+            if (time_held >= 30.0 and (move_pct <= -0.28 or roi_pct <= -28.0)) or move_pct <= -0.45:
+                self.close(p, price, f"SMART_STOP_PROTECT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
                 continue
 
             # =========================================================================
@@ -1543,8 +1545,8 @@ class Bot:
                 max_margin = acct_cap
                 min_margin = 0.01
             else:
-                base_margin = round(min(15.0, max(2.0, acct_cap / max(slots_target, 1))), 2)
-                max_margin = 20.0
+                base_margin = round(min(8.0, max(2.0, acct_cap * 0.12)), 2)
+                max_margin = 12.0
                 min_margin = 0.5
         elif is_live_flag and broker_name == "COINDCX":
             # AraaBot Rule Adapter Sizing Rule for Spot INR:
@@ -1760,6 +1762,11 @@ class Bot:
                     if cand["symbol"] in held:
                         continue
                     if cand["symbol"] in tr_blacklisted:
+                        continue
+                    cd_until = getattr(self, "_symbol_cooldown", {}).get((user["id"], cand["symbol"]), 0.0)
+                    if cd_until > time.time():
+                        continue
+                    if is_coindcx_live and float(cand.get("confidence") or 0.0) < 0.68:
                         continue
                     # GUARD: For CoinDCX / Futures USD or Real Mode, strictly enforce target symbols (No stocks, no forex)
                     if (is_pure_crypto or is_live_flag) and target_mt4_symbols and cand["symbol"] not in target_mt4_symbols:
