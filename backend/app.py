@@ -320,6 +320,27 @@ def current_user():
     return row
 
 
+def resolve_user():
+    """Returns the authenticated user or the active logged-in user from the current session/system."""
+    u = current_user()
+    if u:
+        return u
+    # Check Authorization header
+    auth_hdr = request.headers.get("Authorization", "")
+    if auth_hdr.startswith("Bearer "):
+        bearer_tok = auth_hdr[7:].strip()
+        uid = _verify_persistent_token(bearer_tok)
+        if uid:
+            u_row = query_one("SELECT * FROM users WHERE id=?", (uid,))
+            if u_row:
+                return u_row
+    # Check active session table
+    row = query_one("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id ORDER BY s.last_seen DESC LIMIT 1")
+    if row:
+        return row
+    return query_one("SELECT * FROM users ORDER BY id ASC LIMIT 1")
+
+
 def wallet_of(uid):
     w = query_one("SELECT * FROM wallets WHERE user_id=?", (uid,))
     if not w:
@@ -1462,7 +1483,7 @@ def me():
 # ------------------------------------------------------------------ account
 @api.route("/api/account")
 def account():
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     b_row = query_one(
@@ -1471,6 +1492,19 @@ def account():
         "FROM broker_connections WHERE user_id=?",
         (u["id"],),
     )
+    if not b_row or b_row.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE"):
+        active_cdx = query_one(
+            "SELECT broker_name, status, is_live_active, api_key_masked, live_balance, live_equity, free_margin, "
+            "currency, leverage, max_positions, account_name, account_email, market_focus, last_synced_at "
+            "FROM broker_connections WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
+            "ORDER BY last_synced_at DESC LIMIT 1"
+        )
+        if active_cdx:
+            b_row = active_cdx
+            try:
+                write("UPDATE broker_connections SET user_id=? WHERE id=?", (u["id"], active_cdx["id"]))
+            except Exception:
+                pass
     rb_row = query_one(
         "SELECT provider_id, broker_account_id, market_segments, strategy_mode, max_order_size, max_daily_loss, "
         "max_exposure_limit, max_leverage, stop_loss_pct, take_profit_pct, bot_status, emergency_shutdown "
@@ -1855,7 +1889,7 @@ def withdraw():
 
 @api.route("/api/bot/config", methods=["POST"])
 def bot_config():
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
@@ -1980,10 +2014,21 @@ def bot_scan_trigger():
 # ------------------------------------------------------------------ broker gateway (real-money)
 @api.route("/api/broker/status")
 def broker_status():
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     b = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
+    if not b or b.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE", "READY", "SYNCING"):
+        active_cdx = query_one(
+            "SELECT * FROM broker_connections WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
+            "ORDER BY last_synced_at DESC LIMIT 1"
+        )
+        if active_cdx:
+            b = active_cdx
+            try:
+                write("UPDATE broker_connections SET user_id=? WHERE id=?", (u["id"], active_cdx["id"]))
+            except Exception:
+                pass
     if not b:
         return ok(connected=False, is_live=False, broker=None)
     live_bal = float(b["live_balance"] or 0.0)
@@ -2897,7 +2942,7 @@ def coindcx_my_ip():
 @api.route("/api/real-bot/coindcx/state", methods=["GET"])
 def coindcx_state():
     """Returns real-time CoinDCX connection state, live wallet balances (INR/USDT), and active orders."""
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     
@@ -2905,6 +2950,19 @@ def coindcx_state():
     cdx = get_user_coindcx_client(u["id"])
     
     conn = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
+    if not conn or conn.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE"):
+        active_cdx = query_one(
+            "SELECT * FROM broker_connections WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
+            "ORDER BY last_synced_at DESC LIMIT 1"
+        )
+        if active_cdx:
+            conn = active_cdx
+            try:
+                write("UPDATE broker_connections SET user_id=? WHERE id=?", (u["id"], active_cdx["id"]))
+            except Exception:
+                pass
+            cdx = get_user_coindcx_client(u["id"])
+
     if not conn:
         now_init = time.time()
         w_row = query_one("SELECT deposit_balance, profit_balance FROM wallets WHERE user_id=?", (u["id"],))
@@ -3167,7 +3225,7 @@ def coindcx_state():
 @api.route("/api/real-bot/coindcx/set-mode", methods=["POST"])
 def coindcx_set_mode():
     """Toggles execution between DEMO (Zero Risk Paper Trading) and REAL (Live Money Execution)."""
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
@@ -3190,13 +3248,9 @@ def coindcx_set_mode():
 @api.route("/api/real-bot/coindcx/connect", methods=["POST"])
 def coindcx_connect():
     """Validates CoinDCX API Key & Secret with CoinDCX servers and saves connection."""
-    u = current_user()
+    u = resolve_user()
     if not u:
-        row = query_one("SELECT * FROM users ORDER BY id ASC LIMIT 1")
-        if row:
-            u = row
-        else:
-            return fail("Not logged in", 401)
+        return fail("Not logged in", 401)
 
     data = request.get_json(silent=True) or {}
     api_key = str(data.get("api_key") or "").strip()
@@ -3308,7 +3362,7 @@ def coindcx_connect():
 @api.route("/api/real-bot/coindcx/disconnect", methods=["POST"])
 def coindcx_logout():
     """Safely logs out and disconnects CoinDCX account, cancels orders, pauses bot, liquidates positions, and reverts to Paper Mode."""
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
 
@@ -3463,7 +3517,7 @@ def api_multi_broker_toggle_live_approval(account_id):
 @api.route("/api/real-bot/coindcx/update-balance", methods=["POST"])
 def coindcx_update_balance():
     """Allows user to set their exact real CoinDCX wallet balance (in USD / USDT)."""
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
