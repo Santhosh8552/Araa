@@ -2214,20 +2214,13 @@
         <!-- ⚡ ARAA AI BOT LIVE ENTRY FLOATING OVERLAY HUD -->
         <div id="chart_live_entry_hud" class="chart_live_entry_banner hide" style="margin: 0 12px 8px; background: linear-gradient(90deg, rgba(16,185,129,0.14), rgba(15,23,42,0.95)); border: 1px solid rgba(16,185,129,0.45); border-radius: 8px; padding: 7px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.3); font-size: 11px;"></div>
 
-        <div id="tv_chart" class="tv hide"></div>
-        <canvas id="chart" class="canvas"></canvas>
-        <div class="cfoot">
-          <span id="t_ind">VOL — · MA(50) — · RSI —</span>
-          <span class="muted">CROSSHAIR · SCROLL TO ZOOM</span>
-          <span id="t_count">— candles</span>
-        </div>
-        <div id="chart_note" class="note"></div>
         <!-- 🧬 SMC STRUCTURE TIMELINE & MARKET DNA PANEL -->
-        <div id="smc_dna_panel" style="margin:8px 12px 12px; background:rgba(15,23,42,0.88); border:1px solid rgba(168,85,247,0.3); border-radius:10px; padding:10px 12px;">
+        <div id="smc_dna_panel" style="margin:0 12px 10px; background:rgba(15,23,42,0.88); border:1px solid rgba(168,85,247,0.3); border-radius:10px; padding:10px 12px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <b style="font-size:11.5px; color:#c084fc; letter-spacing:0.04em;">🧬 INFINITY SMC &amp; MARKET DNA STRUCTURE TIMELINE</b>
               <span id="smc_dna_status_badge" class="tag" style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; background:rgba(148,163,184,0.18); color:#cbd5e1;">ANALYZING</span>
+              <button type="button" onclick="window.openSmcDnaCanvas()" class="pill" style="cursor:pointer; font-size:10px; font-weight:800; background:rgba(168,85,247,0.22); border:1px solid #a855f7; color:#e9d5ff; padding:2px 8px;">📊 SHOW OVERLAY ON CHART</button>
             </div>
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:10.5px; font-family:var(--mono);">
               <span>Bias: <b id="smc_dna_bias" style="color:#f8fafc;">—</b></span>
@@ -2254,6 +2247,15 @@
             </table>
           </div>
         </div>
+
+        <div id="tv_chart" class="tv hide"></div>
+        <canvas id="chart" class="canvas"></canvas>
+        <div class="cfoot">
+          <span id="t_ind">VOL — · MA(50) — · RSI —</span>
+          <span class="muted">CROSSHAIR · SCROLL TO ZOOM</span>
+          <span id="t_count">— candles</span>
+        </div>
+        <div id="chart_note" class="note"></div>
       </div>
 
       <!-- order ticket -->
@@ -5833,6 +5835,6 @@
   border-top-color: rgba(130, 180, 0, 0.25) !important;
 }
 </style>
-<script src="app.js?v=20261113_coindcx_auto_adopt"></script>
+<script src="app.js?v=20261113_smc_dna_v2"></script>
 </body>
 </html>

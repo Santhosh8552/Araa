@@ -52,6 +52,9 @@
     <button class="adm-dock-btn" data-view="ai-gatekeeper" onclick="window.switchAdminView('ai-gatekeeper')">
       <span class="adm-dock-ic">🛡️</span><span>AI Core &amp; Gatekeeper</span><span class="adm-dock-tag ok">6/6</span>
     </button>
+    <button class="adm-dock-btn" data-view="smc-dna" onclick="window.switchAdminView('smc-dna')">
+      <span class="adm-dock-ic">🧬</span><span>SMC &amp; Market DNA</span><span class="adm-dock-tag" style="background:rgba(168,85,247,0.25); color:#e9d5ff; border:1px solid #a855f7;">NEW</span>
+    </button>
     <button class="adm-dock-btn" data-view="neural-3d" onclick="window.switchAdminView('neural-3d')">
       <span class="adm-dock-ic">🧠</span><span>3D Neural Pipeline</span><span class="adm-dock-tag cyan">v4.0</span>
     </button>
@@ -92,6 +95,7 @@
         <button class="adm-ws-pill active" data-view="all" onclick="window.switchAdminView('all')">⚡ All Systems</button>
         <button class="adm-ws-pill" data-view="overview" onclick="window.switchAdminView('overview')">📊 Overview</button>
         <button class="adm-ws-pill" data-view="ai-gatekeeper" onclick="window.switchAdminView('ai-gatekeeper')">🛡️ AI &amp; Rules</button>
+        <button class="adm-ws-pill" data-view="smc-dna" onclick="window.switchAdminView('smc-dna')" style="border-color:rgba(168,85,247,0.5); color:#e9d5ff;">🧬 SMC &amp; Market DNA</button>
         <button class="adm-ws-pill" data-view="neural-3d" onclick="window.switchAdminView('neural-3d')">🧠 3D Pipeline</button>
         <button class="adm-ws-pill" data-view="slack" onclick="window.switchAdminView('slack')">💬 Slack Studio</button>
         <button class="adm-ws-pill" data-view="users-book" onclick="window.switchAdminView('users-book')">👥 Users &amp; Book</button>
@@ -335,8 +339,10 @@
         </div>
       </div>
     </div>
+    </section>
 
-    <!-- 🧬 SMC & MARKET DNA INSTITUTIONAL SCANNER & STRUCTURE TIMELINE -->
+    <!-- ==================== SECTION 2B: SMC & MARKET DNA INSTITUTIONAL SCANNER ==================== -->
+    <section class="adm-sec" data-adm-sec="smc-dna">
     <div class="card" style="margin-bottom:20px; background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(168,85,247,0.08)); border:1px solid rgba(168,85,247,0.4); border-radius:14px; padding:20px;">
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -376,11 +382,12 @@
               <th style="padding:6px 10px; text-align:left;">Symbol</th>
               <th style="padding:6px 10px; text-align:left;">TF</th>
               <th style="padding:6px 10px; text-align:left;">Structure Event</th>
+              <th style="padding:6px 10px; text-align:left;">Bias</th>
               <th style="padding:6px 10px; text-align:right;">Price</th>
             </tr>
           </thead>
           <tbody id="adm_smc_timeline_body">
-            <tr><td colspan="5" style="text-align:center; padding:12px; color:#64748b;">Loading confirmed structure events...</td></tr>
+            <tr><td colspan="6" style="text-align:center; padding:12px; color:#64748b;">Loading confirmed structure events...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1079,25 +1086,25 @@
   </div>
 </div>
 
-<script src="/admin/admin.js?v=20261113_admin_auth_fix"></script>
+<script src="/admin/admin.js?v=20261113_smc_dna_v2"></script>
 <script>
   window.switchAdminView = function(view) {
     var titles = {
       'all': 'Full Command Center · Live Telemetry & Execution Governance',
       'overview': 'Platform Overview · Master Bot & 8-KPI Bento Telemetry',
       'ai-gatekeeper': 'ARAA AI Core · 6-Rule Execution Firewall & Pre-Trade Audit',
+      'smc-dna': 'Infinity SMC & Market DNA · Institutional Order Blocks, FVG & Twin Projection',
       'neural-3d': '3D Neural Execution Pipeline · 6-Stage Quantum Flight Deck',
       'slack': 'Slack Workflow Studio · Natural Language Prompt Interpreter',
       'users-book': 'Live Users, Accounts & Multi-Position Book',
       'treasury': 'Treasury, Withdrawals, Direct Deposits & 30% Brokerage Ledger',
-      'security': 'Active Security Firewall, Threat Defense & Engine Analysis Log'
+      'security': 'Active Security Firewall, Threat Defense & Engine Analysis Log',
+      'super-admin': 'Central Super Admin & Enterprise SSO'
     };
     document.querySelectorAll('.adm-sec').forEach(function(sec) {
-      if (view === 'all' || sec.getAttribute('data-adm-sec') === view) {
-        sec.style.display = '';
-      } else {
-        sec.style.display = 'none';
-      }
+      var secName = sec.getAttribute('data-adm-sec');
+      var show = (view === 'all') || (secName === view) || (secName === 'smc-dna' && (view === 'overview' || view === 'ai-gatekeeper'));
+      sec.style.display = show ? '' : 'none';
     });
     document.querySelectorAll('.adm-dock-btn, .adm-ws-pill').forEach(function(btn) {
       btn.classList.toggle('active', btn.getAttribute('data-view') === view);

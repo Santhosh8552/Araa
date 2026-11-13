@@ -946,6 +946,7 @@
           <td>${m.is_default ? '<span class="badge info">DEFAULT</span>' : "—"}</td>
         </tr>`).join("")}
       </tbody></table>` : `<div class="kpi-sub">No AI models registered.</div>`;
+    try { await runAllAiConsensus(); } catch (e) {}
   }
 
   async function runAllAiConsensus() {

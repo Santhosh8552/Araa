@@ -6437,7 +6437,26 @@ function drawChart(candles) {
   }
 }
 
+window.openSmcDnaCanvas = function() {
+  S.showSmcDna = true;
+  const btn = $("btn_toggle_smc_dna");
+  if (btn) {
+    btn.classList.add("active");
+    btn.textContent = "🧬 SMC + DNA ON";
+    btn.style.opacity = "1";
+  }
+  if (S.chartMode !== "local") {
+    switchToAraaChart();
+  } else {
+    drawChart(S.candles);
+  }
+};
+
 window.toggleSmcDnaOverlay = function() {
+  if (S.chartMode !== "local") {
+    window.openSmcDnaCanvas();
+    return;
+  }
   S.showSmcDna = !S.showSmcDna;
   const btn = $("btn_toggle_smc_dna");
   if (btn) {
@@ -6445,11 +6464,7 @@ window.toggleSmcDnaOverlay = function() {
     btn.textContent = S.showSmcDna ? "🧬 SMC + DNA ON" : "🧬 SMC + DNA OFF";
     btn.style.opacity = S.showSmcDna ? "1" : "0.65";
   }
-  if (S.showSmcDna && S.chartMode !== "local") {
-    switchToAraaChart();
-  } else {
-    drawChart(S.candles);
-  }
+  drawChart(S.candles);
 };
 
 function renderSmcDnaPanel(smcDna) {

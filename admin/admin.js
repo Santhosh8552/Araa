@@ -1102,14 +1102,17 @@ async function loadAdminSmcDna() {
         timelineBody.innerHTML = timeline.map((ev) => {
           const evBias = String(ev.bias || "neutral").toUpperCase();
           const bClr = evBias === "BULLISH" ? "#34d399" : evBias === "BEARISH" ? "#fb7185" : "#fbbf24";
+          const tStr = (typeof ev.time === "number" && ev.time > 1000000000)
+            ? new Date(ev.time * 1000).toLocaleTimeString("en-IN", {timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false})
+            : (ev.time || "--");
           return `
             <tr>
-              <td>${_e(ev.time || "--")}</td>
+              <td>${_e(tStr)}</td>
               <td><b>${_e(ev.symbol || sym)}</b></td>
               <td>${_e(ev.tf || "15M")}</td>
               <td>${_e(ev.event || "--")}</td>
               <td><span style="color:${bClr}; font-weight:700;">${_e(evBias)}</span></td>
-              <td>$${priceFmt(ev.price || 0)}</td>
+              <td style="text-align:right;">$${priceFmt(ev.price || 0)}</td>
             </tr>
           `;
         }).join("");
@@ -1826,6 +1829,9 @@ const origSwitchAdminView = window.switchAdminView;
 window.switchAdminView = function(viewName) {
   if (typeof origSwitchAdminView === "function") {
     origSwitchAdminView(viewName);
+  }
+  if (typeof loadAdminSmcDna === "function") {
+    loadAdminSmcDna();
   }
   if (viewName === "super-admin" || viewName === "all") {
     loadCentralAdminData();
