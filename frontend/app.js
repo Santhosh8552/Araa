@@ -437,6 +437,11 @@ async function call(path, opts = {}) {
   try {
     res = await doFetch();
   } catch (netErr) {
+    // Never auto-resend POST/PUT/DELETE (avoids duplicate connects/orders); retry GETs once
+    const isWrite = opts.method && String(opts.method).toUpperCase() !== "GET";
+    if (isWrite) {
+      throw new Error("Server is taking longer than usual. Please wait a few seconds and try again.");
+    }
     // Retry once after 300ms on transient connection hiccup / timeout
     try {
       await new Promise(r => setTimeout(r, 300));
@@ -4751,6 +4756,7 @@ if ($("btn_connect_coindcx")) {
     try {
       const res = await call("/api/real-bot/coindcx/connect", {
         method: "POST",
+        timeoutMs: 45000,
         body: { api_key: apiKey, api_secret: apiSecret, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
       });
 
@@ -4799,6 +4805,7 @@ if ($("btn_connect_coindcx_offline")) {
     try {
       const res = await call("/api/real-bot/coindcx/connect", {
         method: "POST",
+        timeoutMs: 45000,
         body: { api_key: apiKey, api_secret: apiSecret, offline_mode: true, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
       });
 

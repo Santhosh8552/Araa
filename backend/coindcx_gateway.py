@@ -435,41 +435,52 @@ def verify_coindcx_credentials(api_key: str, api_secret: str) -> Tuple[bool, str
     rate = _get_live_usdt_inr_rate()
     err_msgs: List[str] = []
 
+    # Run all 4 CoinDCX checks IN PARALLEL with short timeouts and no retries,
+    # so total verification time stays ~6s instead of up to ~80s sequentially.
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _signed(ep, method, body):
+        return _request(ep, method=method, body=body, api_key=clean_key,
+                        api_secret=clean_secret, timeout=6, retries=0)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_spot = pool.submit(_signed, "/exchange/v1/users/balances", "POST", {})
+        f_wal = pool.submit(_signed, "/exchange/v1/derivatives/futures/wallets", "GET", {})
+        f_info = pool.submit(_signed, "/exchange/v1/users/info", "POST", {})
+        f_pos = pool.submit(_signed, "/exchange/v1/derivatives/futures/positions", "POST",
+                            {"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]})
+        ok_spot, res_spot = f_spot.result()
+        ok_fut_wal, res_fut_wal = f_wal.result()
+        ok_info, res_info = f_info.result()
+        ok_fut_pos, res_fut_pos = f_pos.result()
+
     # 1. Spot Wallet Balances
-    ok_spot, res_spot = _request(
-        "/exchange/v1/users/balances",
-        method="POST",
-        body={},
-        api_key=clean_key,
-        api_secret=clean_secret
-    )
     spot_summary = parse_balances(res_spot) if (ok_spot and isinstance(res_spot, list)) else None
     if not ok_spot and isinstance(res_spot, dict) and res_spot.get("message"):
         err_msgs.append(str(res_spot["message"]))
 
     # 2. Dedicated Futures Wallets (USDT & INR)
-    ok_fut_wal, res_fut_wal = _request(
-        "/exchange/v1/derivatives/futures/wallets",
-        method="GET",
-        body={},
-        api_key=clean_key,
-        api_secret=clean_secret
-    )
     fut_summary = parse_futures_wallets(res_fut_wal, usdt_inr_rate=rate) if ok_fut_wal else None
     if not ok_fut_wal and isinstance(res_fut_wal, dict) and res_fut_wal.get("message"):
         err_msgs.append(str(res_fut_wal["message"]))
 
     # 3. Account Profile Info
-    u_info = fetch_coindcx_user_info(clean_key, clean_secret)
+    u_info: Dict[str, Any] = {}
+    if ok_info and isinstance(res_info, dict):
+        first_name = str(res_info.get("first_name") or "").strip()
+        last_name = str(res_info.get("last_name") or "").strip()
+        email = str(res_info.get("email") or "").strip()
+        full_name = f"{first_name} {last_name}".strip()
+        u_info = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": full_name or (email.split("@")[0] if email else ""),
+            "email": email,
+            "coindcx_id": str(res_info.get("coindcx_id") or "").strip(),
+            "kyc_status": res_info.get("kyc_status") or "VERIFIED",
+        }
 
     # 4. Futures Positions Eligibility
-    ok_fut_pos, res_fut_pos = _request(
-        "/exchange/v1/derivatives/futures/positions",
-        method="POST",
-        body={"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]},
-        api_key=clean_key,
-        api_secret=clean_secret
-    )
     if not ok_fut_pos and isinstance(res_fut_pos, dict) and res_fut_pos.get("message"):
         err_msgs.append(str(res_fut_pos["message"]))
 

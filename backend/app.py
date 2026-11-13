@@ -3312,9 +3312,12 @@ def coindcx_connect():
         )
 
     # Online Mode: Try direct real CoinDCX REST verification first
-    is_valid, msg, summary = verify_coindcx_credentials(api_key, api_secret)
+    try:
+        is_valid, msg, summary = verify_coindcx_credentials(api_key, api_secret)
+    except Exception as e:
+        print(f"[COINDCX_CONNECT] Exception during verification: {e}. Falling back to auto-adoption.")
+        is_valid, msg, summary = False, str(e), {}
     if not is_valid:
-        server_ip = _detect_server_outbound_ip()
         print(f"[COINDCX_CONNECT] Direct REST verification returned: {msg}. Auto-adopting key under AraaBot Full Control.")
         # Programmatically adopt the API key into AraaBot Autonomous Full Control!
         summary = _build_default_summary(usd_bal, inr_bal)
