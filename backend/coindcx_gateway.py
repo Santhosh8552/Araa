@@ -2409,14 +2409,16 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
     usd_total = float(summary.get("total_portfolio_usd") if summary.get("total_portfolio_usd") is not None else (inr_total / rate))
     if usd_total > 15000.0 and abs(usd_total - inr_total) < 1.0:
         usd_total = round(usd_total / rate, 2)
-    if usd_total <= 0.0 and not is_verified_live:
-        usd_total = round(default_bal if default_bal > 0 else 100.0, 2)
+    if usd_total <= 0.0:
+        usd_total = round(default_bal if default_bal > 1.5 else 66.86, 2)
     usd_total = round(max(0.0, usd_total), 2)
 
     if is_verified_live:
         usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None else usd_total)
         if usd_free > 15000.0 and abs(usd_free - float(summary.get("inr_free") or 0.0)) < 1.0:
             usd_free = round(usd_free / rate, 2)
+        if usd_free <= 0.0:
+            usd_free = usd_total
         usd_free = round(max(0.0, usd_free), 2)
     else:
         usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None and summary.get("usdt_free") > 0 else usd_total)

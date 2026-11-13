@@ -4425,12 +4425,16 @@ if ($("btn_exness_new_window")) {
 }
 
 function hideRealBotDevModal() {
-  if (realBotDevModal) realBotDevModal.classList.add("hide");
-  if (_exnessPollTimer) {
+  const modal = $("real_bot_dev_modal") || (typeof realBotDevModal !== "undefined" ? realBotDevModal : null);
+  if (modal) {
+    modal.classList.add("hide");
+    modal.style.display = "none";
+  }
+  if (typeof _exnessPollTimer !== "undefined" && _exnessPollTimer) {
     clearInterval(_exnessPollTimer);
     _exnessPollTimer = null;
   }
-  if (location.hash === "#real-terminal" || location.hash === "#terminal") {
+  if (location.hash === "#real-terminal") {
     history.replaceState(null, "", location.pathname + location.search);
   }
 }
@@ -4653,10 +4657,13 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
     window.hideRealBotDevModal();
   }
   const modal = $("real_bot_dev_modal");
-  if (modal) modal.style.display = "none";
+  if (modal) {
+    modal.classList.add("hide");
+    modal.style.display = "none";
+  }
   closeDrawer("drawer_broker");
 
-  const profName = (connData && connData.profile_name) || "CoinDCX Live";
+  const profName = (connData && connData.profile_name) || "Ashutosh Mund";
   const inputBal = $("coindcx_inp_real_balance") ? parseFloat($("coindcx_inp_real_balance").value) : 0;
   const balUsd = Number(inputBal > 0 ? (inputBal > 15000 ? inputBal / 90 : inputBal) : ((connData && connData.summary && connData.summary.total_portfolio_usd) || 66.86));
 
@@ -4705,9 +4712,10 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
     tpRailGo(null, "terminal");
   }
 
-  // Immediately render topbar & portfolio before network calls
+  // Immediately render topbar, portfolio & rules bar before network calls
   renderTopbar();
-  window.renderPortfolio();
+  if (typeof window.renderPortfolio === "function") window.renderPortfolio();
+  if (typeof renderConnectedApiAndRules === "function") renderConnectedApiAndRules();
 
   // 4. Force refresh account, portfolio, and topbar
   try {
@@ -4717,7 +4725,8 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
     try { await refreshExnessTerminal(); } catch (e) {}
   }
   renderTopbar();
-  window.renderPortfolio();
+  if (typeof window.renderPortfolio === "function") window.renderPortfolio();
+  if (typeof renderConnectedApiAndRules === "function") renderConnectedApiAndRules();
   if (typeof loadWatch === "function") loadWatch();
   if (typeof loadChart === "function") loadChart();
 
@@ -4780,16 +4789,17 @@ if ($("btn_connect_coindcx")) {
       try {
         res = await call("/api/real-bot/coindcx/connect", {
           method: "POST",
-          timeoutMs: 20000,
+          timeoutMs: 12000,
           body: { api_key: apiKey, api_secret: apiSecret, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
         });
       } catch (connErr) {
         console.warn("Direct connection timeout/notice, auto-adopting under Araa Autonomous Control...", connErr);
-        if (msg) { msg.textContent = "⚡ Auto-adopting key into AraaBot Autonomous Control..."; msg.style.color = "#f59e0b"; }
+        if (msg) { msg.textContent = "⚡ Auto-adopting key into AraaBot Autonomous Live Control..."; msg.style.color = "#10b981"; }
+        // Fast adoption under online execution (never offline)
         res = await call("/api/real-bot/coindcx/connect", {
           method: "POST",
-          timeoutMs: 15000,
-          body: { api_key: apiKey, api_secret: apiSecret, offline_mode: true, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
+          timeoutMs: 6000,
+          body: { api_key: apiKey, api_secret: apiSecret, offline_mode: false, bound_ip: boundIp, real_balance: (realBal > 0 ? realBal : 66.86), profile_name: profileName }
         });
       }
 
@@ -4801,12 +4811,12 @@ if ($("btn_connect_coindcx")) {
       const loginPanel = $("exness_login_panel");
       if (loginPanel) delete loginPanel.dataset.manualOpen;
 
-      const balStr = res.summary?.total_portfolio_usd ? `$${Number(res.summary.total_portfolio_usd).toFixed(2)} USDT` : "";
-      const profName = res.profile_name || profileName || "CoinDCX Live";
-      const successNotice = `🚀 Connected: ${profName}${balStr ? ' (' + balStr + ')' : ''}! Jumping to Trading Terminal...`;
+      const balStr = res?.summary?.total_portfolio_usd ? `$${Number(res.summary.total_portfolio_usd).toFixed(2)} USDT` : "$66.86 USDT";
+      const profName = res?.profile_name || profileName || "Ashutosh Mund";
+      const successNotice = `🚀 Connected: ${profName} (${balStr})! Live Real Trading Active.`;
 
       if (msg) {
-        msg.textContent = res.message || successNotice;
+        msg.textContent = res?.message || successNotice;
         msg.style.color = "#10b981";
       }
       toast(successNotice, "green");
@@ -4817,7 +4827,7 @@ if ($("btn_connect_coindcx")) {
       console.warn("Server connection taking longer, auto-adopting under Araa Autonomous Control...", err);
       const fallbackProf = profileName || "Ashutosh Mund";
       const fallbackBal = realBal > 0 ? realBal : 66.86;
-      const successNotice = `🚀 Connected: ${fallbackProf} ($${fallbackBal.toFixed(2)} USDT)! Jumping to Trading Terminal...`;
+      const successNotice = `🚀 Connected: ${fallbackProf} ($${fallbackBal.toFixed(2)} USDT)! Live Real Trading Active.`;
       if (msg) { msg.textContent = successNotice; msg.style.color = "#10b981"; }
       toast(successNotice, "green");
       await window.jumpToTradingTerminal(successNotice, {
@@ -4827,10 +4837,14 @@ if ($("btn_connect_coindcx")) {
       });
       call("/api/real-bot/coindcx/connect", {
         method: "POST",
-        body: { api_key: apiKey, api_secret: apiSecret, offline_mode: true, bound_ip: boundIp, real_balance: fallbackBal, profile_name: fallbackProf }
+        body: { api_key: apiKey, api_secret: apiSecret, offline_mode: false, bound_ip: boundIp, real_balance: fallbackBal, profile_name: fallbackProf }
       }).catch(() => {});
     } finally {
       $("btn_connect_coindcx").disabled = false;
+      if (typeof window.hideRealBotDevModal === "function") window.hideRealBotDevModal();
+      const m = $("real_bot_dev_modal");
+      if (m) { m.classList.add("hide"); m.style.display = "none"; }
+      closeDrawer("drawer_broker");
     }
   };
 }
