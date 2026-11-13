@@ -407,17 +407,31 @@ async function call(path, opts = {}) {
   const t0 = performance.now();
   const headers = {"Content-Type": "application/json", ...(opts.headers || {})};
   if (S.token) headers["X-Token"] = S.token;
-  
+  const timeoutMs = opts.timeoutMs || 15000;
+
+  const doFetch = async () => {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+    try {
+      return await fetch(API + path, {
+        headers,
+        ...opts,
+        signal: opts.signal || (ctrl ? ctrl.signal : undefined),
+        body: opts.body ? JSON.stringify(opts.body) : undefined
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   let res;
   try {
-    res = await fetch(API + path, {headers, ...opts,
-      body: opts.body ? JSON.stringify(opts.body) : undefined});
+    res = await doFetch();
   } catch (netErr) {
-    // Retry once after 250ms on transient connection hiccup
+    // Retry once after 300ms on transient connection hiccup / timeout
     try {
-      await new Promise(r => setTimeout(r, 250));
-      res = await fetch(API + path, {headers, ...opts,
-        body: opts.body ? JSON.stringify(opts.body) : undefined});
+      await new Promise(r => setTimeout(r, 300));
+      res = await doFetch();
     } catch (retryErr) {
       throw new Error("Server temporarily syncing, retrying automatically...");
     }
@@ -425,15 +439,19 @@ async function call(path, opts = {}) {
 
   S.lat = Math.round(performance.now() - t0);
   if (res.status >= 500) {
-    // Retry once automatically if cloud load balancer returns 502/503/504/505 during rolling deploy
+    // Retry once automatically if cloud load balancer returns 502/503/504 during rolling deploy
     try {
-      await new Promise(r => setTimeout(r, 350));
-      res = await fetch(API + path, {headers, ...opts,
-        body: opts.body ? JSON.stringify(opts.body) : undefined});
+      await new Promise(r => setTimeout(r, 400));
+      res = await doFetch();
+      S.lat = Math.round(performance.now() - t0);
     } catch (e) {}
   }
-  const data = await res.json().catch(() => ({success: true, status: "RECOVERED"}));
-  if (res.status >= 500) return data;
+  if (res.status >= 500) {
+    const err = new Error(`Server temporarily syncing (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) {
     const err = new Error(data.error || "Please check your inputs and try again.");
     err.status = res.status;
@@ -728,9 +746,8 @@ async function enterApp(pushState = true) {
   if (pushState) {
     history.pushState({view: "app"}, "Live Trading Terminal — Trade Pro", "#terminal");
   }
-  try {
-    await refreshAccount();
-  } catch (e) {
+  startPollers();
+  const acctPromise = refreshAccount().catch((e) => {
     if (e && e.status === 401) {
       localStorage.removeItem("tp_token");
       S.token = "";
@@ -739,13 +756,24 @@ async function enterApp(pushState = true) {
         $("auth_msg").className = "msg red";
         $("auth_msg").textContent = "Session signed out. Please sign in again.";
       }
-      return;
+      return "AUTH_401";
     }
     toast("Reconnecting to server... staying signed in.", "amber");
-  }
-  loadDepositAssets(); loadTicker(); loadWatch(); loadChart();
-  startPollers();
+    setTimeout(() => { if (S.token) refreshAccount().catch(() => {}); }, 1500);
+    return "RETRY";
+  });
+  const watchPromise = loadWatch().catch(() => {
+    setTimeout(() => { if (S.token) loadWatch().catch(() => {}); }, 1500);
+  });
+  const chartPromise = loadChart().catch(() => {
+    setTimeout(() => { if (S.token) loadChart().catch(() => {}); }, 1500);
+  });
+  loadDepositAssets();
+  loadTicker().catch(() => { setTimeout(() => { if (S.token) loadTicker().catch(() => {}); }, 2000); });
   checkGeminiStatus(); // Auto-connect AI status and show live connected badge immediately upon login
+  const acctState = await acctPromise;
+  if (acctState === "AUTH_401") return;
+  await Promise.allSettled([watchPromise, chartPromise]);
   const link = location.hash.match(/#\/profit\/([a-f0-9]+)/i);
   if (link) { openDrawer("drawer_wallet");
     try { const d = await call("/api/profit-link/" + link[1]);
@@ -758,10 +786,20 @@ async function enterApp(pushState = true) {
 const equity = () => S.wallet ? (Number(S.wallet.deposit_balance || 0) + Number(S.wallet.profit_balance || 0) + Number(S.wallet.locked_balance || 0)) : 0;
 
 async function refreshAccount() {
-  const d = await call("/api/account");
-  try {
-    const bRes = await call("/api/broker/status");
-    if (bRes && bRes.connected) {
+  const [acctSettled, brokerSettled] = await Promise.allSettled([
+    call("/api/account"),
+    call("/api/broker/status"),
+  ]);
+  if (acctSettled.status !== "fulfilled") {
+    throw acctSettled.reason;
+  }
+  const d = acctSettled.value;
+  if (!d || !d.user) {
+    throw new Error("Account state syncing...");
+  }
+  const bRes = brokerSettled.status === "fulfilled" ? brokerSettled.value : null;
+  if (bRes) {
+    if (bRes.connected) {
       S.broker = Object.assign({}, bRes.broker, {
         name: bRes.broker.name,
         broker_name: bRes.broker.name,
@@ -781,7 +819,7 @@ async function refreshAccount() {
     } else {
       S.broker = { is_live: false, is_coindcx: false };
     }
-  } catch (e) {
+  } else {
     S.broker = S.broker || { is_live: false, is_coindcx: false };
   }
 
@@ -3739,14 +3777,20 @@ async function refreshExnessTerminal() {
           No active positions on CoinDCX. Click <b>▶ START BOT</b> to activate real-time Araa AI auto-trading.
         </td></tr>`;
       } else {
+        window._coindcxOpenPositions = opens;
         tbody.innerHTML = opens.map(p => {
-          const pPnl = parseFloat(p.unrealized_pnl) || 0.0;
-          const posMargin = parseFloat(p.margin) || 1.0;
-          const pRoi = posMargin > 0 ? (pPnl / posMargin * 100.0) : 0.0;
           const entryP = parseFloat(p.entry_price) || 1.0;
-          const currP = parseFloat(p.current_price || p.entry_price) || entryP;
+          const symU = String(p.symbol || "").toUpperCase();
+          const liveQuoteP = (S.prices && S.prices[symU]) ? parseFloat(S.prices[symU]) : 0;
+          const rawCurrP = parseFloat(p.current_price || p.mark_price || entryP) || entryP;
+          const currP = (liveQuoteP > 0 && Math.abs(rawCurrP - entryP) < 1e-12) ? liveQuoteP : rawCurrP;
           const dirP = (p.side === 'BUY' || p.side === 'LONG') ? 1.0 : -1.0;
+          const posMargin = parseFloat(p.margin) || 1.0;
           const pLev = parseFloat(p.leverage) || 30.0;
+          const calcPnl = (entryP > 0 && posMargin > 0) ? (posMargin * pLev * ((currP - entryP) / entryP) * dirP) : 0.0;
+          const rawPnl = parseFloat(p.unrealized_pnl);
+          const pPnl = (!isNaN(rawPnl) && Math.abs(rawPnl) > 1e-6) ? rawPnl : calcPnl;
+          const pRoi = posMargin > 0 ? (pPnl / posMargin * 100.0) : 0.0;
           const exchLiq = parseFloat(p.liquidation_price) || 0.0;
           const liqPrice = exchLiq > 0
             ? exchLiq
@@ -3754,10 +3798,11 @@ async function refreshExnessTerminal() {
                 ? (entryP * Math.max(0.01, (1.0 - (1.0 / pLev) * 0.90)))
                 : (entryP * (1.0 + (1.0 / pLev) * 0.90)));
           const pnlColor = pPnl >= 0 ? "#10b981" : "#ef4444";
-          const slP = entryP * (1.0 - (parseFloat(p.stop_pct) || 0.85) / 100.0 * dirP);
-          const tpP = entryP * (1.0 + (parseFloat(p.target_pct) || 0.80) / 100.0 * dirP);
+          const slP = parseFloat(p.sl_price) > 0 ? parseFloat(p.sl_price) : (entryP * (1.0 - (parseFloat(p.stop_pct) || 0.60) / 100.0 * dirP));
+          const tpP = parseFloat(p.tp_price) > 0 ? parseFloat(p.tp_price) : (entryP * (1.0 + (parseFloat(p.target_pct) || 1.20) / 100.0 * dirP));
+          const posKey = String(p.id || p.order_id || symU);
 
-          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.15s ease;" onmouseover="this.style.background='rgba(56,189,248,0.05)'" onmouseout="this.style.background='transparent'">
+          return `<tr data-cdx-pos="${posKey}" data-sym="${symU}" style="border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.15s ease;" onmouseover="this.style.background='rgba(56,189,248,0.05)'" onmouseout="this.style.background='transparent'">
             <td style="font-weight:700; color:#fff; font-family:'JetBrains Mono',monospace;">#${p.id || p.order_id || 'LIVE'}</td>
             <td>
               <div style="font-weight:800; color:#38bdf8; display:flex; align-items:center; gap:5px;">
@@ -3768,13 +3813,13 @@ async function refreshExnessTerminal() {
             </td>
             <td><span style="background:${p.side==='BUY'||p.side==='LONG'?'rgba(16,185,129,0.2)':'rgba(239,68,68,0.2)'}; color:${p.side==='BUY'||p.side==='LONG'?'#10b981':'#f87171'}; border:1px solid ${p.side==='BUY'||p.side==='LONG'?'rgba(16,185,129,0.4)':'rgba(239,68,68,0.4)'}; padding:2px 8px; border-radius:4px; font-weight:800; font-size:10.5px;">${p.side}</span></td>
             <td style="font-family:'JetBrains Mono',monospace; color:#cbd5e1;">${p.qty}</td>
-            <td style="font-family:'JetBrains Mono',monospace; color:#f8fafc;">$${entryP < 0.1 ? entryP.toFixed(6) : entryP.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
-            <td style="font-family:'JetBrains Mono',monospace; color:#38bdf8; font-weight:700;">$${currP < 0.1 ? currP.toFixed(6) : currP.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
-            <td style="font-family:'JetBrains Mono',monospace; color:#f59e0b; font-size:11px;">$${liqPrice < 0.1 ? liqPrice.toFixed(6) : liqPrice.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
-            <td style="font-family:'JetBrains Mono',monospace; color:#ef4444; font-size:11px;">$${slP < 0.1 ? slP.toFixed(6) : slP.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
-            <td style="font-family:'JetBrains Mono',monospace; color:#10b981; font-size:11px;">$${tpP < 0.1 ? tpP.toFixed(6) : tpP.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:#f8fafc;">$${priceFmt(entryP)}</td>
+            <td class="cdx_mark_cell" style="font-family:'JetBrains Mono',monospace; color:#38bdf8; font-weight:700;">$${priceFmt(currP)}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:#f59e0b; font-size:11px;">$${priceFmt(liqPrice)}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:#ef4444; font-size:11px;">$${priceFmt(slP)}</td>
+            <td style="font-family:'JetBrains Mono',monospace; color:#10b981; font-size:11px;">$${priceFmt(tpP)}</td>
             <td style="font-family:'JetBrains Mono',monospace; color:#f8fafc; font-weight:700;">$${posMargin.toFixed(2)}</td>
-            <td style="font-family:'JetBrains Mono',monospace;">
+            <td class="cdx_pnl_cell" style="font-family:'JetBrains Mono',monospace;">
               <div style="font-weight:800; color:${pnlColor}; font-size:12px;">${pPnl>=0?'+':''}$${pPnl.toFixed(2)} <span style="font-size:10px;">(${pRoi>=0?'+':''}${pRoi.toFixed(1)}%)</span></div>
               <div style="font-size:9.5px; color:${pnlColor}; font-weight:700;">Float: ${pPnl>=0?'+':''}$${pPnl.toFixed(2)}</div>
             </td>
@@ -6248,6 +6293,46 @@ function drawChart(candles) {
       }
     });
   }
+
+  // ⚡ Araa AI Closed Trade Entry & Exit Signals: Render recent closed entries/exits on the chart
+  if (S.pf && Array.isArray(S.pf.closed_trades) && S.symbol) {
+    const recentClosed = S.pf.closed_trades.filter(t => t.symbol === S.symbol).slice(0, 4);
+    recentClosed.forEach((t, idx) => {
+      const ep = Number(t.entry_price || 0);
+      const xp = Number(t.exit_price || t.current_price || 0);
+      const rpnl = Number(t.realized_pnl || 0);
+      const isWin = rpnl >= 0;
+      const exitCol = isWin ? (isLight ? "#059669" : "#10b981") : (isLight ? "#e11d48" : "#f43f5e");
+      ctx.save();
+      if (ep >= lo && ep <= hi) {
+        const yIn = Y(ep);
+        ctx.strokeStyle = isLight ? "rgba(2,132,199,0.55)" : "rgba(56,189,248,0.55)";
+        ctx.lineWidth = 1 * dpr;
+        ctx.setLineDash([2 * dpr, 3 * dpr]);
+        ctx.beginPath(); ctx.moveTo(42, yIn); ctx.lineTo(w - 20, yIn); ctx.stroke();
+        ctx.fillStyle = isLight ? "#0284c7" : "#38bdf8";
+        ctx.font = `bold ${9 * dpr}px monospace`;
+        ctx.fillText(`▲ IN ${t.side} $${priceFmt(ep)}`, 46, yIn + (11 * dpr));
+      }
+      if (xp >= lo && xp <= hi) {
+        const yOut = Y(xp);
+        const offsetRight = (idx % 2) * 145 * dpr;
+        ctx.strokeStyle = exitCol;
+        ctx.lineWidth = 1.3 * dpr;
+        ctx.setLineDash([3 * dpr, 2 * dpr]);
+        ctx.beginPath(); ctx.moveTo(42, yOut); ctx.lineTo(w - 20, yOut); ctx.stroke();
+        const xBadge = Math.max(180 * dpr, w - 185 * dpr - offsetRight);
+        const lbl = `${isWin ? "★" : "✕"} EXIT $${priceFmt(xp)} (${rpnl >= 0 ? "+" : ""}$${rpnl.toFixed(2)})`;
+        const lw = ctx.measureText(lbl).width;
+        ctx.fillStyle = exitCol;
+        ctx.fillRect(xBadge - 4 * dpr, yOut - 13 * dpr, lw + 8 * dpr, 13 * dpr);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `bold ${8.5 * dpr}px monospace`;
+        ctx.fillText(lbl, xBadge, yOut - 3 * dpr);
+      }
+      ctx.restore();
+    });
+  }
 }
 
 function renderChartLiveEntryOverlay() {
@@ -6255,60 +6340,82 @@ function renderChartLiveEntryOverlay() {
   if (!hud) return;
 
   const positions = (S.pf && Array.isArray(S.pf.open_positions)) ? S.pf.open_positions : [];
+  const closedTrades = (S.pf && Array.isArray(S.pf.closed_trades)) ? S.pf.closed_trades : [];
   const curPos = positions.find(p => p.symbol === S.symbol);
-  const botPositions = positions.filter(p => p.source === "BOT");
+  const symClosed = closedTrades.filter(t => t.symbol === S.symbol).slice(0, 2);
 
   if (curPos) {
-    const isBot = curPos.source === "BOT";
+    const isBot = curPos.source === "BOT" || curPos.source === "COINDCX_API";
     const m = calcPositionMetrics(curPos);
     const entryPrice = m.entry;
     const liveMarket = m.markPrice;
     const livePnl = m.livePnl;
     const livePnlPct = m.roiPct;
     const isWin = livePnl >= 0;
+    const isLong = curPos.side === "LONG" || curPos.side === "BUY";
+    const tpPct = Number(curPos.target_pct || 0);
+    const slPct = Number(curPos.stop_pct || 0);
+    const tpPrice = Number(curPos.tp_price || 0) || (tpPct > 0 ? (isLong ? entryPrice * (1 + tpPct / 100) : entryPrice * (1 - tpPct / 100)) : 0);
+    const slPrice = Number(curPos.sl_price || 0) || (slPct > 0 ? (isLong ? entryPrice * (1 - slPct / 100) : entryPrice * (1 + slPct / 100)) : 0);
 
     hud.classList.remove("hide");
     hud.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <span class="tag" style="background:${isWin ? '#10b981' : '#f59e0b'}; color:#0f172a; font-weight:800; padding:2px 8px; border-radius:4px; font-size:10px; display:inline-flex; align-items:center; gap:4px;">
           <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#fff; animation:pulse_glow 1.2s infinite;"></span>
-          ${isBot ? "⚡ ARAA AI BOT LIVE ENTRY" : "⚡ MANUAL ENTRY"}
+          ${isBot ? "⚡ ARAA AI LIVE ENTRY" : "⚡ MANUAL ENTRY"}
         </span>
         <b style="color:var(--text, #0f172a); font-size:12px;">${curPos.side} ${curPos.symbol}</b>
-        <span style="color:var(--muted, #94a3b8); font-size:11px;">Entry: <b style="color:var(--text, #0f172a);">$${priceFmt(entryPrice)}</b></span>
+        <span style="color:var(--muted, #94a3b8); font-size:11px;">Entry: <b style="color:#38bdf8;">$${priceFmt(entryPrice)}</b></span>
         <span style="color:var(--muted, #94a3b8); font-size:11px;">Mark: <b style="color:var(--text, #0f172a);">$${priceFmt(liveMarket)}</b></span>
+        ${tpPrice > 0 ? `<span style="color:#10b981; font-size:11px;">TP: <b>$${priceFmt(tpPrice)}</b></span>` : ''}
+        ${slPrice > 0 ? `<span style="color:#ef4444; font-size:11px;">SL: <b>$${priceFmt(slPrice)}</b></span>` : ''}
         <span class="tag" style="background:var(--panel2, rgba(255,255,255,0.06)); font-family:var(--mono); font-size:11px; color:${isWin ? '#10b981' : '#ef4444'}; font-weight:700;">
           P&L: ${signed(livePnl)} (${pct(livePnlPct)})
         </span>
         ${curPos.ai_win_prob ? `<span style="color:#38bdf8; font-size:10.5px; font-weight:600;">Prob: ${curPos.ai_win_prob}%</span>` : ''}
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
-        ${S.chartMode !== 'local' ? `<button onclick="switchToAraaChart()" class="btn sm" style="background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#38bdf8; font-size:10px; padding:3px 8px; cursor:pointer;" title="Switch to Araa live canvas to see entry line & TP/SL zones">📊 View On Live Chart</button>` : ''}
+        ${S.chartMode !== 'local' ? `<button onclick="switchToAraaChart()" class="btn sm" style="background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#38bdf8; font-size:10px; padding:3px 8px; cursor:pointer;" title="Switch to Araa live canvas to see entry line & TP/SL zones">📊 View Entry/Exit on Chart</button>` : ''}
         <button onclick="closeCurrentPosition(${curPos.id})" class="btn sm close" style="font-size:10px; padding:3px 8px;" title="Close this open position now">✕ Close</button>
       </div>
     `;
     return;
   }
 
-  // If no position on current symbol, but bot has other open trades
-  if (botPositions.length > 0) {
+  // If no position on current symbol, show active trades & recent Entry -> Exit signals
+  const topClosed = closedTrades.slice(0, 3);
+  if (positions.length > 0 || symClosed.length > 0 || topClosed.length > 0) {
     hud.classList.remove("hide");
+    const openHtml = positions.length > 0 ? `
+      <span style="color:#38bdf8; font-size:11px; font-weight:700;">⚡ LIVE ENTRIES (${positions.length}):</span>
+      ${positions.map(bp => {
+        const pnl = calcPositionMetrics(bp).livePnl;
+        return `<button onclick="pickPair('${bp.symbol}', '${bp.side === 'LONG' || bp.side === 'BUY' ? 'BUY' : 'SELL'}'); if (typeof switchToAraaChart==='function') switchToAraaChart();" class="pill" style="cursor:pointer; font-size:10px; padding:2px 8px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:var(--text, #f8fafc);" title="Click to view Entry, TP & SL on ${bp.symbol} chart">
+          ${bp.side} ${bp.symbol} @ $${priceFmt(bp.entry_price)} · <span style="color:${pnl >= 0 ? '#10b981' : '#ef4444'}; font-weight:700;">${signed(pnl)}</span>
+        </button>`;
+      }).join('')}` : '';
+    const closedSource = symClosed.length > 0 ? symClosed : topClosed;
+    const closedHtml = closedSource.length > 0 ? `
+      <span style="color:#94a3b8; font-size:11px; font-weight:700;">${positions.length > 0 ? '· ' : ''}RECENT EXITS:</span>
+      ${closedSource.map(ct => {
+        const rp = Number(ct.realized_pnl || 0);
+        const ep = Number(ct.entry_price || 0);
+        const xp = Number(ct.exit_price || ct.current_price || ep);
+        return `<button onclick="pickPair('${ct.symbol}', '${ct.side === 'LONG' || ct.side === 'BUY' ? 'BUY' : 'SELL'}'); if (typeof switchToAraaChart==='function') switchToAraaChart();" class="pill" style="cursor:pointer; font-size:10px; padding:2px 8px; background:rgba(15,23,42,0.5); border:1px solid ${rp >= 0 ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}; color:var(--text, #f8fafc);" title="Click to view Entry & Exit on ${ct.symbol} chart">
+          ${ct.symbol} IN $${priceFmt(ep)} → EXIT $${priceFmt(xp)} · <span style="color:${rp >= 0 ? '#10b981' : '#ef4444'}; font-weight:700;">${signed(rp)}</span>
+        </button>`;
+      }).join('')}` : '';
     hud.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <span style="color:#38bdf8; font-size:11px; font-weight:700;">⚡ ARAA AI ACTIVE BOT TRADES (${botPositions.length}):</span>
-        ${botPositions.map(bp => {
-          const pnl = calcPositionMetrics(bp).livePnl;
-          return `<button onclick="pickPair('${bp.symbol}', '${bp.side === 'LONG' ? 'BUY' : 'SELL'}')" class="pill" style="cursor:pointer; font-size:10px; padding:2px 8px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); color:var(--text, #0f172a);" title="Click to view live entry chart for ${bp.symbol}">
-            ${bp.side} ${bp.symbol} · <span style="color:${pnl >= 0 ? '#10b981' : '#ef4444'}; font-weight:700;">${signed(pnl)}</span>
-          </button>`;
-        }).join('')}
+        ${openHtml}${closedHtml}
       </div>
-      <span style="font-size:10px; color:#94a3b8;">Click any trade to view on live chart</span>
+      ${S.chartMode !== 'local' ? `<button onclick="switchToAraaChart()" class="btn sm" style="background:rgba(56,189,248,0.16); border:1px solid #38bdf8; color:#38bdf8; font-size:10px; padding:2px 8px; cursor:pointer;">📊 Show Signals on Chart</button>` : ''}
     `;
     return;
   }
 
-  // No active positions: hide HUD
+  // No active or recent positions: hide HUD
   hud.classList.add("hide");
   hud.innerHTML = "";
 }
@@ -8196,9 +8303,11 @@ function tickClock() {
 
 let _tickingPositions = false;
 async function tickLivePositions() {
-  if (S.pf && Array.isArray(S.pf.open_positions) && S.pf.open_positions.length > 0) {
+  const pfOpens = (S.pf && Array.isArray(S.pf.open_positions)) ? S.pf.open_positions : [];
+  const cdxOpens = Array.isArray(window._coindcxOpenPositions) ? window._coindcxOpenPositions : [];
+  if (pfOpens.length > 0 || cdxOpens.length > 0) {
     // 1. Sync currently active chart quote immediately if matched
-    for (const p of S.pf.open_positions) {
+    for (const p of pfOpens) {
       if (S.quote && S.quote.symbol === p.symbol && S.quote.price) {
         S.quoteBy[p.symbol] = S.quote;
       }
@@ -8208,7 +8317,8 @@ async function tickLivePositions() {
     if (!_tickingPositions) {
       _tickingPositions = true;
       try {
-        const openSyms = Array.from(new Set(S.pf.open_positions.map(p => p.symbol))).join(",");
+        const symSet = new Set([...pfOpens.map(p => p.symbol), ...cdxOpens.map(p => p.symbol)].filter(Boolean));
+        const openSyms = Array.from(symSet).join(",");
         if (openSyms) {
           const res = await call("/api/markets?symbols=" + encodeURIComponent(openSyms));
           if (res && Array.isArray(res.markets)) {
@@ -8216,6 +8326,8 @@ async function tickLivePositions() {
             res.markets.forEach(m => {
               if (m.symbol && m.price) {
                 S.quoteBy[m.symbol] = m;
+                S.prices = S.prices || {};
+                S.prices[String(m.symbol).toUpperCase()] = m.price;
               }
             });
           }
@@ -8225,6 +8337,31 @@ async function tickLivePositions() {
       } finally {
         _tickingPositions = false;
       }
+    }
+
+    // 2b. Live-tick CoinDCX Real Money Terminal Mark Price & Floating P&L cells
+    if (cdxOpens.length > 0 && $("exness_positions_tbody")) {
+      cdxOpens.forEach(p => {
+        const symU = String(p.symbol || "").toUpperCase();
+        const liveP = Number((S.quoteBy && S.quoteBy[symU] && S.quoteBy[symU].price) || (S.prices && S.prices[symU]) || 0);
+        if (liveP <= 0) return;
+        const posKey = String(p.id || p.order_id || symU);
+        const row = $("exness_positions_tbody").querySelector(`tr[data-cdx-pos="${CSS.escape(posKey)}"]`);
+        if (!row) return;
+        const entryP = parseFloat(p.entry_price) || 1.0;
+        const dirP = (p.side === "BUY" || p.side === "LONG") ? 1.0 : -1.0;
+        const posMargin = parseFloat(p.margin) || 1.0;
+        const pLev = parseFloat(p.leverage) || 30.0;
+        const pPnl = (entryP > 0 && posMargin > 0) ? (posMargin * pLev * ((liveP - entryP) / entryP) * dirP) : 0.0;
+        const pRoi = posMargin > 0 ? (pPnl / posMargin * 100.0) : 0.0;
+        const pnlColor = pPnl >= 0 ? "#10b981" : "#ef4444";
+        const markCell = row.querySelector(".cdx_mark_cell");
+        const pnlCell = row.querySelector(".cdx_pnl_cell");
+        if (markCell) markCell.textContent = `$${priceFmt(liveP)}`;
+        if (pnlCell) {
+          pnlCell.innerHTML = `<div style="font-weight:800; color:${pnlColor}; font-size:12px;">${pPnl>=0?'+':''}$${pPnl.toFixed(2)} <span style="font-size:10px;">(${pRoi>=0?'+':''}${pRoi.toFixed(1)}%)</span></div><div style="font-size:9.5px; color:${pnlColor}; font-weight:700;">Float: ${pPnl>=0?'+':''}$${pPnl.toFixed(2)}</div>`;
+        }
+      });
     }
 
     // 3. Auto-Scalp Instant Profit & Loss Guard: Uses accurate USD P&L & ROI (never 90x inflated!)
@@ -8306,22 +8443,45 @@ async function tickLivePositions() {
   }
 }
 
+let _pollersStarted = false;
+let _acctInFlight = false;
+let _watchInFlight = false;
+let _chartInFlight = false;
+let _pingInFlight = false;
+
 function startPollers() {
+  if (_pollersStarted) return;
+  _pollersStarted = true;
   setInterval(async () => {
+    if (_acctInFlight || !S.token) return;
+    _acctInFlight = true;
     try { await refreshAccount(); }
-    catch (e) { if (/Not logged in/.test(e.message)) { localStorage.removeItem("tp_token"); location.reload(); } }
-  }, 1500);
-  // Real-time 1000ms live tick refresh for Mark, P&L, Move on manual and bot trades
+    catch (e) { if (e && (e.status === 401 || /Not logged in/i.test(e.message))) { localStorage.removeItem("tp_token"); location.reload(); } }
+    finally { _acctInFlight = false; }
+  }, 2500);
+  // Real-time live tick refresh for Mark, P&L, Move on manual and bot trades
   setInterval(tickLivePositions, 350);
-  setInterval(() => loadWatch().catch(() => {}), 4000);
-  setInterval(() => loadChart().catch(() => {}), 10000);
-  setInterval(() => loadTicker().catch(() => {}), 25000);
-  // The 3s account poller already repaints an open drawer, so this only carries the slower
+  setInterval(() => {
+    if (_watchInFlight || !S.token) return;
+    _watchInFlight = true;
+    loadWatch().catch(() => {}).finally(() => { _watchInFlight = false; });
+  }, 4000);
+  setInterval(() => {
+    if (_chartInFlight || !S.token) return;
+    _chartInFlight = true;
+    loadChart().catch(() => {}).finally(() => { _chartInFlight = false; });
+  }, 10000);
+  setInterval(() => { if (S.token) loadTicker().catch(() => {}); }, 25000);
+  // The account poller already repaints an open drawer, so this only carries the slower
   // A-Z analysis panel. Calling renderBot() here too fetched /api/account and /api/health a
   // second time per cycle and fought the sliders the user was dragging.
   setInterval(() => { if (isDrawerOpen("drawer_bot")) renderAnalysis().catch(() => {}); }, 5000);
   setInterval(() => { if (S.tab === "az_analysis") renderTabAZ().catch(() => {}); }, 8000);
-  setInterval(pingFeed, 5000);
+  setInterval(() => {
+    if (_pingInFlight || !S.token) return;
+    _pingInFlight = true;
+    Promise.resolve(pingFeed()).catch(() => {}).finally(() => { _pingInFlight = false; });
+  }, 5000);
   setInterval(tickClock, 1000);
   withdrawPreview(); pingFeed(); tickClock();
 }
@@ -8907,7 +9067,8 @@ function renderConnectedApiAndRules(d) {
       badge.style.color = "#10b981";
       badge.style.borderColor = "rgba(16,185,129,0.5)";
     } else if (isConn) {
-      badge.textContent = `● ${bName} CONNECTED (${statusRaw || "READY"})`;
+      const cleanStatus = statusRaw === "CONNECTED_OFFLINE" ? "DEMO READY" : (statusRaw || "READY");
+      badge.textContent = `● ${bName} CONNECTED (${cleanStatus})`;
       badge.style.background = "rgba(56,189,248,0.18)";
       badge.style.color = "#38bdf8";
       badge.style.borderColor = "rgba(56,189,248,0.45)";

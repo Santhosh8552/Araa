@@ -1874,8 +1874,8 @@ def broker_status():
     is_conn = b["status"] in ("CONNECTED", "CONNECTED_OFFLINE", "SYNCING", "READY")
     is_coindcx = (b.get("broker_name") == "COINDCX")
 
-    # Dynamic CoinDCX portfolio balance synchronization
-    if is_coindcx and is_conn and b.get("is_live_active"):
+    # Dynamic CoinDCX portfolio balance synchronization (5s cooldown to keep /api/broker/status fast)
+    if is_coindcx and is_conn and b.get("is_live_active") and (time.time() - float(b.get("last_synced_at") or 0.0) >= 5.0):
         try:
             from coindcx_gateway import get_user_coindcx_client
             cdx = get_user_coindcx_client(u["id"])
@@ -2677,10 +2677,19 @@ def _fetch_live_coindcx_positions_and_trades(cdx, user_id: int) -> Dict[str, Any
                 qty = abs(active_qty)
                 entry_p = float(fp.get("avg_price") or fp.get("entry_price") or 0.0)
                 mark_p = float(fp.get("mark_price") or 0.0)
-                if mark_p <= 0 and pair in tickers:
-                    mark_p = float(tickers[pair].get("last_price") or 0.0)
-                if mark_p <= 0 and sym in tickers:
-                    mark_p = float(tickers[sym].get("last_price") or 0.0)
+                if (mark_p <= 0 or abs(mark_p - entry_p) < 1e-12) and pair in tickers:
+                    t_p = float(tickers[pair].get("last_price") or 0.0)
+                    if t_p > 0:
+                        mark_p = t_p
+                if (mark_p <= 0 or abs(mark_p - entry_p) < 1e-12) and sym in tickers:
+                    t_p = float(tickers[sym].get("last_price") or 0.0)
+                    if t_p > 0:
+                        mark_p = t_p
+                if mark_p <= 0 or abs(mark_p - entry_p) < 1e-12:
+                    fq = feed.quote(sym) or {}
+                    f_p = float(fq.get("price") or feed.price(sym) or 0.0)
+                    if f_p > 0:
+                        mark_p = f_p
                 if mark_p <= 0:
                     mark_p = entry_p
                 lev = max(1.0, float(fp.get("leverage") or 1.0))
@@ -2690,13 +2699,13 @@ def _fetch_live_coindcx_positions_and_trades(cdx, user_id: int) -> Dict[str, Any
                     or fp.get("isolated_margin")
                     or ((entry_p * qty) / lev if entry_p > 0 else 0.0)
                 )
-                if fp.get("unrealized_pnl") is not None:
+                dir_m = 1.0 if side == "LONG" else -1.0
+                if fp.get("unrealized_pnl") is not None and abs(float(fp["unrealized_pnl"])) > 1e-9:
                     upnl = float(fp["unrealized_pnl"])
-                elif fp.get("pnl") is not None:
+                elif fp.get("pnl") is not None and abs(float(fp["pnl"])) > 1e-9:
                     upnl = float(fp["pnl"])
                 else:
-                    dir_m = 1.0 if side == "LONG" else -1.0
-                    upnl = (mark_p - entry_p) * qty * dir_m
+                    upnl = (mark_p - entry_p) * qty * dir_m if (entry_p > 0 and mark_p > 0) else 0.0
                 liq_p = float(fp.get("liquidation_price") or 0.0)
                 live_positions.append({
                     "id": fp.get("id") or f"cdx_{sym}",
@@ -2833,7 +2842,17 @@ def coindcx_state():
         active_orders = live_feed.get("active_orders") or []
         live_trades = live_feed.get("trades") or []
 
-        opens = list(live_pos)
+        db_by_sym = {str(p.get("symbol") or "").upper(): p for p in db_opens}
+        opens = []
+        for lp in live_pos:
+            lp_copy = dict(lp)
+            sym_u = str(lp_copy.get("symbol") or "").upper()
+            db_match = db_by_sym.get(sym_u)
+            if db_match:
+                for fld in ("target_pct", "stop_pct", "sl_price", "tp_price", "opened_at", "reason", "ai_win_prob", "ai_confidence"):
+                    if lp_copy.get(fld) is None and db_match.get(fld) is not None:
+                        lp_copy[fld] = db_match.get(fld)
+            opens.append(lp_copy)
         seen_open_keys = {str(p.get("order_id") or p.get("id") or "") for p in opens}
         seen_open_syms = {str(p.get("symbol") or "").upper() for p in opens}
         for p in db_opens:
@@ -2951,14 +2970,25 @@ def coindcx_state():
         balances["floating_pnl"] = open_float_pnl
         balances["usdt_inr_rate"] = rate
 
-    # Compute CoinDCX Leveraged P&L for both open and closed positions
+    # Compute CoinDCX Leveraged P&L for both open and closed positions using live feed price
     for p in opens:
+        sym_u = str(p.get("symbol") or "").upper()
         e_p = float(p.get("entry_price") or 1.0)
         c_p = float(p.get("current_price") or e_p)
+        fq = feed.quote(sym_u) if sym_u else None
+        f_p = float((fq or {}).get("price") or (feed.price(sym_u) if sym_u else 0.0) or 0.0)
+        if f_p > 0 and (c_p <= 0 or abs(c_p - e_p) < 1e-12):
+            c_p = f_p
+            p["current_price"] = c_p
+            p["mark_price"] = c_p
         dir_mult = 1.0 if p.get("side") in ("LONG", "BUY") else -1.0
         m_val = float(p.get("margin") or 0.0)
         lev = float(p.get("leverage") or 1.0)
-        p["cdx_cash_pnl"] = round(float(p.get("unrealized_pnl") or (m_val * lev * ((c_p - e_p) / e_p * dir_mult))), 2)
+        calc_pnl = round(m_val * lev * ((c_p - e_p) / e_p * dir_mult), 4) if (e_p > 0 and m_val > 0) else 0.0
+        cur_upnl = float(p.get("unrealized_pnl") or 0.0)
+        if abs(cur_upnl) < 1e-9 and abs(calc_pnl) > 1e-9:
+            p["unrealized_pnl"] = calc_pnl
+        p["cdx_cash_pnl"] = round(float(p.get("unrealized_pnl") or calc_pnl), 2)
 
     for c in closed:
         c["cdx_cash_pnl"] = round(float(c.get("realized_pnl") or 0.0), 2)
