@@ -1521,7 +1521,7 @@ class Bot:
         mode = user.get("bot_mode") or "SCALP"
         mode_spec = MODES.get(mode, MODES["SCALP"])
         user_currency = ((b_conn.get("currency") if b_conn else None) or "USD").upper()
-        is_pure_crypto = bool(mode_spec.get("pure_crypto")) or (broker_name == "COINDCX") or (market_focus in ("FUTURES_USD", "COINDCX_CRYPTO", "CRYPTO"))
+        is_pure_crypto = bool(mode_spec.get("pure_crypto")) or (is_live_flag and broker_name == "COINDCX") or (is_live_flag and market_focus in ("FUTURES_USD", "COINDCX_CRYPTO", "CRYPTO"))
 
         # Total available trading equity: in Real Mode use live broker balance/free_margin; in Paper mode use paper wallet or demo reserve
         if is_live_flag:
@@ -1532,8 +1532,8 @@ class Bot:
             dep_bal = max(0.0, float(wallet.get("deposit_balance") or 0))
             prof_bal = max(0.0, float(wallet.get("profit_balance") or 0))
             wallet_cap = round(dep_bal + prof_bal, 2)
-            # In Demo simulation, provide simulated demo margin ($1,000 USDT) if wallet is empty so the bot CAN demo trade!
-            capital = wallet_cap if wallet_cap >= 2.0 else 1000.0
+            # In Demo simulation, provide simulated demo margin ($10,000 USDT) if wallet is empty so the bot CAN demo trade!
+            capital = wallet_cap if wallet_cap >= 2.0 else 10000.0
 
         min_required_cap = 0.01 if (is_pure_crypto or user_currency == "USD") else (50.0 if broker_name == "COINDCX" else 20.0)
         if capital < min_required_cap:
@@ -1666,8 +1666,8 @@ class Bot:
         EXNESS_ALL = EXNESS_FOREX | EXNESS_METALS | EXNESS_CRYPTO | EXNESS_INDICES
 
         target_mt4_symbols = EXNESS_ALL
-        real_cat_order = ["CRYPTO"] if broker_name == "COINDCX" else ["FOREX", "METALS", "CRYPTO", "INDICES"]
-        if broker_name == "COINDCX":
+        real_cat_order = ["CRYPTO"] if (is_live_flag and broker_name == "COINDCX") else ["FOREX", "METALS", "CRYPTO", "INDICES"]
+        if is_live_flag and broker_name == "COINDCX":
             real_cat_order = ["CRYPTO"]
             is_futures_usd = True
             market_focus = "FUTURES_USD"
@@ -1761,7 +1761,7 @@ class Bot:
 
         opened = 0
         free = capital
-        is_pure_crypto = bool(mode_spec.get("pure_crypto")) or (broker_name == "COINDCX") or (market_focus in ("FUTURES_USD", "COINDCX_CRYPTO", "CRYPTO"))
+        is_pure_crypto = bool(mode_spec.get("pure_crypto")) or (is_live_flag and broker_name == "COINDCX") or (is_live_flag and market_focus in ("FUTURES_USD", "COINDCX_CRYPTO", "CRYPTO"))
         while slots - opened > 0:
             if is_pure_crypto:
                 order = ["CRYPTO"]
@@ -1809,14 +1809,13 @@ class Bot:
                         continue
                     if is_coindcx_live and float(cand.get("confidence") or 0.0) < 0.68:
                         continue
-                    # GUARD: For CoinDCX / Futures USD or Real Mode, strictly enforce target symbols (No stocks, no forex)
-                    if (is_pure_crypto or is_live_flag) and target_mt4_symbols and cand["symbol"] not in target_mt4_symbols:
+                    # GUARD: In Real Live Mode, strictly enforce target symbols (No stocks, no unconfigured forex)
+                    if is_live_flag and target_mt4_symbols and cand["symbol"] not in target_mt4_symbols:
                         continue
-                    # PAPER BOT LIVE TRADINGVIEW GUARD: Paper Bot must trade live symbols (CoinDCX crypto or TradingView)
+                    # PAPER BOT LIVE TRADINGVIEW GUARD: Paper Bot trades live TradingView charts or CoinDCX crypto
                     if not is_live_flag:
                         is_crypto_live = cand["symbol"].endswith("INR") or cand["symbol"].endswith("USDT") or cand.get("category") == "CRYPTO"
-                        cand_q = self.feed.quote(cand["symbol"]) or {}
-                        if not is_crypto_live and (not tv_symbol(cand["symbol"]) or not cand_q.get("live")):
+                        if not is_crypto_live and not tv_symbol(cand["symbol"]):
                             continue
                     # COINDCX SPOT GUARD: Only block SHORT when trading Spot INR (Futures USD supports both LONG and SHORT!)
                     if is_coindcx_live and not is_futures_usd and cand.get("side") in ("SELL", "SHORT"):

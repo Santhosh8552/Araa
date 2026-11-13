@@ -16,9 +16,17 @@ window.addEventListener("unhandledrejection", (e) => {
   e.preventDefault();
 });
 
-const API = (window.location.port === "7777" || window.location.port === "7779")
-  ? window.location.protocol + "//" + (window.location.hostname || "localhost") + ":5050"
-  : window.location.origin;
+if (typeof window !== "undefined" && window.location.hostname === "araabot.in") {
+  try {
+    window.location.replace("https://www.araabot.in" + window.location.pathname + window.location.search + window.location.hash);
+  } catch (e) {}
+}
+
+const API = (window.location.hostname === "araabot.in")
+  ? "https://www.araabot.in"
+  : ((window.location.port === "7777" || window.location.port === "7779")
+      ? window.location.protocol + "//" + (window.location.hostname || "localhost") + ":5050"
+      : window.location.origin);
 const $ = (id) => document.getElementById(id);
 const S = {token: localStorage.getItem("tp_token") || "", user: null, wallet: null, pf: null,
            orders: [], markets: [], symbol: "BTCUSDT", side: "LONG", tf: "1m", otype: "MARKET",

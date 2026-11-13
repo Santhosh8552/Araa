@@ -326,12 +326,18 @@ def wallet_of(uid):
     w["manual_profit"] = round(float(manual_net_val or 0.0), 2)
     w["deposit_balance"] = round(float(w.get("deposit_balance") or 0.0), 2)
     if w["deposit_balance"] <= 0.0:
-        b_row = query_one("SELECT live_balance FROM broker_connections WHERE user_id=?", (uid,))
+        b_row = query_one("SELECT live_balance, is_live_active FROM broker_connections WHERE user_id=?", (uid,))
         if b_row and float(b_row.get("live_balance") or 0.0) > 0.0:
             synced_bal = round(float(b_row["live_balance"]), 2)
             write("UPDATE wallets SET deposit_balance=?, starting_balance=? WHERE user_id=?", (synced_bal, synced_bal, uid))
             w["deposit_balance"] = synced_bal
             w["starting_balance"] = synced_bal
+        elif not b_row or not b_row.get("is_live_active"):
+            # Default Virtual Paper Trading Capital ($10,000.00) so paper trading is never blocked
+            write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=? AND (deposit_balance<=0 OR deposit_balance IS NULL)", (uid,))
+            w["deposit_balance"] = 10000.0
+            w["starting_balance"] = 10000.0
+            w["target_amount"] = 15000.0
     w["profit_balance"] = round(float(w.get("profit_balance") or 0.0), 2)
     w["locked_balance"] = round(float(w.get("locked_balance") or 0.0), 2)
     w["starting_balance"] = round(float(w.get("starting_balance") or 0.0), 2)
@@ -339,6 +345,15 @@ def wallet_of(uid):
     w["total_deposited"] = round(float(w.get("total_deposited") or 0.0), 2)
     w["total_withdrawn"] = round(float(w.get("total_withdrawn") or 0.0), 2)
     return w
+
+
+@api.route("/api/wallet/paper-reset", methods=["POST"])
+def reset_paper_wallet():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0, profit_balance=0.0, locked_balance=0.0 WHERE user_id=?", (u["id"],))
+    return ok(message="Paper wallet reset to $10,000.00 virtual capital", wallet=wallet_of(u["id"]), portfolio=portfolio(u["id"]))
 
 
 def portfolio(uid):
@@ -438,6 +453,14 @@ def portfolio(uid):
     else:
         start = round(float(w.get("starting_balance") or 0.0), 2)
         balance = round(float(w.get("deposit_balance") or 0.0) + float(w.get("profit_balance") or 0.0) + float(w.get("locked_balance") or 0.0) + unreal, 2)
+        if start <= 0.0 and balance <= 0.0 and not is_live_mode:
+            try:
+                write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=? AND (deposit_balance<=0 OR deposit_balance IS NULL)", (uid,))
+                w = wallet_of(uid)
+                start = 10000.0
+                balance = 10000.0
+            except Exception:
+                pass
         target = round(float(w.get("target_amount") or (start * 1.5 if start > 0 else 0.0)), 2)
         need = max(0.01, target - start) if target > start else 1.0
         prog = round(min(100.0, max(0.0, (balance - start) / need * 100)), 1) if target > 0 else 0.0
@@ -1250,9 +1273,9 @@ def signup():
         uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                     "VALUES(?,?,?,?,?,?,0)", (email, name, salt, digest, now, now))
         try:
-            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 10000.0, 0.0, 10000.0, 0.0, 0.0, 10000.0, 15000.0)", (uid,))
         except Exception:
-            write("INSERT INTO wallets(user_id) VALUES(?)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
         token = make_session(uid, email)
         return ok(user=user_public(uid), token=token, wallet=wallet_of(uid))
     except Exception as exc:
@@ -1288,9 +1311,9 @@ def login():
         uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                     "VALUES(?,?,?,?,?,?,0)", (raw_email, name, salt, digest, now, now))
         try:
-            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 10000.0, 0.0, 10000.0, 0.0, 0.0, 10000.0, 15000.0)", (uid,))
         except Exception:
-            write("INSERT INTO wallets(user_id) VALUES(?)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
         token = make_session(uid, raw_email)
         return ok(user=user_public(uid), token=token, wallet=wallet_of(uid))
 
@@ -1377,9 +1400,9 @@ def google_auth():
         uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                     "VALUES(?,?,?,?,?,?,0)", (email, name or email.split("@")[0], salt, digest, now, now))
         try:
-            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 10000.0, 0.0, 10000.0, 0.0, 0.0, 10000.0, 15000.0)", (uid,))
         except Exception:
-            write("INSERT INTO wallets(user_id) VALUES(?)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
         user_id = uid
     else:
         user_id = row["id"]
@@ -1820,6 +1843,13 @@ def bot_config():
     closed_count = 0
     if enabled and not bot.is_running:
         bot.start()
+
+    # Ensure paper trading users have $10,000.00 virtual capital to trade with
+    b_conn_chk = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
+    is_live_now = 1 if (b_conn_chk and b_conn_chk["is_live_active"]) else 0
+    w_chk = wallet_of(u["id"])
+    if not is_live_now and float(w_chk.get("deposit_balance") or 0.0) <= 0.0 and float(w_chk.get("starting_balance") or 0.0) <= 0.0:
+        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (u["id"],))
 
     if not enabled:
         # User switched bot OFF: liquidate/close all active open positions immediately on the spot!
@@ -5310,10 +5340,18 @@ def manual_trade():
         return fail("Side must be LONG or SHORT")
     if margin < 15:
         return fail("Trade size must be at least Rs 15")
+    b_conn = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
+    is_live_flag = 1 if (b_conn and b_conn["is_live_active"]) else 0
+
     w = wallet_of(u["id"])
-    if margin > w["deposit_balance"]:
+    if not is_live_flag and float(w.get("deposit_balance") or 0.0) < margin:
+        # Paper trading virtual capital auto-seed ($10,000.00) so paper trading is never blocked
+        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (u["id"],))
+        w = wallet_of(u["id"])
+    elif is_live_flag and margin > float(w.get("deposit_balance") or 0.0):
         return fail("Not enough trading capital - deposit first")
-    price = feed.live_price(symbol)
+
+    price = feed.live_price(symbol) or feed.price(symbol)
     if not price:
         return fail(f"No live price for {symbol} yet")
     now = time.time()
@@ -5323,12 +5361,9 @@ def manual_trade():
     row = feed.quote(symbol) or {}
     category = row.get("category") or feed.category_of(symbol) or "CRYPTO"
     feed_src = row.get("source") or "LIVE"
-    
-    b_conn = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
-    is_live_flag = 1 if (b_conn and b_conn["is_live_active"]) else 0
 
     if not is_live_flag:
-        if not feed_tv(symbol) or not row.get("live"):
+        if not feed_tv(symbol):
             return fail(f"Paper mode trades only Live TradingView Chart symbols ({symbol} has no live TradingView chart)")
         feed_src = "TRADINGVIEW_LIVE"
 
@@ -5500,7 +5535,7 @@ def place_order():
     b_conn = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
     is_live_flag = 1 if (b_conn and b_conn["is_live_active"]) else 0
     row_q = feed.quote(symbol) or {}
-    if not is_live_flag and (not feed_tv(symbol) or not row_q.get("live")):
+    if not is_live_flag and not feed_tv(symbol):
         return fail(f"Paper mode orders only Live TradingView Chart symbols ({symbol} has no live TradingView chart)")
     leverage = max(1.0, min(500.0, float(data.get("leverage") or 1.0)))
     target_pct = max(0.0, float(data.get("target_pct") or 0.0))
@@ -5512,7 +5547,10 @@ def place_order():
     if margin <= 100:
         return fail("Order size must be above Rs 100")
     w = wallet_of(u["id"])
-    if margin > w["deposit_balance"]:
+    if not is_live_flag and float(w.get("deposit_balance") or 0.0) < margin:
+        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (u["id"],))
+        w = wallet_of(u["id"])
+    elif is_live_flag and margin > float(w.get("deposit_balance") or 0.0):
         return fail(f"Only Rs {w['deposit_balance']:.2f} available for new orders")
     oid = write("INSERT INTO orders(user_id,symbol,side,qty,price,margin,status,created_at,leverage,target_pct,stop_pct) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",

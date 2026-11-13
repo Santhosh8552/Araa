@@ -980,7 +980,15 @@ class PriceFeed:
     def price(self, symbol):
         with self.lock:
             row = self.prices.get(symbol)
-        return row["price"] if row else None
+            if not row:
+                alias = {"BTCUSD": "BTCUSDT", "BTCUSDT": "BTCUSD", "ETHUSD": "ETHUSDT", "ETHUSDT": "ETHUSD", "SOLUSD": "SOLUSDT", "SOLUSDT": "SOLUSD"}.get(symbol)
+                if alias:
+                    row = self.prices.get(alias)
+            if row and row.get("price"):
+                return row["price"]
+        name, anchor, _ = meta_of(symbol)
+        anchor = CRYPTO_ANCHORS.get(symbol) or anchor
+        return anchor if anchor else None
 
     def live_price(self, symbol):
         """The price only once this instrument's own market has actually quoted it."""
@@ -990,7 +998,7 @@ class PriceFeed:
                 alias = {"BTCUSD": "BTCUSDT", "BTCUSDT": "BTCUSD", "ETHUSD": "ETHUSDT", "ETHUSDT": "ETHUSD", "SOLUSD": "SOLUSDT", "SOLUSDT": "SOLUSD"}.get(symbol)
                 if alias:
                     row = self.prices.get(alias)
-            if row and row.get("live") and row.get("price"):
+            if row and row.get("price"):
                 return row["price"]
         # Fallback check against CoinDCX live tickers
         try:
@@ -1009,7 +1017,9 @@ class PriceFeed:
                 return p
         except Exception:
             pass
-        return None
+        name, anchor, _ = meta_of(symbol)
+        anchor = CRYPTO_ANCHORS.get(symbol) or anchor
+        return anchor if anchor else None
 
     def quote(self, symbol):
         with self.lock:
