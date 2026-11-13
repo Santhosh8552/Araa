@@ -2060,9 +2060,10 @@ class Bot:
                     strat_sl_pct = max(0.50, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                     strat_tp_pct = max(strat_sl_pct * 2.0, custom_tp or float(strat.get("take_profit_pct") or 1.00))
                     risk_pct = max(0.2, min(10.0, float(strat.get("risk_per_trade_pct") or 2.0)))
-                    risk_margin = round(min(free, max(min_pos_margin, capital * (risk_pct / 100.0))), 4)
+                    min_cdx_margin = 1.5 if free >= 1.5 else min_pos_margin
+                    risk_margin = round(min(free, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
                     if risk_margin >= min_pos_margin:
-                        margin = min(margin, risk_margin) if margin > risk_margin else risk_margin
+                        margin = risk_margin
                         qty = round((margin * effective_lev) / picked["price"], 8)
                     picked["stop_pct"] = strat_sl_pct
                     picked["target_pct"] = strat_tp_pct
@@ -2077,8 +2078,7 @@ class Bot:
                         strategy=strat,
                         symbol=picked["symbol"],
                         side=picked["side"],
-                        qty=qty,
-                        price=picked["price"],
+                        ai_signal=pred,
                     )
                     if not risk_ok:
                         self._log(user["id"], "RISK_BLOCK", f"StrategyEngine blocked {picked['side']} {picked['symbol']}: {risk_reason}")
@@ -2092,15 +2092,23 @@ class Bot:
                         symbol=picked["symbol"],
                         side="BUY" if is_buy_dir else "SELL",
                         market_type=str(strat.get("market_type") or "FUTURES"),
-                        qty=qty,
-                        order_type="MARKET",
+                        quantity=qty,
+                        margin_usd=margin,
+                        order_type="market_order",
                         price=picked["price"],
-                        leverage=int(round(effective_lev)),
+                        leverage=float(effective_lev),
+                        stop_loss=sl_price,
+                        take_profit=tp_price,
                         client_order_id=f"araa_ai_{user['id']}_{picked['symbol']}_{int(now)}",
                     )
                     if not ad_res.get("ok"):
                         err_txt = ad_res.get("error") or "CoinDCX order rejected"
                         self._log(user["id"], "ORDER_RETRY", f"CoinDCX rejected {picked['symbol']} ({err_txt})")
+                        try:
+                            from coindcx_gateway import log_audit_event
+                            log_audit_event(user["id"], "ORDER_REJECTED", f"Skipped {picked['symbol']}: {err_txt}", severity="WARNING")
+                        except Exception:
+                            pass
                         if pred_id:
                             write("UPDATE ai_predictions SET post_entry_status='BROKER_FAILED', outcome='FAILED' WHERE id=?", (pred_id,))
                         continue
@@ -2108,24 +2116,26 @@ class Bot:
                     filled_qty = float(ad_res.get("filled_qty") or qty)
                     filled_price = float(ad_res.get("avg_fill_price") or picked["price"])
                     picked["price"] = filled_price
-                    sl_price = round(filled_price * (1.0 - strat_sl_pct / 100.0) if is_buy_dir else filled_price * (1.0 + strat_sl_pct / 100.0), 8)
-                    tp_price = round(filled_price * (1.0 + strat_tp_pct / 100.0) if is_buy_dir else filled_price * (1.0 - strat_tp_pct / 100.0), 8)
+                    exch_pos_id = str(ad_res.get("exchange_order_id") or ad_res.get("client_order_id") or "")
                     prot_res = CoinDCXExecutionAdapter.setup_and_verify_protection(
                         user_id=user["id"],
-                        position_id=str(ad_res.get("exchange_order_id") or ad_res.get("client_order_id") or ""),
+                        position_id=exch_pos_id,
+                        exchange_position_id=exch_pos_id,
                         symbol=picked["symbol"],
                         side="BUY" if is_buy_dir else "SELL",
                         market_type=str(strat.get("market_type") or "FUTURES"),
-                        qty=filled_qty,
+                        filled_qty=filled_qty,
                         entry_price=filled_price,
-                        stop_loss_price=sl_price,
-                        take_profit_price=tp_price,
+                        stop_loss_pct=strat_sl_pct,
+                        take_profit_pct=strat_tp_pct,
+                        trailing_stop_pct=(strat_sl_pct * 0.6 if int(strat.get("trailing_sl_enabled") or 0) else 0.0),
+                        is_live=True,
                     )
                     real_res = {
                         "executed": True,
                         "exchange": "COINDCX",
                         "qty": filled_qty,
-                        "leverage": effective_lev,
+                        "leverage": float(ad_res.get("leverage") or effective_lev),
                         "order_id": ad_res.get("exchange_order_id"),
                         "protection_verified": bool(prot_res.get("protection_verified")),
                     }
