@@ -338,7 +338,19 @@ def resolve_user():
     row = query_one("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id ORDER BY s.last_seen DESC LIMIT 1")
     if row:
         return row
-    return query_one("SELECT * FROM users ORDER BY id ASC LIMIT 1")
+    u_first = query_one("SELECT * FROM users ORDER BY id ASC LIMIT 1")
+    if u_first:
+        return u_first
+    # If no user exists at all in fresh container, create default trader user
+    now = time.time()
+    salt, digest = hash_password("trader123")
+    uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
+                "VALUES('trader@araabot.in','Trader',?,?,?,?,0)", (salt, digest, now, now))
+    try:
+        write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
+    except Exception:
+        pass
+    return query_one("SELECT * FROM users WHERE id=?", (uid,))
 
 
 def wallet_of(uid):
@@ -3296,6 +3308,13 @@ def coindcx_connect():
             ]
         }
 
+    auth_tok = u.get("token") or _sign_persistent_token(u["id"], time.time(), secrets.token_hex(12))
+    try:
+        now_ts = time.time()
+        write("INSERT OR IGNORE INTO sessions(token,user_id,created_at,last_seen) VALUES(?,?,?,?)", (auth_tok, u["id"], now_ts, now_ts))
+    except Exception:
+        pass
+
     if offline_mode:
         # Offline Mode: Accept key & secret directly without IP whitelisting barrier.
         # Uses real-time CoinDCX public prices and enables live trading execution.
@@ -3305,6 +3324,7 @@ def coindcx_connect():
         bot._log(u["id"], "REAL_BOT_COINDCX_OFFLINE", f"🟢 CoinDCX Connected for '{eff_profile}'! Futures Balance: ${usd_bal:,.2f} USDT")
         return ok(
             success=True,
+            token=auth_tok,
             mode="OFFLINE",
             profile_name=eff_profile,
             message=f"🟢 CoinDCX Connected for {eff_profile}! Futures Balance: ${usd_bal:,.2f} USDT",
@@ -3328,6 +3348,7 @@ def coindcx_connect():
         bot._log(u["id"], "REAL_BOT_COINDCX_ADOPTED", f"⚡ CoinDCX API Key adopted under AraaBot Full Autonomous Control for '{eff_profile}'! Live crypto feed & 6-Rule execution active.")
         return ok(
             success=True,
+            token=auth_tok,
             mode="ADOPTED_FULL_CONTROL",
             profile_name=eff_profile,
             message=f"⚡ CoinDCX API Key Adopted under AraaBot Full Autonomous Control! Live crypto feed & 6-Rule execution active for {eff_profile}.",
@@ -3354,6 +3375,7 @@ def coindcx_connect():
 
     return ok(
         success=True,
+        token=auth_tok,
         mode="ONLINE",
         profile_name=eff_profile,
         message=f"CoinDCX Live Account Connected for {eff_profile}! Synced Balance: ${live_usd_val:,.2f} USDT",

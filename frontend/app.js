@@ -4760,6 +4760,11 @@ if ($("btn_connect_coindcx")) {
         body: { api_key: apiKey, api_secret: apiSecret, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
       });
 
+      if (res && res.token) {
+        S.token = res.token;
+        localStorage.setItem("tp_token", res.token);
+      }
+
       const loginPanel = $("exness_login_panel");
       if (loginPanel) delete loginPanel.dataset.manualOpen;
 
@@ -4808,6 +4813,11 @@ if ($("btn_connect_coindcx_offline")) {
         timeoutMs: 45000,
         body: { api_key: apiKey, api_secret: apiSecret, offline_mode: true, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
       });
+
+      if (res && res.token) {
+        S.token = res.token;
+        localStorage.setItem("tp_token", res.token);
+      }
 
       const loginPanel = $("exness_login_panel");
       if (loginPanel) delete loginPanel.dataset.manualOpen;
