@@ -3996,12 +3996,25 @@ window.refreshStrategyControlPanel = async function() {
     const stratEl = $("strat_list_container");
     if (stratEl && execRes && Array.isArray(execRes.strategies)) {
       stratEl.innerHTML = execRes.strategies.map(s => `
-        <div style="padding:8px 10px; border-radius:6px; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <div>
-            <div style="font-weight:800; color:#f8fafc;">${s.name} <span style="font-size:10px; color:#38bdf8;">[${s.market_type}]</span></div>
-            <div style="font-size:10.5px; color:#94a3b8;">SL: ${s.stop_loss_pct}% · TP: ${s.take_profit_pct}% · MaxPos: ${s.max_open_positions} · MaxLoss: $${s.max_daily_loss_usd} · Cool: ${s.cooldown_seconds}s</div>
+        <div style="padding:10px; border-radius:6px; background:rgba(15,23,42,0.75); border:1px solid rgba(56,189,248,0.18); display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div>
+              <div style="font-weight:800; color:#f8fafc;">${s.name} <span style="font-size:10px; color:#38bdf8;">[${s.market_type}]</span></div>
+              <div style="font-size:10px; color:#94a3b8;">ID: <code>${s.strategy_id}</code> · Trailing SL: ${s.trailing_sl_enabled ? 'ON' : 'OFF'}</div>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <button type="button" onclick="window.saveStrategyRules('${s.strategy_id}')" style="padding:4px 10px; border-radius:5px; border:1px solid #38bdf8; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10.5px; font-weight:800; cursor:pointer;">💾 Save Rules</button>
+              <button type="button" onclick="window.toggleStrategyEnabled('${s.strategy_id}', ${s.enabled ? 0 : 1})" style="padding:4px 10px; border-radius:5px; border:1px solid ${s.enabled?'#10b981':'#64748b'}; background:${s.enabled?'rgba(16,185,129,0.18)':'rgba(100,116,139,0.18)'}; color:${s.enabled?'#34d399':'#94a3b8'}; font-size:10.5px; font-weight:800; cursor:pointer;">${s.enabled ? 'ENABLED' : 'DISABLED'}</button>
+            </div>
           </div>
-          <button type="button" onclick="window.toggleStrategyEnabled('${s.strategy_id}', ${s.enabled ? 0 : 1})" style="padding:4px 10px; border-radius:5px; border:1px solid ${s.enabled?'#10b981':'#64748b'}; background:${s.enabled?'rgba(16,185,129,0.18)':'rgba(100,116,139,0.18)'}; color:${s.enabled?'#34d399':'#94a3b8'}; font-size:10.5px; font-weight:800; cursor:pointer;">${s.enabled ? 'ENABLED' : 'DISABLED'}</button>
+          <div style="display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px; font-size:10px; color:#94a3b8;">
+            <label>SL %<input id="strat_${s.strategy_id}_sl" type="number" step="0.05" min="0.2" value="${s.stop_loss_pct}" style="width:100%; margin-top:2px; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.12); background:rgba(2,6,23,0.7); color:#f8fafc; font-size:11px;"></label>
+            <label>TP %<input id="strat_${s.strategy_id}_tp" type="number" step="0.1" min="0.4" value="${s.take_profit_pct}" style="width:100%; margin-top:2px; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.12); background:rgba(2,6,23,0.7); color:#f8fafc; font-size:11px;"></label>
+            <label>Risk %<input id="strat_${s.strategy_id}_risk" type="number" step="0.1" min="0.1" value="${s.risk_per_trade_pct}" style="width:100%; margin-top:2px; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.12); background:rgba(2,6,23,0.7); color:#f8fafc; font-size:11px;"></label>
+            <label>MaxPos<input id="strat_${s.strategy_id}_maxpos" type="number" step="1" min="1" value="${s.max_open_positions}" style="width:100%; margin-top:2px; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.12); background:rgba(2,6,23,0.7); color:#f8fafc; font-size:11px;"></label>
+            <label>MaxLoss $<input id="strat_${s.strategy_id}_maxloss" type="number" step="1" min="1" value="${s.max_daily_loss_usd}" style="width:100%; margin-top:2px; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.12); background:rgba(2,6,23,0.7); color:#f8fafc; font-size:11px;"></label>
+            <label>Cool (s)<input id="strat_${s.strategy_id}_cool" type="number" step="10" min="0" value="${s.cooldown_seconds}" style="width:100%; margin-top:2px; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.12); background:rgba(2,6,23,0.7); color:#f8fafc; font-size:11px;"></label>
+          </div>
         </div>
       `).join("");
     }
@@ -4039,11 +4052,28 @@ window.refreshStrategyControlPanel = async function() {
   }
 };
 
+window.saveStrategyRules = async function(strategyId) {
+  try {
+    const body = {
+      strategy_id: strategyId,
+      stop_loss_pct: Number($(`strat_${strategyId}_sl`)?.value || 0.5),
+      take_profit_pct: Number($(`strat_${strategyId}_tp`)?.value || 1.0),
+      risk_per_trade_pct: Number($(`strat_${strategyId}_risk`)?.value || 1.0),
+      max_open_positions: Number($(`strat_${strategyId}_maxpos`)?.value || 3),
+      max_daily_loss_usd: Number($(`strat_${strategyId}_maxloss`)?.value || 15),
+      cooldown_seconds: Number($(`strat_${strategyId}_cool`)?.value || 60),
+    };
+    const res = await call("/api/strategy/save", {method: "POST", body});
+    toast(res.message || "AraaBot rules saved", "green");
+    window.refreshStrategyControlPanel();
+  } catch (e) { toast(e.message, "red"); }
+};
+
 window.toggleStrategyEnabled = async function(strategyId, enabled) {
   try {
     const res = await call("/api/strategy/toggle", {method: "POST", body: {strategy_id: strategyId, enabled}});
     toast(res.message || "Strategy updated", "green");
-    await window.refreshStrategyControlPanel();
+    window.refreshStrategyControlPanel();
   } catch (e) { toast(e.message, "red"); }
 };
 

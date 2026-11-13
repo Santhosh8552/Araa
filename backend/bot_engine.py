@@ -2054,9 +2054,16 @@ class Bot:
                         self._log(user["id"], "COOLDOWN_SKIP", f"Skipped {picked['symbol']}: recent loss cooldown ({loss_cool}s) active.")
                         continue
 
-                    # Sync SL/TP from StrategyEngine (minimum 0.50% SL / 1.00% TP for 2:1 R:R)
-                    strat_sl_pct = max(0.50, float(strat.get("stop_loss_pct") or 0.50))
-                    strat_tp_pct = max(strat_sl_pct * 2.0, float(strat.get("take_profit_pct") or 1.00))
+                    # Sync SL/TP & Risk% from StrategyEngine + Custom Rules (minimum 0.50% SL / 1.00% TP for 2:1 R:R)
+                    custom_sl = float(tr_custom_rules.get("stop_loss_pct") or 0.0) if tr_custom_rules else 0.0
+                    custom_tp = float(tr_custom_rules.get("target_profit_pct") or 0.0) if tr_custom_rules else 0.0
+                    strat_sl_pct = max(0.50, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
+                    strat_tp_pct = max(strat_sl_pct * 2.0, custom_tp or float(strat.get("take_profit_pct") or 1.00))
+                    risk_pct = max(0.2, min(10.0, float(strat.get("risk_per_trade_pct") or 2.0)))
+                    risk_margin = round(min(free, max(min_pos_margin, capital * (risk_pct / 100.0))), 4)
+                    if risk_margin >= min_pos_margin:
+                        margin = min(margin, risk_margin) if margin > risk_margin else risk_margin
+                        qty = round((margin * effective_lev) / picked["price"], 8)
                     picked["stop_pct"] = strat_sl_pct
                     picked["target_pct"] = strat_tp_pct
                     is_buy_dir = picked["side"] in ("BUY", "LONG")
