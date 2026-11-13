@@ -440,7 +440,8 @@ async function call(path, opts = {}) {
     // Never auto-resend POST/PUT/DELETE (avoids duplicate connects/orders); retry GETs once
     const isWrite = opts.method && String(opts.method).toUpperCase() !== "GET";
     if (isWrite) {
-      throw new Error("Server is taking longer than usual. Please wait a few seconds and try again.");
+      const errTxt = (netErr && netErr.name === "AbortError") ? "Request timed out, syncing in background..." : (netErr && netErr.message ? netErr.message : "Connection interrupted.");
+      throw new Error(errTxt);
     }
     // Retry once after 300ms on transient connection hiccup / timeout
     try {

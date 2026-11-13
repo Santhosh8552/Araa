@@ -175,7 +175,7 @@ def get_live_tickers(force: bool = False) -> Dict[str, Dict[str, Any]]:
     if not force and _TICKER_CACHE and (now - _LAST_TICKER_FETCH < TICKER_CACHE_TTL):
         return _TICKER_CACHE
 
-    ok, res = _request("/exchange/ticker", method="GET")
+    ok, res = _request("/exchange/ticker", method="GET", timeout=2, retries=0)
     if ok and isinstance(res, list):
         parsed_map = {}
         for item in res:
@@ -319,9 +319,9 @@ def _empty_balance_summary(usdt_inr_rate: float = 90.0) -> Dict[str, Any]:
 
 
 def _get_live_usdt_inr_rate() -> float:
-    tickers = get_live_tickers()
-    if "USDTINR" in tickers and float(tickers["USDTINR"].get("last_price") or 0) > 0:
-        return float(tickers["USDTINR"]["last_price"])
+    global _TICKER_CACHE
+    if _TICKER_CACHE and "USDTINR" in _TICKER_CACHE and float(_TICKER_CACHE["USDTINR"].get("last_price") or 0) > 0:
+        return float(_TICKER_CACHE["USDTINR"]["last_price"])
     return 90.0
 
 
