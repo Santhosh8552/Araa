@@ -1001,19 +1001,19 @@ class Bot:
             # guaranteeing every closed green trade increases your real wallet balance!
             # =========================================================================
             tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
-            if p.get("is_live") and pnl >= max(3.00, est_fee + 3.00) and move_pct >= tp_pct:
+            if p.get("is_live") and pnl >= max(1.00, est_fee + 1.00) and move_pct >= tp_pct:
                 self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
             elif (not p.get("is_live")) and move_pct >= tp_pct and pnl > (est_fee + 0.01):
                 self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
-            if roi_pct >= 40.0 and pnl >= (3.00 if p.get("is_live") else (est_fee + 0.02)):
+            if roi_pct >= 40.0 and pnl >= (1.00 if p.get("is_live") else (est_fee + 0.02)):
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             peak_pct_val = max(float(p.get("peak_pnl_pct") or 0.0), move_pct)
-            if peak_cash >= (1.50 if p.get("is_live") else 0.25) and peak_pct_val >= max(0.50, tp_pct * 0.50) and pnl <= (est_fee + 0.05) and pnl > est_fee and time_held >= 10.0:
+            if peak_cash >= (0.60 if p.get("is_live") else 0.25) and peak_pct_val >= max(0.40, tp_pct * 0.45) and pnl <= (est_fee + 0.05) and pnl > est_fee and time_held >= 10.0:
                 self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f})")
                 continue
 
@@ -1021,6 +1021,8 @@ class Bot:
             if p.get("is_live"):
                 if peak_cash >= 3.55:
                     trail_floor = max(3.00, round(peak_cash * 0.85, 3))
+                elif peak_cash >= 1.25:
+                    trail_floor = max(1.00, round(peak_cash * 0.80, 3))
             else:
                 min_net_peak = est_fee + 0.10
                 if peak_cash >= max(3.00, min_net_peak):
@@ -1317,18 +1319,18 @@ class Bot:
             # RULE 0: BIG-PROFIT TRAILING ENGINE (FEE-AWARE + PEAK LOCK!)
             # =========================================================================
             tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
-            if p.get("is_live") and current_pnl >= max(3.00, est_fee + 3.00) and move_pct >= tp_pct:
+            if p.get("is_live") and current_pnl >= max(1.00, est_fee + 1.00) and move_pct >= tp_pct:
                 self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
             elif (not p.get("is_live")) and move_pct >= tp_pct and current_pnl > (est_fee + 0.01):
                 self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
-            if roi_pct >= 40.0 and current_pnl >= (3.00 if p.get("is_live") else (est_fee + 0.02)):
+            if roi_pct >= 40.0 and current_pnl >= (1.00 if p.get("is_live") else (est_fee + 0.02)):
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
-            if peak_cash >= (1.50 if p.get("is_live") else 0.25) and peak_pct >= max(0.50, tp_pct * 0.50) and current_pnl <= (est_fee + 0.05) and current_pnl > est_fee and time_held >= 10.0:
+            if peak_cash >= (0.60 if p.get("is_live") else 0.25) and peak_pct >= max(0.40, tp_pct * 0.45) and current_pnl <= (est_fee + 0.05) and current_pnl > est_fee and time_held >= 10.0:
                 self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f})")
                 continue
 
@@ -1336,6 +1338,8 @@ class Bot:
             if p.get("is_live"):
                 if peak_cash >= 3.55:
                     trail_floor = max(3.00, round(peak_cash * 0.85, 3))
+                elif peak_cash >= 1.25:
+                    trail_floor = max(1.00, round(peak_cash * 0.80, 3))
             else:
                 min_net_peak = est_fee + 0.10
                 if peak_cash >= max(3.00, min_net_peak):
