@@ -2119,7 +2119,7 @@ class Bot:
                         take_profit=tp_price,
                         client_order_id=f"araa_ai_{user['id']}_{picked['symbol']}_{int(now)}",
                     )
-                    if not ad_res.get("ok"):
+                    if not (ad_res.get("success") or ad_res.get("ok")):
                         err_txt = ad_res.get("error") or "CoinDCX order rejected"
                         self._log(user["id"], "ORDER_RETRY", f"CoinDCX rejected {picked['symbol']} ({err_txt})")
                         try:
