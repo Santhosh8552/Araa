@@ -1012,19 +1012,21 @@ class Bot:
                 trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.78, 3))
             elif peak_cash >= max(0.10, min_net_peak):
                 trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.70, 3))
-            elif peak_cash >= max(0.04, min_net_peak):
-                trail_floor = max(round(est_fee + 0.01, 3), 0.02)
+            elif peak_cash >= max(0.08, min_net_peak, est_fee * 3.0):
+                trail_floor = max(round(est_fee + 0.02, 3), 0.03)
 
-            if trail_floor is not None and pnl <= trail_floor and pnl > est_fee and time_held >= 2.0:
+            if trail_floor is not None and pnl <= trail_floor and pnl > est_fee and time_held >= 5.0:
                 self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             # =========================================================================
-            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO 5s NOISE CHURN)
-            # Gives trades 30s to clear entry spread & develop momentum before cutting,
-            # while hard-protecting capital if price invalidates by -0.28% or -28% ROI.
+            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO NOISE CHURN)
+            # Gives live trades 90s + full StrategyEngine SL breathing room past spread/fees
             # =========================================================================
-            if (time_held >= 30.0 and (move_pct <= -0.28 or roi_pct <= -28.0)) or move_pct <= -0.45:
+            sl = float(p.get("stop_pct") or (0.55 if p.get("is_live") else 0.85))
+            if p.get("is_live"):
+                sl = max(sl, 0.50)
+            if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
                 self.close(p, price, f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
                 continue
 
@@ -1033,7 +1035,7 @@ class Bot:
             # Never allow a real-money trade to sink into excessive loss
             # =========================================================================
             if p.get("is_live"):
-                if pnl <= -20.0 or move_pct <= -0.40:
+                if pnl <= -20.0 or move_pct <= -max(sl * 1.15, 0.70):
                     self.close(p, price, f"REAL_CAPITAL_PRESERVATION_STOP_LOSS ({move_pct:.2f}% | -${abs(pnl):.2f})")
                     continue
             elif roi_pct <= -25.0 or pnl <= -250.0:
@@ -1043,9 +1045,8 @@ class Bot:
             # =========================================================================
             # RULE 1B: TECHNICAL STOP LOSS & PERCENTAGE INVALIDATION
             # =========================================================================
-            sl = float(p.get("stop_pct") or (0.35 if p.get("is_live") else 0.85))
             if move_pct <= -sl:
-                self.close(p, price, f"TECHNICAL_STOP_LOSS (-{move_pct:.2f}%)")
+                self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
                 continue
 
             # =========================================================================
@@ -1312,17 +1313,20 @@ class Bot:
                 trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.78, 3))
             elif peak_cash >= max(0.10, min_net_peak):
                 trail_floor = max(round(est_fee + 0.02, 3), round(peak_cash * 0.70, 3))
-            elif peak_cash >= max(0.04, min_net_peak):
-                trail_floor = max(round(est_fee + 0.01, 3), 0.02)
+            elif peak_cash >= max(0.08, min_net_peak, est_fee * 3.0):
+                trail_floor = max(round(est_fee + 0.02, 3), 0.03)
 
-            if trail_floor is not None and current_pnl <= trail_floor and current_pnl > est_fee and time_held >= 2.0:
+            if trail_floor is not None and current_pnl <= trail_floor and current_pnl > est_fee and time_held >= 5.0:
                 self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
             # =========================================================================
-            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO 5s NOISE CHURN)
+            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO NOISE CHURN)
             # =========================================================================
-            if (time_held >= 30.0 and (move_pct <= -0.28 or roi_pct <= -28.0)) or move_pct <= -0.45:
+            sl = float(p.get("stop_pct") or (0.55 if p.get("is_live") else 0.85))
+            if p.get("is_live"):
+                sl = max(sl, 0.50)
+            if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
                 self.close(p, price, f"SMART_STOP_PROTECT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
                 continue
 
@@ -1331,7 +1335,7 @@ class Bot:
             # Never allow a trade to sink into excessive loss
             # =========================================================================
             if p.get("is_live"):
-                if current_pnl <= -20.0 or move_pct <= -0.40:
+                if current_pnl <= -20.0 or move_pct <= -max(sl * 1.15, 0.70):
                     self.close(p, price, f"REAL_CAPITAL_PRESERVATION_STOP_LOSS ({move_pct:.2f}% | -${abs(current_pnl):.2f})")
                     continue
             elif roi_pct <= -25.0 or current_pnl <= -250.0:
@@ -1341,9 +1345,8 @@ class Bot:
             # =========================================================================
             # RULE 1B: TECHNICAL STOP LOSS & PERCENTAGE INVALIDATION
             # =========================================================================
-            sl = float(p.get("stop_pct") or (0.35 if p.get("is_live") else 0.85))
             if move_pct <= -sl:
-                self.close(p, price, f"TECHNICAL_STOP_LOSS (-{move_pct:.2f}%)")
+                self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
                 continue
 
             # =========================================================================
@@ -2029,16 +2032,110 @@ class Bot:
             if margin < min_pos_margin or qty <= 0:
                 continue
 
-            # Real Exchange Execution Bridge
+            # Real Exchange Execution Bridge (AraaBot StrategyEngine + CoinDCXExecutionAdapter)
             real_res = None
-            if is_live_flag:
+            if is_coindcx_live:
+                try:
+                    from strategy_engine import StrategyEngine
+                    from coindcx_adapter import CoinDCXExecutionAdapter
+                    StrategyEngine.ensure_user_strategies(user["id"])
+                    strat = StrategyEngine.get_strategy(user["id"], "araa_quantum_ai")
+                    if not strat or not int(strat.get("enabled") or 0):
+                        self._log(user["id"], "STRATEGY_SKIP", f"Skipped {picked['symbol']}: Araa Quantum AI strategy is disabled.")
+                        continue
+
+                    # Per-symbol loss-streak cooldown (prevents rapid repeat losses on same pair)
+                    loss_cool = max(int(strat.get("cooldown_seconds") or 60), 180)
+                    recent_loss = query_one(
+                        "SELECT realized_pnl, closed_at FROM positions WHERE user_id=? AND symbol=? AND status='CLOSED' AND closed_at>? ORDER BY closed_at DESC LIMIT 1",
+                        (user["id"], picked["symbol"], now - loss_cool),
+                    )
+                    if recent_loss and float(recent_loss.get("realized_pnl") or 0.0) < 0:
+                        self._log(user["id"], "COOLDOWN_SKIP", f"Skipped {picked['symbol']}: recent loss cooldown ({loss_cool}s) active.")
+                        continue
+
+                    # Sync SL/TP from StrategyEngine (minimum 0.50% SL / 1.00% TP for 2:1 R:R)
+                    strat_sl_pct = max(0.50, float(strat.get("stop_loss_pct") or 0.50))
+                    strat_tp_pct = max(strat_sl_pct * 2.0, float(strat.get("take_profit_pct") or 1.00))
+                    picked["stop_pct"] = strat_sl_pct
+                    picked["target_pct"] = strat_tp_pct
+                    is_buy_dir = picked["side"] in ("BUY", "LONG")
+                    sl_price = round(picked["price"] * (1.0 - strat_sl_pct / 100.0) if is_buy_dir else picked["price"] * (1.0 + strat_sl_pct / 100.0), 8)
+                    tp_price = round(picked["price"] * (1.0 + strat_tp_pct / 100.0) if is_buy_dir else picked["price"] * (1.0 - strat_tp_pct / 100.0), 8)
+                    pred["stop_price"] = sl_price
+                    pred["target_price"] = tp_price
+
+                    risk_ok, risk_reason = StrategyEngine.evaluate_hard_risk(
+                        user_id=user["id"],
+                        strategy=strat,
+                        symbol=picked["symbol"],
+                        side=picked["side"],
+                        qty=qty,
+                        price=picked["price"],
+                    )
+                    if not risk_ok:
+                        self._log(user["id"], "RISK_BLOCK", f"StrategyEngine blocked {picked['side']} {picked['symbol']}: {risk_reason}")
+                        if pred_id:
+                            write("UPDATE ai_predictions SET post_entry_status='RISK_BLOCKED', outcome='CANCELLED' WHERE id=?", (pred_id,))
+                        continue
+
+                    ad_res = CoinDCXExecutionAdapter.submit_order(
+                        user_id=user["id"],
+                        strategy_id=strat["strategy_id"],
+                        symbol=picked["symbol"],
+                        side="BUY" if is_buy_dir else "SELL",
+                        market_type=str(strat.get("market_type") or "FUTURES"),
+                        qty=qty,
+                        order_type="MARKET",
+                        price=picked["price"],
+                        leverage=int(round(effective_lev)),
+                        client_order_id=f"araa_ai_{user['id']}_{picked['symbol']}_{int(now)}",
+                    )
+                    if not ad_res.get("ok"):
+                        err_txt = ad_res.get("error") or "CoinDCX order rejected"
+                        self._log(user["id"], "ORDER_RETRY", f"CoinDCX rejected {picked['symbol']} ({err_txt})")
+                        if pred_id:
+                            write("UPDATE ai_predictions SET post_entry_status='BROKER_FAILED', outcome='FAILED' WHERE id=?", (pred_id,))
+                        continue
+
+                    filled_qty = float(ad_res.get("filled_qty") or qty)
+                    filled_price = float(ad_res.get("avg_fill_price") or picked["price"])
+                    picked["price"] = filled_price
+                    sl_price = round(filled_price * (1.0 - strat_sl_pct / 100.0) if is_buy_dir else filled_price * (1.0 + strat_sl_pct / 100.0), 8)
+                    tp_price = round(filled_price * (1.0 + strat_tp_pct / 100.0) if is_buy_dir else filled_price * (1.0 - strat_tp_pct / 100.0), 8)
+                    prot_res = CoinDCXExecutionAdapter.setup_and_verify_protection(
+                        user_id=user["id"],
+                        position_id=str(ad_res.get("exchange_order_id") or ad_res.get("client_order_id") or ""),
+                        symbol=picked["symbol"],
+                        side="BUY" if is_buy_dir else "SELL",
+                        market_type=str(strat.get("market_type") or "FUTURES"),
+                        qty=filled_qty,
+                        entry_price=filled_price,
+                        stop_loss_price=sl_price,
+                        take_profit_price=tp_price,
+                    )
+                    real_res = {
+                        "executed": True,
+                        "exchange": "COINDCX",
+                        "qty": filled_qty,
+                        "leverage": effective_lev,
+                        "order_id": ad_res.get("exchange_order_id"),
+                        "protection_verified": bool(prot_res.get("protection_verified")),
+                    }
+                except Exception as b_err:
+                    real_res = {"executed": False, "error": str(b_err)}
+                    self._log(user["id"], "ORDER_RETRY", f"Skipped {picked['symbol']} ({b_err}), checking next setup...")
+                    if pred_id:
+                        write("UPDATE ai_predictions SET post_entry_status='BROKER_FAILED', outcome='FAILED' WHERE id=?", (pred_id,))
+                    continue
+            elif is_live_flag:
                 try:
                     from real_broker import execute_real_order
                     real_res = execute_real_order(
                         symbol=picked["symbol"],
                         side=picked["side"],
                         qty=qty,
-                        leverage=(effective_lev if is_coindcx_live else lev),
+                        leverage=lev,
                         stop_loss=pred.get("stop_price"),
                         take_profit=pred.get("target_price"),
                         user_id=user["id"],

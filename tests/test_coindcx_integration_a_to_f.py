@@ -269,6 +269,22 @@ class TestCoinDCXIntegrationAToF(unittest.TestCase):
             rec = CoinDCXExecutionAdapter.reconcile_state(self.uid)
             self.assertTrue(rec["connected"])
 
+    def test_7_persistent_login_session_survives_restart_until_logout(self):
+        import app as araa_app
+        tok = araa_app.make_session(self.uid, f"u{self.uid}@test.in")
+        self.assertTrue(tok.startswith("v1."))
+        # Simulate container/DB session table reset while user did NOT click logout
+        write("DELETE FROM sessions WHERE user_id=?", (self.uid,))
+        with araa_app.api.test_request_context("/api/auth/me", headers={"X-Token": tok}):
+            u = araa_app.current_user()
+            self.assertIsNotNone(u)
+            self.assertEqual(u["id"], self.uid)
+        # Now simulate explicit user logout
+        with araa_app.api.test_request_context("/api/auth/logout", method="POST", headers={"X-Token": tok}):
+            araa_app.logout()
+        with araa_app.api.test_request_context("/api/auth/me", headers={"X-Token": tok}):
+            self.assertIsNone(araa_app.current_user())
+
 
 if __name__ == "__main__":
     unittest.main()

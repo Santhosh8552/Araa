@@ -227,14 +227,59 @@ def fail(message, code=400):
 
 _last_seen_cache = {}
 
+def _session_hmac_key() -> bytes:
+    import hashlib as _hashlib
+    raw = os.environ.get("ARAA_SESSION_SECRET") or os.environ.get("JWT_SECRET") or os.environ.get("COINDCX_ENCRYPTION_KEY") or "araabot-persistent-session-key-v1"
+    return _hashlib.sha256(raw.encode("utf-8")).digest()
+
+def _sign_persistent_token(uid: int, issued_at: float, nonce: str) -> str:
+    import hmac as _hmac, hashlib as _hashlib
+    payload = f"v1.{int(uid)}.{int(issued_at)}.{nonce}"
+    sig = _hmac.new(_session_hmac_key(), payload.encode("utf-8"), _hashlib.sha256).hexdigest()[:32]
+    return f"{payload}.{sig}"
+
+def _verify_persistent_token(token: str):
+    import hmac as _hmac, hashlib as _hashlib
+    if not token or not str(token).startswith("v1."):
+        return None
+    parts = str(token).split(".")
+    if len(parts) != 5:
+        return None
+    payload = ".".join(parts[:4])
+    expected = _hmac.new(_session_hmac_key(), payload.encode("utf-8"), _hashlib.sha256).hexdigest()[:32]
+    if not _hmac.compare_digest(parts[4], expected):
+        return None
+    try:
+        return int(parts[1])
+    except Exception:
+        return None
+
 def current_user():
     token = request.headers.get("X-Token")
     if not token:
         return None
+    try:
+        if query_one("SELECT 1 FROM revoked_sessions WHERE token=?", (token,)):
+            return None
+    except Exception:
+        pass
     row = query_one("SELECT s.token, u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?",
                     (token,))
     if not row:
-        return None
+        # Persistent session recovery: if container restarted or DB rotated, restore valid signed token until explicit logout
+        uid = _verify_persistent_token(token)
+        if not uid:
+            return None
+        u_row = query_one("SELECT * FROM users WHERE id=?", (uid,))
+        if not u_row:
+            return None
+        now = time.time()
+        try:
+            write("INSERT OR IGNORE INTO sessions(token,user_id,created_at,last_seen) VALUES(?,?,?,?)", (token, uid, now, now))
+        except Exception:
+            pass
+        u_row["token"] = token
+        return u_row
     now = time.time()
     # High-concurrency performance: throttle last_seen DB writes to once per 60 seconds per user token
     if now - _last_seen_cache.get(token, 0.0) > 60.0:
@@ -1227,8 +1272,8 @@ def user_public(uid):
 
 
 def make_session(uid, email):
-    token = secrets.token_hex(16)
     now = time.time()
+    token = _sign_persistent_token(uid, now, secrets.token_hex(12))
     writes([
         ("INSERT INTO sessions(token,user_id,created_at,last_seen) VALUES(?,?,?,?)", (token, uid, now, now)),
         ("UPDATE users SET last_login_at=? WHERE id=?", (now, uid)),
@@ -1288,7 +1333,10 @@ def google_auth():
 def logout():
     token = request.headers.get("X-Token")
     if token:
-        write("DELETE FROM sessions WHERE token=?", (token,))
+        writes([
+            ("DELETE FROM sessions WHERE token=?", (token,)),
+            ("INSERT OR IGNORE INTO revoked_sessions(token, revoked_at) VALUES(?,?)", (token, time.time())),
+        ])
     return ok()
 
 
@@ -2448,27 +2496,12 @@ def real_bot_toggle_state():
     elif action == "PAUSE":
         write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=? WHERE user_id=?", (now, u["id"]))
         write("UPDATE users SET bot_enabled=0 WHERE id=?", (u["id"],))
-        flush_pnl, closed_count = bot.close_all_for(u["id"], reason="REAL_BOT_PAUSED", include_manual=True)
-        try:
-            from coindcx_gateway import get_user_coindcx_client
-            cdx_c = get_user_coindcx_client(u["id"])
-            if cdx_c:
-                cdx_c.cancel_all_orders()
-        except Exception:
-            pass
-        try:
-            from exness_gateway import get_exness_client
-            ex_client = get_exness_client(u["id"])
-            if ex_client:
-                ex_client.close_all(reason="REAL_BOT_PAUSED")
-        except Exception:
-            pass
         write(
             "INSERT INTO real_bot_audit_logs(user_id, event_type, severity, message, details_json, created_at) "
-            "VALUES(?, 'REAL_BOT_PAUSED', 'INFO', 'Real Bot execution paused by user - All positions flushed', NULL, ?)",
+            "VALUES(?, 'REAL_BOT_PAUSED', 'INFO', 'Real Bot new entries paused by user - Existing positions & SL/TP kept active', NULL, ?)",
             (u["id"], now)
         )
-        return ok(success=True, bot_status="PAUSED", is_live=bool(b_conn["is_live_active"]), closed_positions=closed_count, flush_pnl=flush_pnl, message="Real Bot PAUSED and all open positions closed.")
+        return ok(success=True, bot_status="PAUSED", is_live=bool(b_conn["is_live_active"]), closed_positions=0, flush_pnl=0.0, message="Real Bot PAUSED (no new entries; existing positions & SL/TP kept protected).")
         
     elif action == "STOP_AND_CANCEL_ORDERS":
         # Cancel all open orders and close active live positions
@@ -4026,24 +4059,15 @@ def api_coindcx_deactivate():
         ON CONFLICT(user_id) DO UPDATE SET bot_status='PAUSED', updated_at=?
     """, (u["id"], now, now, now))
 
-    flush_pnl, closed_count = bot.close_all_for(u["id"], reason="REAL_BOT_DEACTIVATED", include_manual=True)
-    try:
-        from coindcx_gateway import get_user_coindcx_client
-        cdx = get_user_coindcx_client(u["id"])
-        if cdx:
-            cdx.cancel_all_orders()
-    except Exception:
-        pass
-
     log_audit_event(
         user_id=u["id"],
         event_type="REAL_BOT_DEACTIVATED",
-        message=f"REAL BOT MODE PAUSED: Closed {closed_count} positions (P&L: ${flush_pnl:+.2f}). Automated order execution stopped by user.",
+        message="REAL BOT MODE PAUSED: Automated new entries stopped by user. Existing positions & SL/TP kept protected.",
         severity="INFO"
     )
-    bot._log(u["id"], "REAL_BOT_PAUSED", f"Real Bot Mode paused. Closed {closed_count} positions (P&L: ${flush_pnl:+.2f}).")
+    bot._log(u["id"], "REAL_BOT_PAUSED", "Real Bot Mode paused (new entries stopped; open positions & SL/TP kept protected).")
 
-    return ok(success=True, bot_status="PAUSED", closed_positions=closed_count, flush_pnl=flush_pnl, message=f"Real Bot Mode deactivated and {closed_count} positions closed.")
+    return ok(success=True, bot_status="PAUSED", closed_positions=0, flush_pnl=0.0, message="Real Bot Mode paused. Existing positions & SL/TP kept protected.")
 
 
 @api.route("/api/coindcx/real-bot/emergency-stop", methods=["POST"])

@@ -434,7 +434,11 @@ async function call(path, opts = {}) {
   }
   const data = await res.json().catch(() => ({success: true, status: "RECOVERED"}));
   if (res.status >= 500) return data;
-  if (!res.ok || data.success === false) throw new Error(data.error || "Please check your inputs and try again.");
+  if (!res.ok || data.success === false) {
+    const err = new Error(data.error || "Please check your inputs and try again.");
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -727,14 +731,17 @@ async function enterApp(pushState = true) {
   try {
     await refreshAccount();
   } catch (e) {
-    localStorage.removeItem("tp_token");
-    S.token = "";
-    window.openLoginFromLanding(false);
-    if ($("auth_msg")) {
-      $("auth_msg").className = "msg red";
-      $("auth_msg").textContent = "Session expired. Please sign in again.";
+    if (e && e.status === 401) {
+      localStorage.removeItem("tp_token");
+      S.token = "";
+      window.openLoginFromLanding(false);
+      if ($("auth_msg")) {
+        $("auth_msg").className = "msg red";
+        $("auth_msg").textContent = "Session signed out. Please sign in again.";
+      }
+      return;
     }
-    return;
+    toast("Reconnecting to server... staying signed in.", "amber");
   }
   loadDepositAssets(); loadTicker(); loadWatch(); loadChart();
   startPollers();

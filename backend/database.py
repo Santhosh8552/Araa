@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS sessions(
   created_at REAL NOT NULL,
   last_seen REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS revoked_sessions(
+  token TEXT PRIMARY KEY,
+  revoked_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS login_events(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
