@@ -17,7 +17,7 @@ PARENT_DIR = os.path.dirname(CURRENT_DIR)
 if PARENT_DIR not in sys.path:
     sys.path.insert(0, PARENT_DIR)
 
-from flask import Flask, jsonify, request, send_from_directory, render_template_string
+from flask import Flask, Response, jsonify, request, send_from_directory, render_template_string
 from flask_cors import CORS
 
 try:
@@ -221,8 +221,8 @@ def ok(**kw):
     return jsonify({"success": True, **kw})
 
 
-def fail(message, code=400):
-    return jsonify({"success": False, "error": message}), code
+def fail(message, code=400, **extra):
+    return jsonify({"success": False, "error": message, **extra}), code
 
 
 _last_seen_cache = {}

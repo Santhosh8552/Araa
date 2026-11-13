@@ -1009,8 +1009,9 @@ class Bot:
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
                 continue
 
-            if peak_pct >= max(0.35, tp_pct * 0.45) and pnl <= (est_fee + 0.015) and pnl > est_fee and time_held >= 5.0:
-                self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${pnl:.2f} | Peak +{peak_pct:.2f}%)")
+            peak_pct_val = max(float(p.get("peak_pnl_pct") or 0.0), move_pct)
+            if peak_pct_val >= max(0.35, tp_pct * 0.45) and pnl <= (est_fee + 0.015) and pnl > est_fee and time_held >= 5.0:
+                self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${pnl:.2f} | Peak +{peak_pct_val:.2f}%)")
                 continue
 
             trail_floor = None
