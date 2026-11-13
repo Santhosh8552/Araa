@@ -23,6 +23,7 @@ const $ = (id) => document.getElementById(id);
 const S = {token: localStorage.getItem("tp_token") || "", user: null, wallet: null, pf: null,
            orders: [], markets: [], symbol: "BTCUSDT", side: "LONG", tf: "1m", otype: "MARKET",
            cat: "COINDCX_USDT", size: 50, chartMode: "tv", tvKey: "", candles: [], quote: {}, ind: {},
+           showSmcDna: true, smcDna: null,
            tab: "positions", authMode: "login", live: false, note: "", lat: 0, syms: 0,
            country: "", showAll: false,
            running: false, botEnabled: false};
@@ -6115,10 +6116,23 @@ function drawChart(candles) {
     return;
   }
   const isLight = document.documentElement.getAttribute("data-theme") === "light";
-  const min = Math.min(...candles.map(k => k.l)), max = Math.max(...candles.map(k => k.h));
+  const smc = (S.showSmcDna && S.smcDna) ? S.smcDna : null;
+  const projPts = (smc && smc.dna && Array.isArray(smc.dna.projection)) ? smc.dna.projection : [];
+  let min = Math.min(...candles.map(k => k.l));
+  let max = Math.max(...candles.map(k => k.h));
+  if (projPts.length) {
+    projPts.forEach(pt => {
+      if (pt.lower != null && pt.lower < min) min = pt.lower;
+      if (pt.upper != null && pt.upper > max) max = pt.upper;
+    });
+  }
   const pad = (max - min) * 0.08 || max * 0.001 || 1;
-  const lo = min - pad, hi = max + pad, plotW = w - 62;
+  const lo = min - pad, hi = max + pad;
+  const fullPlotW = w - 62;
+  const plotW = projPts.length ? fullPlotW * 0.82 : fullPlotW;
+  const projW = projPts.length ? fullPlotW * 0.18 : 0;
   const X = i => (i / Math.max(candles.length - 1, 1)) * plotW + 42;
+  const XP = s => 42 + plotW + (s / Math.max(projPts.length, 1)) * projW;
   const Y = p => h - 24 - (p - lo) / (hi - lo) * (h - 48);
   ctx.strokeStyle = isLight ? "#D5DBE5" : "#1E232C";
   ctx.fillStyle = isLight ? "#64748B" : "#5A6070";
@@ -6126,6 +6140,54 @@ function drawChart(candles) {
   for (let g = 0; g <= 4; g++) { const p = lo + (hi - lo) * g / 4, y = Y(p);
     ctx.beginPath(); ctx.moveTo(42, y); ctx.lineTo(w - 20, y); ctx.stroke();
     ctx.fillText(priceFmt(p), 2 * dpr, y + 4); }
+
+  // 🧬 SMC Order Blocks, FVG Zones, Liquidity (BSL/SSL) & Fib 61.8%
+  if (smc) {
+    ctx.save();
+    (smc.order_blocks || []).forEach(ob => {
+      if (ob.top < lo || ob.bottom > hi) return;
+      const yTop = Y(Math.min(hi, ob.top));
+      const yBot = Y(Math.max(lo, ob.bottom));
+      const isBull = ob.type === "BULLISH_OB";
+      ctx.fillStyle = isBull ? "rgba(16, 185, 129, 0.14)" : "rgba(239, 68, 68, 0.14)";
+      ctx.fillRect(42, yTop, plotW, Math.max(2 * dpr, yBot - yTop));
+      ctx.strokeStyle = isBull ? "rgba(16, 185, 129, 0.55)" : "rgba(239, 68, 68, 0.55)";
+      ctx.lineWidth = 1 * dpr;
+      ctx.strokeRect(42, yTop, plotW, Math.max(2 * dpr, yBot - yTop));
+      ctx.fillStyle = isBull ? (isLight ? "#059669" : "#34d399") : (isLight ? "#dc2626" : "#f87171");
+      ctx.font = `bold ${8.5 * dpr}px monospace`;
+      ctx.fillText(isBull ? "BULL OB" : "BEAR OB", 42 + plotW - 48 * dpr, yTop + 10 * dpr);
+    });
+    (smc.fvgs || []).forEach(fg => {
+      if (fg.top < lo || fg.bottom > hi) return;
+      const yTop = Y(Math.min(hi, fg.top));
+      const yBot = Y(Math.max(lo, fg.bottom));
+      const isBull = fg.type === "BULLISH_FVG";
+      ctx.fillStyle = isBull ? "rgba(56, 189, 248, 0.13)" : "rgba(245, 158, 11, 0.13)";
+      ctx.fillRect(42, yTop, plotW, Math.max(2 * dpr, yBot - yTop));
+      ctx.fillStyle = isBull ? "#38bdf8" : "#f59e0b";
+      ctx.font = `bold ${8 * dpr}px monospace`;
+      ctx.fillText("FVG", 42 + plotW - 24 * dpr, Math.max(yTop + 9 * dpr, (yTop + yBot) / 2));
+    });
+    const liq = smc.liquidity || {};
+    const drawSmcLine = (price, color, label) => {
+      if (!price || price < lo || price > hi) return;
+      const yL = Y(price);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.1 * dpr;
+      ctx.setLineDash([4 * dpr, 4 * dpr]);
+      ctx.beginPath(); ctx.moveTo(42, yL); ctx.lineTo(42 + plotW, yL); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.font = `bold ${8.5 * dpr}px monospace`;
+      ctx.fillText(`${label} $${priceFmt(price)}`, 48, yL - 3 * dpr);
+    };
+    if (liq.bsl && liq.bsl.price) drawSmcLine(liq.bsl.price, isLight ? "#dc2626" : "#f87171", liq.bsl.swept ? "BSL SWEPT" : "BSL");
+    if (liq.ssl && liq.ssl.price) drawSmcLine(liq.ssl.price, isLight ? "#059669" : "#34d399", liq.ssl.swept ? "SSL SWEPT" : "SSL");
+    if (liq.fib_618) drawSmcLine(liq.fib_618, isLight ? "#d97706" : "#fbbf24", "Fib 61.8%");
+    ctx.restore();
+  }
+
   const slot = plotW / candles.length, bodyW = Math.max(1, Math.min(slot * 0.62, 14 * dpr));
   candles.forEach((k, i) => {
     const up = k.c >= k.o, col = up ? (isLight ? "#059669" : "#00D38F") : (isLight ? "#E11D48" : "#FF4D6A"), x = X(i);
@@ -6333,6 +6395,107 @@ function drawChart(candles) {
       ctx.restore();
     });
   }
+
+  // 🧬 Market DNA Historical Pattern Future Projection Curve & Confidence Band
+  if (smc && projPts.length && candles.length) {
+    const lastC = candles[candles.length - 1].c;
+    const x0 = X(candles.length - 1);
+    const y0 = Y(lastC);
+    ctx.save();
+    // Vertical divider at current live candle
+    ctx.strokeStyle = isLight ? "rgba(100,116,139,0.4)" : "rgba(148,163,184,0.35)";
+    ctx.lineWidth = 1 * dpr;
+    ctx.setLineDash([3 * dpr, 3 * dpr]);
+    ctx.beginPath(); ctx.moveTo(x0, 22 * dpr); ctx.lineTo(x0, h - 24); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Shaded confidence fan
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    projPts.forEach(pt => ctx.lineTo(XP(pt.step), Y(pt.upper)));
+    for (let i = projPts.length - 1; i >= 0; i--) {
+      ctx.lineTo(XP(projPts[i].step), Y(projPts[i].lower));
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(59, 130, 246, 0.14)";
+    ctx.fill();
+
+    // Projected center curve
+    ctx.strokeStyle = "#3b82f6";
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    projPts.forEach(pt => ctx.lineTo(XP(pt.step), Y(pt.price)));
+    ctx.stroke();
+
+    // Top DNA banner label
+    const dna = smc.dna || {};
+    ctx.fillStyle = "#60a5fa";
+    ctx.font = `bold ${8.5 * dpr}px monospace`;
+    ctx.fillText(`🧬 DNA ${dna.similarity_pct || 0}% · ${dna.setup_status || "NEUTRAL"}`, x0 + 6 * dpr, 18 * dpr);
+    ctx.restore();
+  }
+}
+
+window.toggleSmcDnaOverlay = function() {
+  S.showSmcDna = !S.showSmcDna;
+  const btn = $("btn_toggle_smc_dna");
+  if (btn) {
+    btn.classList.toggle("active", S.showSmcDna);
+    btn.textContent = S.showSmcDna ? "🧬 SMC + DNA ON" : "🧬 SMC + DNA OFF";
+    btn.style.opacity = S.showSmcDna ? "1" : "0.65";
+  }
+  if (S.showSmcDna && S.chartMode !== "local") {
+    switchToAraaChart();
+  } else {
+    drawChart(S.candles);
+  }
+};
+
+function renderSmcDnaPanel(smcDna) {
+  const badge = $("smc_dna_status_badge");
+  const tbody = $("smc_timeline_tbody");
+  if (!smcDna) return;
+  const dna = smcDna.dna || {};
+  const liq = smcDna.liquidity || {};
+  const statusStr = String(dna.setup_status || "NO_QUALIFIED_SETUP");
+  if (badge) {
+    badge.textContent = statusStr.replace(/_/g, " ");
+    if (statusStr === "QUALIFIED_BULLISH") {
+      badge.style.background = "rgba(16,185,129,0.2)";
+      badge.style.color = "#10b981";
+    } else if (statusStr === "QUALIFIED_BEARISH") {
+      badge.style.background = "rgba(239,68,68,0.2)";
+      badge.style.color = "#f87171";
+    } else {
+      badge.style.background = "rgba(245,158,11,0.18)";
+      badge.style.color = "#fbbf24";
+    }
+  }
+  if ($("smc_dna_bias")) $("smc_dna_bias").textContent = dna.historical_bias || "NEUTRAL";
+  if ($("smc_dna_sim")) $("smc_dna_sim").textContent = `${dna.similarity_pct || 0}%`;
+  if ($("smc_dna_fib")) $("smc_dna_fib").textContent = liq.fib_618 ? `$${priceFmt(liq.fib_618)}` : "—";
+  if ($("smc_dna_bsl")) $("smc_dna_bsl").textContent = liq.bsl?.price ? `$${priceFmt(liq.bsl.price)}${liq.bsl.swept ? " (SWEPT)" : ""}` : "—";
+  if ($("smc_dna_ssl")) $("smc_dna_ssl").textContent = liq.ssl?.price ? `$${priceFmt(liq.ssl.price)}${liq.ssl.swept ? " (SWEPT)" : ""}` : "—";
+
+  if (tbody) {
+    const events = Array.isArray(smcDna.timeline) ? smcDna.timeline : [];
+    if (!events.length) {
+      tbody.innerHTML = `<tr><td colspan="5" style="padding:10px; text-align:center; color:#64748b;">No confirmed structure events in current window.</td></tr>`;
+    } else {
+      tbody.innerHTML = events.map(ev => {
+        const col = ev.bias === "bull" ? "#10b981" : (ev.bias === "bear" ? "#f87171" : "#94a3b8");
+        const dt = ev.time ? new Date(ev.time * 1000).toLocaleTimeString("en-IN", {timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false}) : "—";
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+          <td style="padding:4px 8px; color:#94a3b8; font-family:var(--mono);">${dt}</td>
+          <td style="padding:4px 8px; color:#f8fafc; font-weight:700;">${ev.symbol || S.symbol}</td>
+          <td style="padding:4px 8px; color:#38bdf8;">${ev.tf || S.tf.toUpperCase()}</td>
+          <td style="padding:4px 8px; color:${col}; font-weight:600;">${ev.event || ""}</td>
+          <td style="padding:4px 8px; text-align:right; color:#f8fafc; font-family:var(--mono);">$${priceFmt(ev.price)}</td>
+        </tr>`;
+      }).join("");
+    }
+  }
 }
 
 function renderChartLiveEntryOverlay() {
@@ -6449,6 +6612,8 @@ async function loadChart() {
     if (seq !== chartSeq) return;
     const q = d.quote || {}, ind = d.indicators || {};
     S.candles = d.candles; S.live = !!q.live; S.quote = q; S.ind = ind;
+    S.smcDna = d.smc_dna || null;
+    renderSmcDnaPanel(S.smcDna);
     S.quoteBy[symbol] = Object.assign(S.quoteBy[symbol] || {}, q);
     $("t_symbol").textContent = symbol;
     $("t_cat").textContent = d.category;
@@ -8299,6 +8464,15 @@ function tickClock() {
   $("s_clock").textContent = "IST " + new Date().toLocaleTimeString("en-US",
     {timeZone: "Asia/Kolkata", hour12: false});
   $("s_lat").textContent = "LAT " + S.lat + "ms";
+  const timerEl = $("t_candle_timer");
+  if (timerEl) {
+    const tfMap = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400};
+    const sec = tfMap[String(S.tf || "15m").toLowerCase()] || 900;
+    const rem = sec - (Math.floor(Date.now() / 1000) % sec);
+    const mm = String(Math.floor(rem / 60)).padStart(2, "0");
+    const ss = String(rem % 60).padStart(2, "0");
+    timerEl.textContent = `${mm}:${ss} FORMING`;
+  }
 }
 
 let _tickingPositions = false;

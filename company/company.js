@@ -975,6 +975,8 @@
           <div><b>Quantum Engine:</b> ${esc((eng.quantum_engine || {}).regime)} (${esc((eng.quantum_engine || {}).consensus_score)}%)</div>
           <div><b>Advisor:</b> ${esc((eng.llm_advisor || {}).name)} -> ${esc((eng.llm_advisor || {}).action)} (${esc((eng.llm_advisor || {}).win_probability)}%)</div>
           <div><b>Bot Trainer:</b> Boost ${esc((eng.bot_trainer || {}).boost)} (${esc((eng.bot_trainer || {}).note)})</div>
+          <div><b>SMC + Market DNA:</b> ${esc(((eng.smc_dna || {}).dna || {}).setup_status || "READY")} · Bias ${esc(String(((eng.smc_dna || {}).dna || {}).historical_bias || "neutral").toUpperCase())} (${esc(((eng.smc_dna || {}).dna || {}).similarity_pct || 0)}% twin)</div>
+          <div><b>Liquidity &amp; Fib 61.8%:</b> Fib $${esc(((eng.smc_dna || {}).liquidity || {}).fib_618 || "--")} · OBs ${esc((((eng.smc_dna || {}).order_blocks) || []).length)} · FVGs ${esc((((eng.smc_dna || {}).fvgs) || []).length)}</div>
         </div>
         <div class="kpi-sub" style="margin-top:8px;">${esc(r.rationale)}</div>
         <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
@@ -983,6 +985,68 @@
         </div>
       </div>
     `;
+
+    const smc = eng.smc_dna || {};
+    const dna = smc.dna || {};
+    const liq = smc.liquidity || {};
+    const obs = Array.isArray(smc.order_blocks) ? smc.order_blocks : [];
+    const fvgs = Array.isArray(smc.fvgs) ? smc.fvgs : [];
+    const timeline = Array.isArray(smc.timeline) ? smc.timeline : [];
+    if ($("company_smc_status_badge")) {
+      $("company_smc_status_badge").textContent = `${esc(r.symbol)} · ${esc(dna.setup_status || "NO_QUALIFIED_SETUP")} (${esc(dna.similarity_pct || 0)}% DNA twin)`;
+    }
+    if ($("company_smc_dna_box")) {
+      const bias = String(dna.historical_bias || "neutral").toUpperCase();
+      const biasBadge = bias === "BULLISH" ? "ok" : bias === "BEARISH" ? "warn" : "info";
+      const bsl = (liq.bsl || {}).price;
+      const ssl = (liq.ssl || {}).price;
+      $("company_smc_dna_box").innerHTML = `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:12px;">
+          <div style="padding:10px; border:1px solid var(--border); border-radius:8px; background:#f8fafc;">
+            <div class="kpi-sub">Market DNA Twin Match</div>
+            <div style="font-size:16px; font-weight:700;">${esc(dna.similarity_pct || 0)}% <span class="badge ${biasBadge}">${esc(bias)}</span></div>
+          </div>
+          <div style="padding:10px; border:1px solid var(--border); border-radius:8px; background:#f8fafc;">
+            <div class="kpi-sub">BSL / SSL Liquidity</div>
+            <div class="mono" style="font-size:13px; font-weight:700;">BSL $${esc(bsl ?? "--")} / SSL $${esc(ssl ?? "--")}</div>
+          </div>
+          <div style="padding:10px; border:1px solid var(--border); border-radius:8px; background:#f8fafc;">
+            <div class="kpi-sub">Fib 61.8% / 50%</div>
+            <div class="mono" style="font-size:13px; font-weight:700;">$${esc(liq.fib_618 ?? "--")} / $${esc(liq.fib_50 ?? "--")}</div>
+          </div>
+          <div style="padding:10px; border:1px solid var(--border); border-radius:8px; background:#f8fafc;">
+            <div class="kpi-sub">Institutional Zones</div>
+            <div style="font-size:13px; font-weight:700;">${obs.length} Order Blocks · ${fvgs.length} FVGs</div>
+          </div>
+        </div>
+        <div class="kpi-sub" style="margin-bottom:8px;">${esc(dna.condition_note || "Historical Market DNA & Smart Money structure overview.")}</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+          <div style="padding:8px; border:1px solid var(--border); border-radius:8px;">
+            <b>Active Order Blocks (${obs.length})</b>
+            ${obs.length ? obs.slice(0, 4).map((o) => `<div style="margin-top:4px;">${esc(String(o.type || "").toUpperCase())} OB · $${esc(o.low)}–$${esc(o.high)} (${o.mitigated ? "Mitigated" : "Unmitigated"})</div>`).join("") : '<div class="kpi-sub">None detected</div>'}
+          </div>
+          <div style="padding:8px; border:1px solid var(--border); border-radius:8px;">
+            <b>Fair Value Gaps (${fvgs.length})</b>
+            ${fvgs.length ? fvgs.slice(0, 4).map((f) => `<div style="margin-top:4px;">${esc(String(f.type || "").toUpperCase())} FVG · $${esc(f.low)}–$${esc(f.high)} (${f.mitigated ? "Mitigated" : "Open"})</div>`).join("") : '<div class="kpi-sub">None detected</div>'}
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>Time</th><th>Symbol</th><th>TF</th><th>Event</th><th>Bias</th><th>Price</th></tr></thead>
+            <tbody>${timeline.length ? timeline.map((ev) => `
+              <tr>
+                <td>${esc(ev.time || "--")}</td>
+                <td><b>${esc(ev.symbol || r.symbol)}</b></td>
+                <td>${esc(ev.tf || timeframe)}</td>
+                <td>${esc(ev.event || "--")}</td>
+                <td><span class="badge ${String(ev.bias || "").toLowerCase() === "bullish" ? "ok" : String(ev.bias || "").toLowerCase() === "bearish" ? "warn" : "info"}">${esc(String(ev.bias || "neutral").toUpperCase())}</span></td>
+                <td class="mono">$${esc(ev.price ?? "--")}</td>
+              </tr>`).join("") : '<tr><td colspan="6" class="kpi-sub">No confirmed structure events yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
   }
 
   async function proposeFromAiHub(symbol, marketScope, routePaper) {

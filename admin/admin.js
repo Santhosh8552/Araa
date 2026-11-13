@@ -728,6 +728,7 @@ async function tick() {
     await loadOverview(); await loadStorage(); await loadWithdrawals();
     await loadUsers(); await loadDeposits(); await loadLedger(); await loadLogs();
     await loadGatekeeperAudit();
+    if (typeof loadAdminSmcDna === "function") await loadAdminSmcDna();
     if (typeof loadEnterpriseV3Health === "function") await loadEnterpriseV3Health();
   } catch (e) { $("feed").textContent = "API DOWN — is python3 backend/app.py running?"; }
 }
@@ -1052,9 +1053,84 @@ if ($("btn_refresh_gatekeeper")) {
   $("btn_refresh_gatekeeper").onclick = async () => {
     $("btn_refresh_gatekeeper").textContent = "🔄 REFRESHING...";
     await loadGatekeeperAudit();
+    if (typeof loadAdminSmcDna === "function") await loadAdminSmcDna();
     setTimeout(() => { $("btn_refresh_gatekeeper").textContent = "🔄 REFRESH RULES"; }, 500);
   };
 }
+
+async function loadAdminSmcDna() {
+  try {
+    const _e = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const sym = ($("adm_smc_sym_select") && $("adm_smc_sym_select").value) || "BTCUSDT";
+    const res = await get("/api/smc/overview?symbol=" + encodeURIComponent(sym) + "&interval=15m");
+    if (!res || !res.ok) return;
+
+    const scannerEl = $("adm_smc_scanner_grid");
+    if (scannerEl && Array.isArray(res.scanner)) {
+      scannerEl.innerHTML = res.scanner.map((item) => {
+        const bias = String(item.historical_bias || "neutral").toUpperCase();
+        const biasClr = bias === "BULLISH" ? "#34d399" : bias === "BEARISH" ? "#fb7185" : "#fbbf24";
+        const status = String(item.setup_status || "NO_QUALIFIED_SETUP");
+        const statusClr = status === "QUALIFIED_SETUP" ? "#34d399" : status === "DEVELOPING" ? "#fbbf24" : "#94a3b8";
+        return `
+          <div style="background:rgba(15,23,42,0.65); border:1px solid rgba(148,163,184,0.2); border-radius:10px; padding:10px; font-size:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:6px;">
+              <b style="color:#f8fafc;">${_e(item.symbol)}</b>
+              <span style="font-size:10px; padding:2px 6px; border-radius:999px; border:1px solid ${statusClr}; color:${statusClr};">${_e(status)}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; color:#cbd5e1; margin-bottom:4px;">
+              <span>Price: <b>$${priceFmt(item.price)}</b></span>
+              <span style="color:${biasClr}; font-weight:700;">${_e(bias)} (${Number(item.similarity_pct || 0).toFixed(1)}%)</span>
+            </div>
+            <div style="font-size:11px; color:#94a3b8; display:grid; grid-template-columns:1fr 1fr; gap:4px;">
+              <span>Fib 61.8%: $${priceFmt(item.fib_618 || 0)}</span>
+              <span>OBs: ${Number(item.obs_count || 0)} · FVGs: ${Number(item.fvgs_count || 0)}</span>
+              <span>BSL: $${priceFmt(item.bsl || 0)}</span>
+              <span>SSL: $${priceFmt(item.ssl || 0)}</span>
+            </div>
+          </div>
+        `;
+      }).join("") || '<div style="color:#94a3b8; font-size:12px;">No scanner telemetry available.</div>';
+    }
+
+    const timelineBody = $("adm_smc_timeline_body");
+    const timeline = (res.active_dna && Array.isArray(res.active_dna.timeline)) ? res.active_dna.timeline : [];
+    if (timelineBody) {
+      if (!timeline.length) {
+        timelineBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No confirmed SMC structure events yet.</td></tr>';
+      } else {
+        timelineBody.innerHTML = timeline.map((ev) => {
+          const evBias = String(ev.bias || "neutral").toUpperCase();
+          const bClr = evBias === "BULLISH" ? "#34d399" : evBias === "BEARISH" ? "#fb7185" : "#fbbf24";
+          return `
+            <tr>
+              <td>${_e(ev.time || "--")}</td>
+              <td><b>${_e(ev.symbol || sym)}</b></td>
+              <td>${_e(ev.tf || "15M")}</td>
+              <td>${_e(ev.event || "--")}</td>
+              <td><span style="color:${bClr}; font-weight:700;">${_e(evBias)}</span></td>
+              <td>$${priceFmt(ev.price || 0)}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to load SMC + Market DNA overview:", err);
+  }
+}
+
+if ($("btn_adm_refresh_smc")) {
+  $("btn_adm_refresh_smc").onclick = async () => {
+    $("btn_adm_refresh_smc").textContent = "🔄 SCANNING...";
+    await loadAdminSmcDna();
+    setTimeout(() => { $("btn_adm_refresh_smc").textContent = "🔄 SCAN SMC & DNA"; }, 500);
+  };
+}
+if ($("adm_smc_sym_select")) {
+  $("adm_smc_sym_select").onchange = () => loadAdminSmcDna();
+}
+if (getAdminToken()) loadAdminSmcDna();
 
 /* ---------------- security firewall telemetry ---------------- */
 async function loadFirewall() {

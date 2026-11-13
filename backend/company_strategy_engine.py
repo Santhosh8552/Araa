@@ -25,7 +25,7 @@ try:
     from gemini_advisor import get_ai_keys, predict_pre_entry
     from prediction_engine import predict_and_advise
     from price_feed import get_price_feed
-    from quantum_engine import LiquidationHeatmapEngine, MarketRegimeEngine, TradingCommitteeEngine
+    from quantum_engine import LiquidationHeatmapEngine, MarketRegimeEngine, SMCDNAEngine, TradingCommitteeEngine
 except ImportError:
     from backend.ai_committee import AgentBetaTechnicalIntelligence, AICommitteeOrchestrator
     from backend.analysis_engine import analyze_market_deep
@@ -36,7 +36,7 @@ except ImportError:
     from backend.gemini_advisor import get_ai_keys, predict_pre_entry
     from backend.prediction_engine import predict_and_advise
     from backend.price_feed import get_price_feed
-    from backend.quantum_engine import LiquidationHeatmapEngine, MarketRegimeEngine, TradingCommitteeEngine
+    from backend.quantum_engine import LiquidationHeatmapEngine, MarketRegimeEngine, SMCDNAEngine, TradingCommitteeEngine
 
 
 def _build_ohlcv_series(feed: Any, symbol: str, spot_price: float, bars: int = 45) -> List[Dict[str, Any]]:
@@ -337,7 +337,7 @@ class CompanyStrategyService:
         # 3. GRU Neural + Multi-Horizon Prediction Engine
         pred_gru = predict_and_advise(clean_sym, category, candles, timeframe=timeframe, live=True)
 
-        # 4. Quantum Institutional Engine (Regime + Liquidation Heatmap + Committee)
+        # 4. Quantum Institutional Engine (Regime + Liquidation Heatmap + Committee + SMC DNA)
         regime = MarketRegimeEngine.classify_regime(clean_sym, q_data, ticks, candles=candles)
         heatmap = LiquidationHeatmapEngine.calculate_clusters(clean_sym, px_float, q_data["high"], q_data["low"], q_data["volume"])
         q_comm = TradingCommitteeEngine.evaluate_committee(
@@ -347,6 +347,7 @@ class CompanyStrategyService:
             regime,
             heatmap,
         )
+        smc_res = SMCDNAEngine.analyze_candles(clean_sym, candles, timeframe, px_float)
 
         # 5. Bot Self-Learning Trainer Adjustment
         trainer_boost, trainer_blacklisted, trainer_note = (0, False, "Baseline neutral")
@@ -451,6 +452,18 @@ class CompanyStrategyService:
                     "boost": trainer_boost,
                     "blacklisted": bool(trainer_blacklisted),
                     "note": trainer_note or "Neutral baseline",
+                },
+                "smc_dna": {
+                    "name": "Infinity SMC & Market DNA",
+                    "setup_status": smc_res["dna"]["setup_status"],
+                    "historical_bias": smc_res["dna"]["historical_bias"],
+                    "similarity_pct": smc_res["dna"]["similarity_pct"],
+                    "bsl": smc_res["liquidity"]["bsl"]["price"],
+                    "ssl": smc_res["liquidity"]["ssl"]["price"],
+                    "fib_618": smc_res["liquidity"]["fib_618"],
+                    "fvgs": smc_res["fvgs"],
+                    "order_blocks": smc_res["order_blocks"],
+                    "timeline": smc_res["timeline"][:5],
                 },
             },
             "rationale": (

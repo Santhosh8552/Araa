@@ -1091,6 +1091,12 @@ def market(symbol):
                     "source": "COINDCX LIVE",
                     "live": True
                 }
+                smc_dna = None
+                try:
+                    from quantum_engine import SMCDNAEngine
+                    smc_dna = SMCDNAEngine.analyze_candles(symbol, formatted_candles, interval, latest["c"])
+                except Exception:
+                    smc_dna = None
                 return jsonify({
                     "symbol": symbol,
                     "name": symbol.replace("INR", "/INR") if "INR" in symbol else symbol.replace("USDT", "/USDT"),
@@ -1102,6 +1108,7 @@ def market(symbol):
                     "spark": [c["c"] for c in formatted_candles[-30:]],
                     "candles": formatted_candles,
                     "interval": interval,
+                    "smc_dna": smc_dna,
                     "order_book": {
                         "real": True,
                         "bids": [[round(latest["c"] * 0.9995, 2), 1.5]],
@@ -1132,16 +1139,24 @@ def market(symbol):
     bid_vol = sum(b[1] for b in book["bids"])
     ask_vol = sum(a[1] for a in book["asks"])
     side_total = bid_vol + ask_vol or 1.0
+    q_snap = feed.quote(symbol)
+    smc_dna = None
+    try:
+        from quantum_engine import SMCDNAEngine
+        smc_dna = SMCDNAEngine.analyze_candles(symbol, candles, interval, (q_snap or {}).get("price"))
+    except Exception:
+        smc_dna = None
     return jsonify({
         "symbol": symbol,
         "name": display_name(symbol),
         "category": row["category"],
         "tv_symbol": feed_tv(symbol),
         "tv_chart": tv_chart_url(symbol, interval),
-        "quote": feed.quote(symbol),
+        "quote": q_snap,
         "spark": feed.spark(symbol, 60),
         "candles": candles,
         "interval": interval,
+        "smc_dna": smc_dna,
         "order_book": book,
         "indicators": {
             "ma20": sma(closes, 20), "ma50": sma(closes, 50), "ma200": sma(closes, 200),
@@ -1152,6 +1167,50 @@ def market(symbol):
             "candles_used": len(candles),
         },
     })
+
+
+@api.route("/api/smc/overview", methods=["GET"])
+def api_smc_overview():
+    """Returns active SMC & Market DNA analysis plus a 6-symbol live scanner for UI, Admin & Company panels."""
+    symbol = (request.args.get("symbol") or "BTCUSDT").strip().upper()
+    interval = (request.args.get("interval") or "15m").strip().lower()
+    from quantum_engine import SMCDNAEngine
+
+    def _candles_for(sym: str, iv: str):
+        cs = feed.candles(sym, iv, 60) or []
+        if len(cs) < 10:
+            try:
+                from coindcx_gateway import fetch_coindcx_candles
+                raw_c = fetch_coindcx_candles(sym, iv, 60) or []
+                cs = [{
+                    "t": int(c["time"] / 1000) if c["time"] > 1e11 else int(c["time"]),
+                    "o": float(c["open"]), "h": float(c["high"]),
+                    "l": float(c["low"]), "c": float(c["close"]), "v": float(c["volume"]),
+                } for c in raw_c]
+            except Exception:
+                pass
+        return cs
+
+    q_active = feed.quote(symbol) or {}
+    active_dna = SMCDNAEngine.analyze_candles(symbol, _candles_for(symbol, interval), interval, q_active.get("price") or feed.price(symbol))
+    scanner_syms = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NEARUSDT", "XRPUSDT", "DOGEUSDT"]
+    scanner = []
+    for sym in scanner_syms:
+        qs = feed.quote(sym) or {}
+        res = SMCDNAEngine.analyze_candles(sym, _candles_for(sym, interval), interval, qs.get("price") or feed.price(sym))
+        scanner.append({
+            "symbol": sym,
+            "price": res["price"],
+            "setup_status": res["dna"]["setup_status"],
+            "historical_bias": res["dna"]["historical_bias"],
+            "similarity_pct": res["dna"]["similarity_pct"],
+            "bsl": res["liquidity"]["bsl"]["price"],
+            "ssl": res["liquidity"]["ssl"]["price"],
+            "fib_618": res["liquidity"]["fib_618"],
+            "fvgs_count": len(res["fvgs"]),
+            "obs_count": len(res["order_blocks"]),
+        })
+    return ok(active_dna=active_dna, scanner=scanner)
 
 
 @api.route("/api/ticker")

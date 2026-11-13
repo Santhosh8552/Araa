@@ -1958,12 +1958,13 @@ class Bot:
             # Strict Profit Entry Filter: Only entries verified with high win probability and positive expectancy can execute
             is_win_prediction = bool(pred.get("approved")) and win_p >= min_mode_win and (pred.get("action") in ("BUY", "SELL"))
 
-            # Multi-Agent Quantitative Committee Consensus Validation (Feature 1, 2, 4)
+            # Multi-Agent Quantitative Committee & SMC/DNA Validation
             committee_verdict = None
+            smc_info = None
             try:
-                from quantum_engine import MarketRegimeEngine, LiquidationHeatmapEngine, TradingCommitteeEngine
+                from quantum_engine import MarketRegimeEngine, LiquidationHeatmapEngine, TradingCommitteeEngine, SMCDNAEngine
                 ticks_data = self.feed.ticks(picked["symbol"], 40) if hasattr(self, "feed") else []
-                candles_data = self._candles(picked["symbol"], "1m", limit=10) if hasattr(self, "_candles") else None
+                candles_data = self._candles(picked["symbol"], "1m", limit=60) if hasattr(self, "_candles") else None
                 regime_info = MarketRegimeEngine.classify_regime(picked["symbol"], q_row or picked, ticks_data, candles_data)
                 heatmap_info = LiquidationHeatmapEngine.calculate_clusters(
                     picked["symbol"],
@@ -1981,6 +1982,26 @@ class Bot:
                         if committee_verdict.get("consensus_verdict") == "VETOED_BY_BETA" or committee_verdict.get("consensus_score", 0) < 60:
                             is_win_prediction = False
                             pred["rationale"] = f"Trading Committee Veto: {committee_verdict.get('summary_rationale')}"
+
+                # SMC + Market DNA Gatekeeper
+                smc_info = SMCDNAEngine.analyze_candles(picked["symbol"], candles_data or [], "15m", picked["price"])
+                if is_win_prediction and smc_info:
+                    sig_gate = smc_info.get("bot_signal") or {}
+                    dna_info = smc_info.get("dna") or {}
+                    is_long_side = picked["side"] in ("BUY", "LONG")
+                    blocked_by_ob = (is_long_side and sig_gate.get("block_long")) or ((not is_long_side) and sig_gate.get("block_short"))
+                    if blocked_by_ob and win_p < 90:
+                        is_win_prediction = False
+                        pred["rationale"] = (
+                            f"SMC Order Block & DNA Guard: Blocked {picked['side']} into unmitigated "
+                            f"{'Bearish OB' if is_long_side else 'Bullish OB'} ({dna_info.get('setup_status')}, {dna_info.get('similarity_pct')}% twin match)"
+                        )
+                    else:
+                        raw_boost = int(sig_gate.get("boost_score") or 0)
+                        dir_boost = raw_boost if is_long_side else -raw_boost
+                        win_p = max(0, min(99, win_p + dir_boost))
+                        pred["win_probability"] = win_p
+                        pred["rationale"] = f"{pred.get('rationale', '')} | SMC/DNA: {dna_info.get('setup_status')} ({dna_info.get('similarity_pct')}% twin match)"
             except Exception as qc_err:
                 pass
 
