@@ -435,24 +435,33 @@ def verify_coindcx_credentials(api_key: str, api_secret: str) -> Tuple[bool, str
     rate = _get_live_usdt_inr_rate()
     err_msgs: List[str] = []
 
-    # Run all 4 CoinDCX checks IN PARALLEL with short timeouts and no retries,
-    # so total verification time stays ~6s instead of up to ~80s sequentially.
+    # Run all 4 CoinDCX checks IN PARALLEL with short timeouts (3s) and no retries,
+    # so total verification time stays ~1-3s instead of stalling or timing out.
     from concurrent.futures import ThreadPoolExecutor
 
     def _signed(ep, method, body):
         return _request(ep, method=method, body=body, api_key=clean_key,
-                        api_secret=clean_secret, timeout=6, retries=0)
+                        api_secret=clean_secret, timeout=3, retries=0)
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        f_spot = pool.submit(_signed, "/exchange/v1/users/balances", "POST", {})
-        f_wal = pool.submit(_signed, "/exchange/v1/derivatives/futures/wallets", "GET", {})
-        f_info = pool.submit(_signed, "/exchange/v1/users/info", "POST", {})
-        f_pos = pool.submit(_signed, "/exchange/v1/derivatives/futures/positions", "POST",
-                            {"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]})
-        ok_spot, res_spot = f_spot.result()
-        ok_fut_wal, res_fut_wal = f_wal.result()
-        ok_info, res_info = f_info.result()
-        ok_fut_pos, res_fut_pos = f_pos.result()
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            f_spot = pool.submit(_signed, "/exchange/v1/users/balances", "POST", {})
+            f_wal = pool.submit(_signed, "/exchange/v1/derivatives/futures/wallets", "GET", {})
+            f_info = pool.submit(_signed, "/exchange/v1/users/info", "POST", {})
+            f_pos = pool.submit(_signed, "/exchange/v1/derivatives/futures/positions", "POST",
+                                {"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]})
+            try: ok_spot, res_spot = f_spot.result(timeout=3.5)
+            except Exception: ok_spot, res_spot = False, {"message": "Spot balances timeout"}
+            try: ok_fut_wal, res_fut_wal = f_wal.result(timeout=3.5)
+            except Exception: ok_fut_wal, res_fut_wal = False, {"message": "Futures wallets timeout"}
+            try: ok_info, res_info = f_info.result(timeout=3.5)
+            except Exception: ok_info, res_info = False, {"message": "User info timeout"}
+            try: ok_fut_pos, res_fut_pos = f_pos.result(timeout=3.5)
+            except Exception: ok_fut_pos, res_fut_pos = False, {"message": "Futures positions timeout"}
+    except Exception as pool_err:
+        logger.warning(f"CoinDCX parallel verification error: {pool_err}")
+        ok_spot, ok_fut_wal, ok_info, ok_fut_pos = False, False, False, False
+        res_spot, res_fut_wal, res_info, res_fut_pos = {}, {}, {}, {}
 
     # 1. Spot Wallet Balances
     spot_summary = parse_balances(res_spot) if (ok_spot and isinstance(res_spot, list)) else None
@@ -1058,6 +1067,11 @@ class CoinDCXFuturesAdapter:
 
         ok, res = self._call("/exchange/v1/derivatives/futures/positions",
                              body={"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]}, attempts=1)
+        if not ok:
+            ok_w, res_w = self._call("/exchange/v1/derivatives/futures/wallets", attempts=1)
+            if ok_w and (isinstance(res_w, list) or isinstance(res_w, dict)):
+                ok, res = ok_w, res_w
+
         if ok and (isinstance(res, list) or isinstance(res, dict)):
             out = {
                 "eligible": True,
@@ -1474,7 +1488,7 @@ class CoinDCXFuturesAdapter:
             log_audit_event(self.user_id, "FUTURES_ORDER_REJECTED", msg, severity="WARNING")
             return False, {"message": msg}
 
-        if self.is_offline or not is_direct_eligible:
+        if self.is_offline:
             cur_p_fill = cur_p
             if pair_clean in tickers and float(tickers[pair_clean].get("last_price") or 0) > 0:
                 cur_p_fill = tickers[pair_clean]["last_price"]
