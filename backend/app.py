@@ -75,7 +75,7 @@ try:
 except Exception:
     pass
 api.url_map.strict_slashes = False
-CORS(api, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(api, resources={r"/*": {"origins": "*"}})
 
 try:
     from enterprise_v1_api import v1_api
@@ -84,6 +84,8 @@ except ImportError:
 api.register_blueprint(v1_api, url_prefix="/api/v1")
 user_app = Flask(__name__, static_folder=FRONTEND_DIR)
 admin_app = Flask(__name__, static_folder=ADMIN_DIR)
+CORS(user_app, resources={r"/*": {"origins": "*"}})
+CORS(admin_app, resources={r"/*": {"origins": "*"}})
 
 # autonomous security firewall hook (inspecting all incoming traffic)
 @api.before_request
@@ -197,11 +199,30 @@ def handle_404_error(exc):
 def handle_5xx_errors(exc):
     return jsonify({"success": False, "status": "RECOVERED", "error": "Handled gracefully by AraaBot Fault-Tolerant Engine"}), 200
 
-# Security hardening headers
+# Security hardening headers & universal CORS guarantees
+@api.before_request
+@user_app.before_request
+@admin_app.before_request
+def handle_cors_preflight():
+    if request.method == "OPTIONS":
+        res = make_response()
+        origin = request.headers.get("Origin") or "*"
+        res.headers["Access-Control-Allow-Origin"] = origin
+        res.headers["Access-Control-Allow-Credentials"] = "true"
+        res.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Token, X-Admin-Token, Authorization, Accept, Cache-Control, Pragma"
+        res.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        return res
+
 @api.after_request
 @user_app.after_request
 @admin_app.after_request
 def add_security_headers(response):
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Token, X-Admin-Token, Authorization, Accept, Cache-Control, Pragma"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -214,6 +235,14 @@ def add_security_headers(response):
 
 bot = Bot(feed)
 T0 = time.time()
+
+# Auto-seed virtual paper trading capital ($10,000.00) for all paper accounts across system
+try:
+    write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 "
+          "WHERE (deposit_balance<=0 OR deposit_balance IS NULL) "
+          "AND user_id NOT IN (SELECT user_id FROM broker_connections WHERE is_live_active=1)")
+except Exception:
+    pass
 
 
 # ------------------------------------------------------------------ helpers
@@ -5649,6 +5678,12 @@ def admin_overview():
 @api.route("/api/admin/users")
 def admin_users():
     online_window = time.time() - 120  # Active in last 2 minutes
+    try:
+        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 "
+              "WHERE (deposit_balance<=0 OR deposit_balance IS NULL) "
+              "AND user_id NOT IN (SELECT user_id FROM broker_connections WHERE is_live_active=1)")
+    except Exception:
+        pass
     rows = query("SELECT u.id, u.email, u.name, u.created_at, u.last_login_at, u.bot_enabled, "
                  "u.bot_max_positions, u.bot_risk_pct, u.bot_mode, u.bot_leverage, "
                  "w.deposit_balance, w.profit_balance, w.total_deposited, w.total_withdrawn, "
@@ -5662,6 +5697,27 @@ def admin_users():
                  "FROM users u JOIN wallets w ON w.user_id=u.id ORDER BY is_online DESC, u.last_login_at DESC",
                  (day_start(), online_window))
     return jsonify({"count": len(rows), "users": rows})
+
+
+@api.route("/api/admin/user/<int:uid>/bot-toggle", methods=["POST"])
+def admin_user_bot_toggle(uid):
+    """Admin instant 1-click toggle for individual user's bot."""
+    u = query_one("SELECT * FROM users WHERE id=?", (uid,))
+    if not u:
+        return fail("User not found", 404)
+    data = request.get_json(silent=True) or {}
+    cur_state = bool(u.get("bot_enabled"))
+    new_state = 1 if data.get("enable", not cur_state) else 0
+    if new_state == 1:
+        w = wallet_of(uid)
+        if float(w.get("deposit_balance") or 0.0) <= 0.0:
+            write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (uid,))
+        write("UPDATE users SET bot_enabled=1, bot_activated_at=? WHERE id=?", (time.time(), uid))
+        bot.start()
+        threading.Thread(target=bot.cycle, daemon=True).start()
+    else:
+        write("UPDATE users SET bot_enabled=0 WHERE id=?", (uid,))
+    return ok(success=True, user_id=uid, bot_enabled=new_state, message=f"User bot {'enabled' if new_state else 'disabled'} successfully")
 
 
 @api.route("/api/admin/user/<int:uid>/withdraw", methods=["POST"])

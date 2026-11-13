@@ -1,6 +1,8 @@
-const API = (window.location.port === "7777" || window.location.port === "7779")
-  ? window.location.protocol + "//" + (window.location.hostname || "localhost") + ":5050"
-  : window.location.origin;
+const API = (window.location.hostname === "araabot.in")
+  ? "https://www.araabot.in"
+  : ((window.location.port === "7777" || window.location.port === "7779")
+      ? window.location.protocol + "//" + (window.location.hostname || "localhost") + ":5050"
+      : window.location.origin);
 const $ = (id) => document.getElementById(id);
 const inr = (n) => "$" + Number(n || 0).toLocaleString("en-IN", {maximumFractionDigits: 2, minimumFractionDigits: 2});
 const num = (n) => Number(n || 0).toLocaleString("en-IN");
@@ -307,8 +309,11 @@ async function loadUsers() {
       <td class="r ${u.profit_balance >= 0 ? "up" : "down"}">${inr(u.profit_balance)}</td>
       <td class="r green">${inr(u.total_brokerage)}</td>
       <td class="r">${u.open_pos} / ${u.closed_pos}</td>
-      <td>${u.bot_enabled ? `<span class="tag approved">ON ${u.bot_max_positions}× ${u.bot_risk_pct}% ${u.bot_mode}</span>`
-                           : '<span class="sub">off</span>'}</td>
+      <td>
+        <button class="btn sm ${u.bot_enabled ? 'danger' : 'ok'} btn-user-toggle-bot" data-uid="${u.id}" data-action="${u.bot_enabled ? 'stop' : 'start'}" style="font-size:10.5px; padding:3px 8px; font-weight:800; cursor:pointer;" title="Click to ${u.bot_enabled ? 'Stop' : 'Start'} Bot for ${u.email}">
+          ${u.bot_enabled ? `🟢 ON (${u.bot_mode || 'SCALP'})` : '⚪ OFF · START'}
+        </button>
+      </td>
       <td style="text-align:center; white-space:nowrap;">
         <button class="btn sm ok btn-user-deposit" data-uid="${u.id}" data-email="${u.email}" style="font-size:11px; padding:3px 8px; margin-right:4px; background:#10b981; color:#0f172a; font-weight:800;" title="Credit bank deposit into user wallet">
           ➕ Deposit
@@ -325,6 +330,28 @@ async function loadUsers() {
       </td>
     </tr>`;
   }).join("");
+
+  // Bind Direct User Bot Toggle buttons
+  document.querySelectorAll(".btn-user-toggle-bot").forEach(btn => {
+    btn.onclick = async () => {
+      const uid = btn.dataset.uid;
+      const isStart = btn.dataset.action === "start";
+      btn.disabled = true;
+      try {
+        const res = await post(`/api/admin/user/${uid}/bot-toggle`, { enable: isStart });
+        if (res.success) {
+          await loadUsers();
+          await loadOverview();
+        } else {
+          alert(res.error || "Failed to toggle bot");
+        }
+      } catch (err) {
+        alert("Bot toggle error: " + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
 
   // Bind Direct User Deposit buttons
   document.querySelectorAll(".btn-user-deposit").forEach(btn => {

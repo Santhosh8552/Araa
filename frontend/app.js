@@ -1032,7 +1032,7 @@ function renderTopbar() {
       if ($("tp_mode_eyebrow")) $("tp_mode_eyebrow").innerHTML = `<i class="dot"></i> Paper Bot · Live TradingView Charts Only`;
       if ($("subnav_mode_foot")) $("subnav_mode_foot").textContent = "Paper account · virtual capital";
       if ($("s_footer_mode")) $("s_footer_mode").textContent = "SQLite · Paper";
-      if ($("top_equity")) $("top_equity").textContent = inr(equity() > 0 ? equity() : (Number(S.wallet?.deposit_balance) || 0.0));
+      if ($("top_equity")) $("top_equity").textContent = usd(equity() > 0 ? equity() : (Number(S.wallet?.deposit_balance) > 0 ? Number(S.wallet?.deposit_balance) : 10000.0));
     }
     const paperOpens = (S.pf && S.pf.open_positions) || [];
     let paperFloatingPnl = 0.0;
@@ -1139,7 +1139,7 @@ function renderGoal(pf) {
     } else if (isLive) {
       $("g_now").textContent = usd(liveBalUSD > 0 ? liveBalUSD : (Number(g.current_balance) || 0.0));
     } else {
-      const fallbackBal = Number(g.current_balance) > 0 ? Number(g.current_balance) : (equity() || 0.0);
+      const fallbackBal = Number(g.current_balance) > 0 ? Number(g.current_balance) : ((equity() > 0) ? equity() : 10000.0);
       $("g_now").textContent = usd(fallbackBal);
     }
   }
@@ -1158,7 +1158,7 @@ function renderGoal(pf) {
     } else if (isLive) {
       $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">${usd(liveBalUSD)}</span>`;
     } else {
-      const initCap = Number(g.starting_balance) > 0 ? Number(g.starting_balance) : (equity() || 0.0);
+      const initCap = Number(g.starting_balance) > 0 ? Number(g.starting_balance) : ((equity() > 0) ? equity() : 10000.0);
       $("g_dep").innerHTML = `Initial Capital: <span id="g_start" style="font-family: var(--mono); color: var(--text);">${usd(initCap)}</span><span id="g_dep_time" style="color: var(--muted2);">${g.deposited_at ? " · Deposited " + hhmm(g.deposited_at) : ""}</span>`;
     }
   }
@@ -1170,7 +1170,9 @@ function renderGoal(pf) {
     } else if (isLive) {
       $("g_target").textContent = `Target ${usd(liveBalUSD * 1.5)}`;
     } else {
-      $("g_target").textContent = `Target ${usd(g.target_amount)}`;
+      const initCap = Number(g.starting_balance) > 0 ? Number(g.starting_balance) : ((equity() > 0) ? equity() : 10000.0);
+      const targetVal = Number(g.target_amount) > 0 ? Number(g.target_amount) : (initCap * 1.5);
+      $("g_target").textContent = `Target ${usd(targetVal)}`;
     }
   }
 
