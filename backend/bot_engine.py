@@ -2072,7 +2072,7 @@ class Bot:
                     from strategy_engine import StrategyEngine
                     from coindcx_adapter import CoinDCXExecutionAdapter
                     StrategyEngine.ensure_user_strategies(user["id"])
-                    strat = StrategyEngine.get_strategy(user["id"], "araa_quantum_ai")
+                    strat = StrategyEngine.get_strategy(user["id"], "araa_ai_default")
                     if not strat or not int(strat.get("enabled") or 0):
                         self._log(user["id"], "STRATEGY_SKIP", f"Skipped {picked['symbol']}: Araa Quantum AI strategy is disabled.")
                         continue
