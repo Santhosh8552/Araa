@@ -4902,55 +4902,94 @@ if ($("btn_submit_real_bot_confirm")) {
   };
 }
 
+function _withBtnBusy(btn, busyText, fn) {
+  return async (...args) => {
+    if (!btn) return fn(...args);
+    if (btn.dataset.busy === "1") return;
+    btn.dataset.busy = "1";
+    const origHtml = btn.innerHTML;
+    const origOpacity = btn.style.opacity;
+    btn.disabled = true;
+    btn.style.opacity = "0.7";
+    if (busyText) btn.innerHTML = busyText;
+    try {
+      return await fn(...args);
+    } finally {
+      btn.dataset.busy = "0";
+      btn.disabled = false;
+      btn.style.opacity = origOpacity || "";
+      btn.innerHTML = origHtml;
+    }
+  };
+}
+
+function _bgSyncTerminal() {
+  Promise.allSettled([
+    typeof refreshExnessTerminal === "function" ? refreshExnessTerminal() : Promise.resolve(),
+    typeof refreshAccount === "function" ? refreshAccount() : Promise.resolve(),
+    typeof refreshCoinDcxAuditLogs === "function" ? refreshCoinDcxAuditLogs() : Promise.resolve(),
+    typeof window.refreshStrategyControlPanel === "function" ? window.refreshStrategyControlPanel() : Promise.resolve(),
+  ]);
+}
+
 // Controls: Start Auto-Trader (Demo or Real based on current mode)
 if ($("ex_btn_start_bot")) {
-  $("ex_btn_start_bot").onclick = async () => {
+  $("ex_btn_start_bot").onclick = _withBtnBusy($("ex_btn_start_bot"), "⏳ Starting...", async () => {
     try {
       const lev = Number($("terminal_toolbar_leverage_select")?.value || $("terminal_leverage_select")?.value || 500);
       const dir = $("terminal_toolbar_direction_select")?.value || $("terminal_direction_select")?.value || "BOTH";
       const maxPos = Number($("ex_pos_limit_select")?.value || 5);
 
-      await call("/api/bot/config", {
-        method: "POST",
-        body: {
-          enabled: true,
-          mode: "PURE_CRYPTO",
-          leverage: lev,
-          max_positions: maxPos,
-          risk_pct: 2.0,
-          trade_direction: dir
-        }
-      });
-
-      const res = await call("/api/real-bot/toggle-state", {
-        method: "POST", 
-        body: {
-          action: "START", 
-          explicit_confirmation: true,
-          max_positions: maxPos,
-          direction: dir,
-          leverage: lev
-        }
-      });
+      const [, res] = await Promise.all([
+        call("/api/bot/config", {
+          method: "POST",
+          body: {
+            enabled: true,
+            mode: "PURE_CRYPTO",
+            leverage: lev,
+            max_positions: maxPos,
+            risk_pct: 2.0,
+            trade_direction: dir
+          }
+        }),
+        call("/api/real-bot/toggle-state", {
+          method: "POST",
+          body: {
+            action: "START",
+            explicit_confirmation: true,
+            max_positions: maxPos,
+            direction: dir,
+            leverage: lev
+          }
+        })
+      ]);
+      if ($("ex_btn_start_bot")) $("ex_btn_start_bot").style.display = "none";
+      if ($("ex_btn_pause_bot")) $("ex_btn_pause_bot").style.display = "flex";
+      if ($("ex_bot_state_lbl")) {
+        $("ex_bot_state_lbl").textContent = "RUNNING";
+        $("ex_bot_state_lbl").style.color = "#10b981";
+      }
       toast(res.message || "▶ AraaBot Auto-Trader is now RUNNING!", "green");
-      await refreshExnessTerminal();
-      await refreshAccount();
-      refreshCoinDcxAuditLogs();
+      _bgSyncTerminal();
     } catch (e) { toast(e.message, "red"); }
-  };
+  });
 }
 
 window.switchTerminalMode = async function(targetMode) {
   const cleanMode = String(targetMode || "DEMO").toUpperCase() === "REAL" ? "REAL" : "DEMO";
+  const btn = cleanMode === "REAL" ? $("btn_select_real_mode") : $("btn_select_demo_mode");
+  if (btn && btn.dataset.busy === "1") return;
+  if (btn) { btn.dataset.busy = "1"; btn.style.opacity = "0.7"; }
   try {
     const res = await call("/api/real-bot/coindcx/set-mode", {method: "POST", body: {mode: cleanMode}});
     if (S.broker) S.broker.is_live = (cleanMode === "REAL");
     toast(res.message || `Switched to ${cleanMode} mode`, "green");
-    await refreshExnessTerminal();
-    await refreshAccount();
     if (typeof renderTopbar === "function") renderTopbar();
+    _bgSyncTerminal();
   } catch (e) {
     toast(e.message || "Failed to switch mode", "red");
+  } finally {
+    if (btn) { btn.dataset.busy = "0"; btn.style.opacity = ""; }
   }
 };
 
@@ -4961,7 +5000,7 @@ window.toggleTerminalMode = async function() {
 };
 
 if ($("ex_btn_toggle_exec_mode")) {
-  $("ex_btn_toggle_exec_mode").onclick = window.toggleTerminalMode;
+  $("ex_btn_toggle_exec_mode").onclick = _withBtnBusy($("ex_btn_toggle_exec_mode"), "⏳ Switching...", window.toggleTerminalMode);
 }
 if ($("btn_select_demo_mode")) {
   $("btn_select_demo_mode").onclick = () => window.switchTerminalMode("DEMO");
@@ -4972,60 +5011,68 @@ if ($("btn_select_real_mode")) {
 
 // Controls: Pause Auto-Trader
 if ($("ex_btn_pause_bot")) {
-  $("ex_btn_pause_bot").onclick = async () => {
+  $("ex_btn_pause_bot").onclick = _withBtnBusy($("ex_btn_pause_bot"), "⏳ Pausing...", async () => {
     try {
-      await call("/api/real-bot/toggle-state", {method: "POST", body: {action: "PAUSE"}}).catch(() => {});
-      await call("/api/coindcx/real-bot/deactivate", {method: "POST"}).catch(() => {});
-      await call("/api/bot/config", {method: "POST", body: {enabled: false}}).catch(() => {});
-      toast("⏸ Araa AI Auto-Trader PAUSED (Demo & Real Stopped)", "amber");
-      await refreshExnessTerminal();
-      await refreshAccount();
-      refreshCoinDcxAuditLogs();
+      await Promise.allSettled([
+        call("/api/real-bot/toggle-state", {method: "POST", body: {action: "PAUSE"}}),
+        call("/api/coindcx/real-bot/deactivate", {method: "POST"}),
+        call("/api/bot/config", {method: "POST", body: {enabled: false}}),
+      ]);
+      if ($("ex_btn_pause_bot")) $("ex_btn_pause_bot").style.display = "none";
+      if ($("ex_btn_start_bot")) $("ex_btn_start_bot").style.display = "flex";
+      if ($("ex_bot_state_lbl")) {
+        $("ex_bot_state_lbl").textContent = "PAUSED";
+        $("ex_bot_state_lbl").style.color = "#f59e0b";
+      }
+      toast("⏸ Araa AI Auto-Trader PAUSED (Existing positions & SL/TP kept protected)", "amber");
+      _bgSyncTerminal();
     } catch (e) { toast(e.message, "red"); }
-  };
+  });
 }
 
 // Controls: EMERGENCY KILL SWITCH
 if ($("btn_emergency_kill_switch")) {
-  $("btn_emergency_kill_switch").onclick = async () => {
+  $("btn_emergency_kill_switch").onclick = _withBtnBusy($("btn_emergency_kill_switch"), "⏳ Halting...", async () => {
     if (!confirm("🚨 CONFIRM EMERGENCY KILL SWITCH?\n\nThis will IMMEDIATELY halt automated trading, cancel all resting CoinDCX orders, and lock execution.")) return;
     try {
-      const res = await call("/api/coindcx/real-bot/emergency-stop", {method: "POST"}).catch(() => null);
-      await call("/api/real-bot/toggle-state", {method: "POST", body: {action: "STOP_AND_CANCEL_ORDERS"}}).catch(() => null);
-      toast("🚨 EMERGENCY KILL SWITCH EXECUTED! Bot halted & all resting orders cancelled.", "red");
+      await Promise.allSettled([
+        call("/api/coindcx/real-bot/emergency-stop", {method: "POST"}),
+        call("/api/real-bot/toggle-state", {method: "POST", body: {action: "STOP_AND_CANCEL_ORDERS"}}),
+      ]);
+      if ($("ex_btn_pause_bot")) $("ex_btn_pause_bot").style.display = "none";
+      if ($("ex_btn_start_bot")) $("ex_btn_start_bot").style.display = "flex";
       if ($("ex_bot_state_lbl")) {
         $("ex_bot_state_lbl").textContent = "EMERGENCY_STOP";
         $("ex_bot_state_lbl").style.color = "#ef4444";
       }
-      await refreshExnessTerminal();
-      await refreshAccount();
-      refreshCoinDcxAuditLogs();
+      toast("🚨 EMERGENCY KILL SWITCH EXECUTED! Bot halted & all resting orders cancelled.", "red");
+      _bgSyncTerminal();
     } catch (e) { toast(e.message, "red"); }
-  };
+  });
 }
 
 // Controls: Close / Cancel All on CoinDCX
 if ($("ex_btn_close_all")) {
-  $("ex_btn_close_all").onclick = async () => {
+  $("ex_btn_close_all").onclick = _withBtnBusy($("ex_btn_close_all"), "⏳ Closing...", async () => {
     if (!confirm("Are you sure you want to CLOSE ALL open positions and CANCEL ALL pending orders?")) return;
     try {
       const res = await call("/api/real-bot/coindcx/control", {method: "POST", body: {action: "CLOSE_ALL"}});
       toast(res.message || "✓ All open positions closed and orders cancelled", "amber");
-      await refreshExnessTerminal();
-      await refreshAccount();
-      refreshCoinDcxAuditLogs();
+      _bgSyncTerminal();
     } catch (e) { toast(e.message, "red"); }
-  };
+  });
 }
 
 // Controls: Refresh Account
 if ($("ex_btn_refresh_acct")) {
-  $("ex_btn_refresh_acct").onclick = async () => {
+  $("ex_btn_refresh_acct").onclick = _withBtnBusy($("ex_btn_refresh_acct"), "⏳ Syncing...", async () => {
     toast("↻ Refreshing CoinDCX balances & live positions...", "blue");
-    await refreshExnessTerminal();
-    await refreshAccount();
-    refreshCoinDcxAuditLogs();
-  };
+    await Promise.allSettled([
+      refreshExnessTerminal(),
+      refreshAccount(),
+      typeof refreshCoinDcxAuditLogs === "function" ? refreshCoinDcxAuditLogs() : Promise.resolve(),
+    ]);
+  });
 }
 
 // Controls: View Audit Logs
