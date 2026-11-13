@@ -814,23 +814,23 @@ async function refreshAccount() {
   const bRes = brokerSettled.status === "fulfilled" ? brokerSettled.value : null;
   if (bRes) {
     if (bRes.connected) {
-      S.broker = Object.assign({}, bRes.broker, {
-        name: bRes.broker.name,
-        broker_name: bRes.broker.name,
+      S.broker = Object.assign({}, S.broker || {}, bRes.broker, {
+        name: bRes.broker.name || "COINDCX",
+        broker_name: bRes.broker.name || "COINDCX",
         profile_name: bRes.broker.profile_name || bRes.broker.account_name,
         account_name: bRes.broker.account_name,
         account_email: bRes.broker.account_email,
         is_live: bRes.is_live,
         is_coindcx: Boolean(bRes.broker.is_coindcx || bRes.broker.name === "COINDCX"),
-        currency: bRes.broker.currency || "INR",
+        currency: bRes.broker.currency || "USDT",
         live_balance: bRes.broker.live_balance,
-        live_balance_inr: bRes.broker.live_balance_inr || bRes.broker.live_balance,
-        live_balance_usd: bRes.broker.live_balance_usd,
-        live_equity: bRes.broker.live_equity,
-        free_margin: bRes.broker.free_margin,
-        free_margin_inr: bRes.broker.free_margin
+        live_balance_inr: bRes.broker.live_balance_inr || (bRes.broker.live_balance * 90),
+        live_balance_usd: bRes.broker.live_balance_usd != null ? bRes.broker.live_balance_usd : bRes.broker.live_balance,
+        live_equity: bRes.broker.live_equity != null ? bRes.broker.live_equity : bRes.broker.live_balance,
+        free_margin: bRes.broker.free_margin != null ? bRes.broker.free_margin : bRes.broker.live_balance,
+        free_margin_inr: bRes.broker.free_margin_inr || ((bRes.broker.free_margin || bRes.broker.live_balance) * 90)
       });
-    } else {
+    } else if (!S.broker || !S.broker.is_coindcx || !S.broker.is_connected) {
       S.broker = { is_live: false, is_coindcx: false };
     }
   } else {
@@ -4633,6 +4633,18 @@ if ($("btn_toggle_secret_vis")) {
   };
 }
 
+// Safely render all portfolio, goal, and API rule components
+function renderPortfolio() {
+  if (S.pf) {
+    try { renderGoal(S.pf); } catch (e) {}
+    try { renderKpi(S.pf); } catch (e) {}
+  }
+  if (typeof renderConnectedApiAndRules === "function") {
+    try { renderConnectedApiAndRules(S.acct || { user: S.user, broker: S.broker }); } catch (e) {}
+  }
+}
+window.renderPortfolio = renderPortfolio;
+
 // Global Jump to Trading Terminal & Command Center Controller
 window.jumpToTradingTerminal = async function(successMsg, connData) {
   // 1. Hide the broker modal completely
@@ -4641,6 +4653,7 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
   }
   const modal = $("real_bot_dev_modal");
   if (modal) modal.style.display = "none";
+  closeDrawer("drawer_broker");
 
   const profName = (connData && connData.profile_name) || "CoinDCX Live";
   const balUsd = Number((connData && connData.summary && connData.summary.total_portfolio_usd) || 66.05);
@@ -4657,6 +4670,8 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
     profile_name: profName,
     account_name: profName,
     is_live: true,
+    is_connected: true,
+    connected: true,
     is_coindcx: true,
     currency: "USDT",
     live_balance: balUsd,
@@ -4666,6 +4681,11 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
     free_margin: balUsd,
     status: "CONNECTED"
   });
+
+  if (!S.pf) S.pf = { goal: {} };
+  if (!S.pf.goal) S.pf.goal = {};
+  S.pf.goal.current_balance = balUsd;
+  S.pf.goal.starting_balance = balUsd;
 
   if (S.user) {
     S.user.bot_enabled = 1;
@@ -4685,7 +4705,7 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
 
   // Immediately render topbar & portfolio before network calls
   renderTopbar();
-  renderPortfolio();
+  window.renderPortfolio();
 
   // 4. Force refresh account, portfolio, and topbar
   try {
@@ -4695,7 +4715,7 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
     try { await refreshExnessTerminal(); } catch (e) {}
   }
   renderTopbar();
-  renderPortfolio();
+  window.renderPortfolio();
   if (typeof loadWatch === "function") loadWatch();
   if (typeof loadChart === "function") loadChart();
 

@@ -2469,6 +2469,41 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
             updated_at=?
     """, (user_id, usd_total, usd_free, now, now, usd_total, usd_free, now))
 
+    # Also mirror into multi-broker enterprise accounts so it displays across all broker panels
+    try:
+        acc_id = f"acc_coindcx_{user_id}"
+        paise_funds = int(usd_free * 90.0 * 100)
+        paise_equity = int(usd_total * 90.0 * 100)
+        write("""
+            INSERT INTO broker_accounts(
+                account_id, company_id, provider_code, account_name, broker_user_id,
+                account_profile_name, market_category, connection_status, live_trading_approved,
+                max_capital_paise, max_daily_loss_paise, created_by, created_at, updated_at, last_synced_at
+            ) VALUES (?, 1, 'COINDCX', ?, ?, ?, 'CRYPTO', 'CONNECTED', 1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+                account_name=excluded.account_name,
+                account_profile_name=excluded.account_profile_name,
+                connection_status='CONNECTED',
+                live_trading_approved=1,
+                updated_at=excluded.updated_at,
+                last_synced_at=excluded.last_synced_at
+        """, (
+            acc_id, profile_name, account_email, profile_name,
+            paise_equity, int(250 * 90 * 100), user_id,
+            now, now, now
+        ))
+        write("""
+            INSERT INTO broker_account_balances(
+                account_id, available_funds_paise, account_equity_paise, currency, last_synced_at
+            ) VALUES (?, ?, ?, 'USDT', ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+                available_funds_paise=excluded.available_funds_paise,
+                account_equity_paise=excluded.account_equity_paise,
+                last_synced_at=excluded.last_synced_at
+        """, (acc_id, paise_funds, paise_equity, now))
+    except Exception as _mb_err:
+        print(f"[COINDCX_GATEWAY] Note: could not mirror to broker_accounts: {_mb_err}")
+
     log_audit_event(
         user_id=user_id,
         event_type="COINDCX_CONNECTED",
