@@ -1000,8 +1000,17 @@ class Bot:
             # Only locks profit once gross P&L exceeds estimated CoinDCX round-trip fee,
             # guaranteeing every closed green trade increases your real wallet balance!
             # =========================================================================
+            tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
+            if move_pct >= tp_pct and pnl > (est_fee + 0.01):
+                self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
             if roi_pct >= 40.0 and pnl > (est_fee + 0.02):
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
+            if peak_pct >= max(0.35, tp_pct * 0.45) and pnl <= (est_fee + 0.015) and pnl > est_fee and time_held >= 5.0:
+                self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${pnl:.2f} | Peak +{peak_pct:.2f}%)")
                 continue
 
             trail_floor = None
@@ -1301,8 +1310,17 @@ class Bot:
             # =========================================================================
             # RULE 0: BIG-PROFIT TRAILING ENGINE (FEE-AWARE + PEAK LOCK!)
             # =========================================================================
+            tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
+            if move_pct >= tp_pct and current_pnl > (est_fee + 0.01):
+                self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
             if roi_pct >= 40.0 and current_pnl > (est_fee + 0.02):
                 self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
+                continue
+
+            if peak_pct >= max(0.35, tp_pct * 0.45) and current_pnl <= (est_fee + 0.015) and current_pnl > est_fee and time_held >= 5.0:
+                self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${current_pnl:.2f} | Peak +{peak_pct:.2f}%)")
                 continue
 
             trail_floor = None
