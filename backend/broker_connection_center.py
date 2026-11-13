@@ -753,6 +753,38 @@ class BrokerConnectionCenter:
                 "account_equity_inr": paise_to_inr_str(bal.get("account_equity_paise", 0)),
             })
 
+        # Bridge any active broker connection (CoinDCX, Zerodha, Exness) from broker_connections
+        user_conns = query("SELECT * FROM broker_connections WHERE status IN ('CONNECTED', 'CONNECTED_OFFLINE')")
+        for uc in user_conns:
+            p_code = (uc.get("broker_name") or "COINDCX").upper()
+            if not any(a["provider_code"] == p_code for a in enriched_accounts):
+                bal_usd = float(uc.get("live_balance") or 0.0)
+                bal_inr = round(bal_usd * 90.0, 2)
+                enriched_accounts.append({
+                    "account_id": f"acc_{p_code.lower()}_{uc.get('user_id', 1)}",
+                    "company_id": company_id,
+                    "provider_code": p_code,
+                    "provider_name": "CoinDCX Spot & Futures" if p_code == "COINDCX" else p_code,
+                    "account_name": uc.get("account_name") or "CoinDCX Live Trader",
+                    "market_category": "CRYPTO" if p_code == "COINDCX" else "INDIAN_EQUITY",
+                    "connection_status": "CONNECTED",
+                    "live_trading_approved": 1,
+                    "logo_svg": "",
+                    "docs_url": "",
+                    "api_key_masked": uc.get("api_key_masked") or "LIVE_REST",
+                    "withdrawal_disabled": True,
+                    "available_funds_inr": f"₹{bal_inr:,.2f} (${bal_usd:.2f})",
+                    "account_equity_inr": f"₹{bal_inr:,.2f} (${bal_usd:.2f})",
+                    "currency": uc.get("currency") or "USDT",
+                    "last_synced_at": uc.get("last_synced_at") or time.time(),
+                })
+
+        total_connected_brokers = len(set(a["provider_code"] for a in enriched_accounts if a["connection_status"] == "CONNECTED"))
+        total_accounts = len(enriched_accounts)
+        active_connections = sum(1 for a in enriched_accounts if a["connection_status"] == "CONNECTED")
+        failed_connections = sum(1 for a in enriched_accounts if a["connection_status"] in ("REVOKED_OR_INVALID", "SYNC_ERROR"))
+        live_approved_accounts = sum(1 for a in enriched_accounts if a["live_trading_approved"] == 1)
+
         providers = BrokerProviderRegistry.list_providers()
 
         return {

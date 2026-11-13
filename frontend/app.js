@@ -4628,6 +4628,54 @@ if ($("btn_toggle_secret_vis")) {
   };
 }
 
+// Global Jump to Trading Terminal & Command Center Controller
+window.jumpToTradingTerminal = async function(successMsg) {
+  // 1. Hide the broker modal completely
+  if (typeof window.hideRealBotDevModal === "function") {
+    window.hideRealBotDevModal();
+  }
+  const modal = $("real_bot_dev_modal");
+  if (modal) modal.style.display = "none";
+
+  // 2. Set active execution mode to REAL/LIVE
+  S.live = true;
+
+  // 3. Jump to Trading Terminal view
+  if (window.location.hash !== "#terminal") {
+    window.location.hash = "#terminal";
+  }
+  if (typeof tpNav === "function") {
+    tpNav("terminal");
+  } else if (typeof tpRailGo === "function") {
+    tpRailGo(null, "terminal");
+  }
+
+  // 4. Force refresh account, portfolio, and topbar
+  await refreshAccount();
+  if (typeof refreshExnessTerminal === "function") {
+    try { await refreshExnessTerminal(); } catch (e) {}
+  }
+  renderTopbar();
+  renderPortfolio();
+  if (typeof loadWatch === "function") loadWatch();
+  if (typeof loadChart === "function") loadChart();
+
+  // 5. Celebration toast
+  toast(successMsg || "🚀 Live Broker Connected! Trading Terminal ready with live funds.", "green");
+
+  // 6. Smoothly open the Bot settings drawer so user can verify rules & start bot immediately
+  setTimeout(() => {
+    openDrawer("drawer_bot");
+    if ($("b_enabled")) {
+      $("b_enabled").checked = true;
+      if ($("b_msg")) {
+        $("b_msg").className = "msg green";
+        $("b_msg").textContent = "✓ CoinDCX Live Connected — Check 'Enable bot' and click Save to begin automated trading!";
+      }
+    }
+  }, 400);
+};
+
 // Connect CoinDCX API Handler
 if ($("btn_connect_coindcx")) {
   $("btn_connect_coindcx").onclick = async () => {
@@ -4663,15 +4711,18 @@ if ($("btn_connect_coindcx")) {
       const loginPanel = $("exness_login_panel");
       if (loginPanel) delete loginPanel.dataset.manualOpen;
 
+      const balStr = res.summary?.total_portfolio_usd ? `$${Number(res.summary.total_portfolio_usd).toFixed(2)} USDT` : "";
+      const profName = res.profile_name || profileName || "CoinDCX Live";
+      const successNotice = `🚀 Connected: ${profName}${balStr ? ' (' + balStr + ')' : ''}! Jumping to Trading Terminal...`;
+
       if (msg) {
-        msg.textContent = res.message || "✅ CoinDCX API Connected! Live data active on Command Center.";
+        msg.textContent = res.message || successNotice;
         msg.style.color = "#10b981";
       }
-      toast(res.message || "🟢 CoinDCX API Connected! Live data & Bot controls active.", "green");
-      await refreshExnessTerminal();
-      await refreshAccount();
-      if (typeof loadWatch === 'function') loadWatch();
-      if (typeof loadChart === 'function') loadChart();
+      toast(successNotice, "green");
+
+      // Auto-jump to next page (Trading Terminal) immediately!
+      await window.jumpToTradingTerminal(successNotice);
     } catch (err) {
       if (msg) { msg.textContent = `❌ ${err.message}`; msg.style.color = "#ef4444"; }
       toast(err.message, "red");
@@ -4708,15 +4759,18 @@ if ($("btn_connect_coindcx_offline")) {
       const loginPanel = $("exness_login_panel");
       if (loginPanel) delete loginPanel.dataset.manualOpen;
 
+      const balStr = res.summary?.total_portfolio_usd ? `$${Number(res.summary.total_portfolio_usd).toFixed(2)} USDT` : "";
+      const profName = res.profile_name || profileName || "CoinDCX Live";
+      const successNotice = `🚀 Connected: ${profName}${balStr ? ' (' + balStr + ')' : ''}! Jumping to Trading Terminal...`;
+
       if (msg) {
-        msg.textContent = res.message || "✅ CoinDCX Offline Mode Connected! Live data active on Command Center.";
+        msg.textContent = res.message || successNotice;
         msg.style.color = "#10b981";
       }
-      toast(res.message || "🟢 CoinDCX Connected! Live data & Bot controls active.", "green");
-      await refreshExnessTerminal();
-      await refreshAccount();
-      if (typeof loadWatch === 'function') loadWatch();
-      if (typeof loadChart === 'function') loadChart();
+      toast(successNotice, "green");
+
+      // Auto-jump to next page (Trading Terminal) immediately!
+      await window.jumpToTradingTerminal(successNotice);
     } catch (err) {
       if (msg) { msg.textContent = `❌ ${err.message}`; msg.style.color = "#ef4444"; }
       toast(err.message, "red");
@@ -5394,6 +5448,9 @@ function renderConnectedAccountsGrid(accounts) {
           ${isConn ? `
             <button type="button" onclick="window.disconnectSpecificAccount('${a.account_id}')" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#fca5a5; font-weight:800; font-size:11px; padding:6px 10px; border-radius:6px; cursor:pointer;">
               🔌 Disconnect
+            </button>
+            <button type="button" onclick="window.jumpToTradingTerminal('🚀 Trading with ${a.account_name}')" style="width:100%; margin-top:6px; background:linear-gradient(135deg, #10b981 0%, #059669 100%); color:#fff; font-weight:800; font-size:11.5px; padding:8px; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 10px rgba(16,185,129,0.3);">
+              🚀 Open Trading Terminal &amp; Start Bot
             </button>
           ` : `
             <button type="button" onclick="window.reconnectSpecificAccount('${a.account_id}')" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; font-weight:800; font-size:11px; padding:6px 10px; border-radius:6px; cursor:pointer;">
