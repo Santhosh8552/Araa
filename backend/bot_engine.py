@@ -2074,7 +2074,7 @@ class Bot:
                     custom_tp = float(tr_custom_rules.get("target_profit_pct") or 0.0) if tr_custom_rules else 0.0
                     strat_sl_pct = max(0.50, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                     strat_tp_pct = max(strat_sl_pct * 2.0, custom_tp or float(strat.get("take_profit_pct") or 1.00))
-                    risk_pct = max(0.2, min(10.0, float(strat.get("risk_per_trade_pct") or 2.0)))
+                    risk_pct = max(0.2, min(30.0, float(strat.get("risk_per_trade_pct") or 2.0)))
                     min_cdx_margin = 1.5 if free >= 1.5 else min_pos_margin
                     risk_margin = round(min(free, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
                     if risk_margin >= min_pos_margin:
