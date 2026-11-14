@@ -1926,12 +1926,14 @@ def bot_config():
     daily_loss = max(5.0, min(50000.0, float(data.get("max_daily_loss") or 250.0)))
     flush_pnl = 0.0
     closed_count = 0
-    if enabled and not bot.is_running:
-        bot.start()
 
     # New users stay at $0.00 until they explicitly deposit paper funds or connect a real broker API
 
     if not enabled:
+        # Persist OFF state immediately BEFORE liquidating so any in-flight bot cycle halts at once
+        write("UPDATE users SET bot_enabled=0 WHERE id=?", (u["id"],))
+        write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=? WHERE user_id=?", (time.time(), u["id"]))
+        write("UPDATE trading_bots SET status='PAUSED', updated_at=? WHERE user_id=? AND status IN ('ACTIVE','PAPER_TRADING')", (time.time(), u["id"]))
         # User switched bot OFF: liquidate/close all active open positions immediately on the spot!
         flush_pnl, closed_count = bot.close_all_for(u["id"], reason="USER_STOPPED_BOT", include_manual=True)
         try:
@@ -6281,6 +6283,9 @@ def admin_bot_start():
 def admin_bot_stop():
     now = time.time()
     bot.stop()
+    write("UPDATE users SET bot_enabled=0")
+    write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=?", (now,))
+    write("UPDATE trading_bots SET status='PAUSED', updated_at=? WHERE status IN ('ACTIVE','PAPER_TRADING')", (now,))
     open_uids = [r["user_id"] for r in query("SELECT DISTINCT user_id FROM positions WHERE status IN ('OPEN','PENDING_BROKER')")]
     total_closed = 0
     total_pnl = 0.0
@@ -6295,9 +6300,6 @@ def admin_bot_stop():
         pnl_u, cnt_u = bot.close_all_for(uid, reason="ADMIN_MAIN_BOT_OFF", include_manual=True)
         total_closed += cnt_u
         total_pnl += pnl_u
-    write("UPDATE users SET bot_enabled=0")
-    write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=?", (now,))
-    write("UPDATE trading_bots SET status='PAUSED', updated_at=? WHERE status IN ('ACTIVE','PAPER_TRADING')", (now,))
     return ok(
         botRunning=False,
         closed_positions=total_closed,

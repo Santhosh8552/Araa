@@ -8534,10 +8534,18 @@ $("bot_switch").onclick = async () => {
     const levVal = S.user.bot_leverage || 500;
     const d = await call("/api/bot/config", {method: "POST", body: {enabled: want,
       max_positions: S.user.bot_max_positions, risk_pct: S.user.bot_risk_pct, mode: S.user.bot_mode, leverage: levVal}});
-    S.user = d.user; renderTopbar();
+    S.user = d.user;
+    if (S.acct) S.acct.user = d.user;
+    if (typeof d.global_running === "boolean") S.running = d.global_running;
+    renderTopbar();
     if (want) {
-      showAiScanner();
-      toast("🧠 Araa AI Activated: 2-minute A–Z Market Scan & Decision Calibration started...", "green");
+      if (d.global_running === false) {
+        stopAiScanner();
+        toast("⚠️ " + (d.note || "Global Main Bot is OFF (Admin controls it)"), "amber");
+      } else {
+        showAiScanner();
+        toast("🧠 Araa AI Activated: 2-minute A–Z Market Scan & Decision Calibration started...", "green");
+      }
     } else {
       stopAiScanner();
       if (d.flushed_positions) {

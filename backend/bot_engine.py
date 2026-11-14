@@ -2418,6 +2418,13 @@ class Bot:
                  pred["rationale"], mode, now)
             )
 
+            # Mid-cycle OFF guard: if Admin stopped Global Bot or User toggled Bot OFF while scanning, abort immediately
+            if not self.is_running:
+                break
+            _u_live = query_one("SELECT bot_enabled FROM users WHERE id=?", (user["id"],))
+            if not _u_live or not int(_u_live.get("bot_enabled") or 0):
+                break
+
             # Hard Safety Check: Strictly enforce user's bot_max_positions limit right before insertion (bypassed if Unlimited)
             cur_open_cnt = query_one(
                 "SELECT COUNT(*) as c FROM positions WHERE user_id=? AND status IN ('OPEN','PENDING_BROKER')",
