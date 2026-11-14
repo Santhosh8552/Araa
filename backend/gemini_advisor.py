@@ -344,27 +344,27 @@ Respond ONLY with valid JSON:
             ob_info = f" | Institutional {ob_type} ({retest_status} · {ob_disp}x Disp)"
 
     if category == "CRYPTO":
-        counter_trend = (pred_direction == "BUY" and (change_pct < -6.5 or rsi_val < 22 or slope_z < -1.2)) or \
-                        (pred_direction == "SELL" and (change_pct > 8.5 or rsi_val > 82 or slope_z > 1.2))
-        exhaustion_trap = (pred_direction == "BUY" and rsi_val > 85) or \
-                          (pred_direction == "SELL" and rsi_val < 18)
+        counter_trend = (pred_direction == "BUY" and (change_pct < -4.5 or rsi_val < 22 or slope_z < -0.35)) or \
+                        (pred_direction == "SELL" and (change_pct > 4.5 or rsi_val > 78 or slope_z > 0.35))
+        exhaustion_trap = (pred_direction == "BUY" and rsi_val > 82) or \
+                          (pred_direction == "SELL" and rsi_val < 24)
         min_required_rr = min(cfg.get("rr_min", 1.4), 1.25)
     else:
-        counter_trend = (pred_direction == "BUY" and (change_pct < -4.0 or rsi_val < 26 or slope_z < -0.95)) or \
-                        (pred_direction == "SELL" and (change_pct > 4.5 or rsi_val > 78 or slope_z > 0.95))
+        counter_trend = (pred_direction == "BUY" and (change_pct < -4.0 or rsi_val < 26 or slope_z < -0.50)) or \
+                        (pred_direction == "SELL" and (change_pct > 4.5 or rsi_val > 78 or slope_z > 0.50))
         exhaustion_trap = (pred_direction == "BUY" and rsi_val > 82) or \
                           (pred_direction == "SELL" and rsi_val < 20)
         min_required_rr = min(cfg.get("rr_min", 1.4), 1.25)
 
-    adverse_slope = (pred_direction == "BUY" and slope_z < -0.95 and change_pct < -3.0) or \
-                    (pred_direction == "SELL" and slope_z > 0.95 and change_pct > 3.0)
+    adverse_slope = (pred_direction == "BUY" and slope_z < -0.35 and change_pct < -2.0) or \
+                    (pred_direction == "SELL" and slope_z > 0.35 and change_pct > 2.0)
 
     tv_rating = tv_indicators.get("tv_recommend") if tv_indicators else None
     tv_conflict = False
     if tv_rating is not None:
-        if pred_direction == "BUY" and tv_rating < -0.45:
+        if pred_direction == "BUY" and tv_rating < -0.25:
             tv_conflict = True
-        elif pred_direction == "SELL" and tv_rating > 0.45:
+        elif pred_direction == "SELL" and tv_rating > 0.25:
             tv_conflict = True
 
     if mode == "PURE_CRYPTO" and category != "CRYPTO":

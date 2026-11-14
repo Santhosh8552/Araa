@@ -1548,10 +1548,17 @@ function calcPositionMetrics(p, overridePrice) {
   const isLong = p.side === "LONG" || p.side === "BUY";
   const dir = isLong ? 1 : -1;
   const entry = Number(p.entry_price) || 0;
+  const isCoinDcxLivePos = Boolean(
+    !overridePrice &&
+    p.mark_source === "COINDCX_FUTURES_RT" &&
+    Number(p.current_price) > 0
+  );
   const liveQuote = overridePrice || (
-    (S.quoteBy && S.quoteBy[p.symbol] && S.quoteBy[p.symbol].price)
-      ? Number(S.quoteBy[p.symbol].price)
-      : (S.quote && S.quote.symbol === p.symbol && S.quote.price ? Number(S.quote.price) : 0)
+    isCoinDcxLivePos
+      ? Number(p.current_price)
+      : ((S.quoteBy && S.quoteBy[p.symbol] && S.quoteBy[p.symbol].price)
+          ? Number(S.quoteBy[p.symbol].price)
+          : (S.quote && S.quote.symbol === p.symbol && S.quote.price ? Number(S.quote.price) : 0))
   );
   const markPrice = (liveQuote && liveQuote > 0) ? liveQuote : (Number(p.current_price) || entry);
   const margin = Math.max(0.01, Number(p.margin) || 1);

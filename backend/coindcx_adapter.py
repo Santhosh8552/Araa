@@ -372,11 +372,13 @@ class CoinDCXExecutionAdapter:
                 }
 
             ex_id = str((res_ord or {}).get("id") or "")
-            filled_qty = float((res_ord or {}).get("filled_quantity") or (res_ord or {}).get("total_quantity") or req_qty)
-            avg_px = float((res_ord or {}).get("avg_price") or (res_ord or {}).get("price") or ref_price or 0.0)
+            filled_qty = float((res_ord or {}).get("spot_equivalent_quantity") or (res_ord or {}).get("filled_quantity") or (res_ord or {}).get("total_quantity") or (res_ord or {}).get("quantity") or req_qty)
+            avg_px = float((res_ord or {}).get("spot_equivalent_price") or (res_ord or {}).get("avg_price") or (res_ord or {}).get("mark_price") or (res_ord or {}).get("price") or ref_price or 0.0)
             fee_usd = float((res_ord or {}).get("fee_amount") or round(filled_qty * avg_px * 0.0005, 6))
             raw_st = str((res_ord or {}).get("status") or "filled").lower()
             ord_status = "PARTIALLY_FILLED" if ("partial" in raw_st or (0 < filled_qty < req_qty * 0.999)) else "FILLED"
+            actual_eff_lev = float((res_ord or {}).get("leverage") or eff_lev)
+            actual_margin_usd = float((res_ord or {}).get("actual_margin_usd") or 0.0) or (round((filled_qty * avg_px) / max(1.0, actual_eff_lev), 4) if avg_px > 0 else round(float(margin_usd or 0.0), 4))
 
             cls._record_order_mapping(
                 user_id=user_id, client_order_id=cid, exchange_order_id=ex_id, position_id=ex_id,
@@ -392,7 +394,8 @@ class CoinDCXExecutionAdapter:
                 "exchange_order_id": ex_id,
                 "filled_qty": filled_qty,
                 "avg_fill_price": avg_px,
-                "leverage": eff_lev,
+                "leverage": actual_eff_lev,
+                "actual_margin_usd": actual_margin_usd,
                 "fee_usd": fee_usd,
                 "endpoint": endpoint,
                 "sanitized_request": san_req,

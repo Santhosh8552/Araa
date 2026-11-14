@@ -31,6 +31,8 @@ PUBLIC_URL = "https://public.coindcx.com"
 # Cache for public tickers to prevent hitting rate limits
 _TICKER_CACHE: Dict[str, Any] = {}
 _LAST_TICKER_FETCH = 0.0
+_FUT_PRICES_CACHE: Dict[str, Dict[str, Any]] = {}
+_LAST_FUT_PRICES_FETCH = 0.0
 TICKER_CACHE_TTL = 2.0  # seconds
 
 # Futures: requested leverage is clamped to the exchange's real per-contract max.
@@ -194,6 +196,68 @@ def _request(endpoint: str, method: str = "GET", body: Optional[dict] = None,
             return False, {"code": 500, "message": str(e)}
 
     return False, {"code": 500, "message": "Max retries exceeded"}
+
+
+def get_live_futures_prices(force: bool = False) -> Dict[str, Dict[str, Any]]:
+    """Fetches cached real-time CoinDCX USDT-M Futures prices from public.coindcx.com."""
+    global _FUT_PRICES_CACHE, _LAST_FUT_PRICES_FETCH
+    if os.environ.get("ARAA_E2E_MOCK_COINDCX") == "1":
+        return {}
+    now = time.time()
+    if not force and _FUT_PRICES_CACHE and (now - _LAST_FUT_PRICES_FETCH < TICKER_CACHE_TTL):
+        return _FUT_PRICES_CACHE
+
+    ok, res = _request(
+        "/market_data/v3/current_prices/futures/rt",
+        method="GET",
+        base_url=PUBLIC_URL,
+        timeout=2,
+        retries=0,
+    )
+    if ok and isinstance(res, dict) and isinstance(res.get("prices"), dict):
+        parsed: Dict[str, Dict[str, Any]] = {}
+        for pair_k, info in res["prices"].items():
+            if not isinstance(info, dict):
+                continue
+            ls = float(info.get("ls") or 0.0)
+            mp = float(info.get("mp") or 0.0)
+            px = ls if ls > 0 else mp
+            if px <= 0:
+                continue
+            entry = {
+                "pair": pair_k,
+                "last_price": ls if ls > 0 else px,
+                "mark_price": mp if mp > 0 else px,
+                "price": px,
+                "high": float(info.get("h") or 0.0),
+                "low": float(info.get("l") or 0.0),
+                "change_24h": float(info.get("pc") or 0.0),
+                "volume": float(info.get("v") or 0.0),
+            }
+            parsed[pair_k] = entry
+            mkt = str(info.get("mkt") or pair_k.replace("B-", "").replace("_", "")).upper()
+            if mkt:
+                parsed[mkt] = entry
+        if parsed:
+            _FUT_PRICES_CACHE = parsed
+            _LAST_FUT_PRICES_FETCH = now
+            return parsed
+    return _FUT_PRICES_CACHE
+
+
+def resolve_live_futures_price(symbol: str, force: bool = False) -> float:
+    """Returns exact CoinDCX Futures last/mark price for a symbol or B- pair, or 0.0."""
+    prices = get_live_futures_prices(force=force)
+    if not prices:
+        return 0.0
+    raw = str(symbol or "").strip().upper()
+    pair = CoinDCXFuturesAdapter.to_futures_pair(raw)
+    clean = raw.replace("B-", "").replace("_", "").replace("-", "").replace("/", "")
+    for key in (pair, raw, clean):
+        row = prices.get(key)
+        if row and float(row.get("price") or 0.0) > 0:
+            return float(row["price"])
+    return 0.0
 
 
 def get_live_tickers(force: bool = False) -> Dict[str, Dict[str, Any]]:
@@ -1458,25 +1522,32 @@ class CoinDCXFuturesAdapter:
         pair_clean = self.to_futures_pair(symbol)
         eff_lev = self.resolve_leverage(pair_clean, leverage, side_clean)
 
-        # Resolve true USDT contract price
+        # Resolve true USDT contract price (CoinDCX Futures RT feed first, then Spot ticker fallback)
         cur_p = float(price or 1.0)
         tickers = get_live_tickers()
+        fut_rt_price = resolve_live_futures_price(pair_clean) or resolve_live_futures_price(symbol)
         cur_p_usdt = 0.0
-        if pair_clean in tickers and float(tickers[pair_clean].get("last_price") or 0) > 0:
+        price_already_scaled = False
+        if fut_rt_price > 0:
+            cur_p_usdt = float(fut_rt_price)
+            price_already_scaled = True
+        elif pair_clean in tickers and float(tickers[pair_clean].get("last_price") or 0) > 0:
             cur_p_usdt = float(tickers[pair_clean]["last_price"])
+            price_already_scaled = ("1000" in pair_clean or "1M" in pair_clean)
         elif cur_p > 0:
             cur_p_usdt = (cur_p / 90.0) if str(symbol).upper().endswith("INR") else cur_p
         else:
             cur_p_usdt = 1.0
 
-        # Multiplier adjustment for meme/micro perpetuals (e.g. B-1000PEPE_USDT from PEPEUSDT)
+        # Multiplier adjustment for meme/micro perpetuals (e.g. B-1000BONK_USDT from BONKUSDT)
         raw_sym = str(symbol).upper()
-        if "1000000" in pair_clean and "1000000" not in raw_sym:
-            cur_p_usdt = cur_p_usdt * 1000000.0
+        contract_mult = 1.0
+        if ("1000000" in pair_clean and "1000000" not in raw_sym) or ("1M" in pair_clean and "1M" not in raw_sym):
+            contract_mult = 1000000.0
         elif "1000" in pair_clean and "1000" not in raw_sym:
-            cur_p_usdt = cur_p_usdt * 1000.0
-        elif "1M" in pair_clean and "1M" not in raw_sym:
-            cur_p_usdt = cur_p_usdt * 1000000.0
+            contract_mult = 1000.0
+        if contract_mult > 1.0 and not price_already_scaled:
+            cur_p_usdt = cur_p_usdt * contract_mult
 
         # Quantity rounded to the contract's real increment
         inst = self.get_instrument(pair_clean)
@@ -1498,7 +1569,7 @@ class CoinDCXFuturesAdapter:
             cur_p_usdt = min_p
         if max_p > 0 and cur_p_usdt > max_p:
             cur_p_usdt = max_p
-        qty_val = float(quantity)
+        qty_val = float(quantity) / contract_mult if contract_mult > 1.0 else float(quantity)
         try:
             step = float(inst.get("quantity_increment") or 0)
             min_qty = float(inst.get("min_quantity") or 0)
@@ -1595,15 +1666,18 @@ class CoinDCXFuturesAdapter:
             "margin_currency_short_name": "USDT",
         }
         if order_type != "market_order" and price:
-            p_val = round_to_increment(price, price_inc) if price_inc > 0 else float(price)
+            scaled_p = float(price) * contract_mult if contract_mult > 1.0 else float(price)
+            p_val = round_to_increment(scaled_p, price_inc) if price_inc > 0 else scaled_p
             if p_val and p_val > 0:
                 order["price"] = p_val
         if stop_loss:
-            sl_val = round_to_increment(stop_loss, price_inc) if price_inc > 0 else float(stop_loss)
+            scaled_sl = float(stop_loss) * contract_mult if contract_mult > 1.0 else float(stop_loss)
+            sl_val = round_to_increment(scaled_sl, price_inc) if price_inc > 0 else scaled_sl
             if sl_val and sl_val > 0:
                 order["stop_price"] = sl_val
         if take_profit:
-            tp_val = round_to_increment(take_profit, price_inc) if price_inc > 0 else float(take_profit)
+            scaled_tp = float(take_profit) * contract_mult if contract_mult > 1.0 else float(take_profit)
+            tp_val = round_to_increment(scaled_tp, price_inc) if price_inc > 0 else scaled_tp
             if tp_val and tp_val > 0:
                 order["take_profit_price"] = tp_val
         if client_order_id:
@@ -1660,6 +1734,24 @@ class CoinDCXFuturesAdapter:
                 res = res[0]
             if isinstance(res, dict):
                 res.setdefault("leverage", eff_lev)
+                res.setdefault("filled_quantity", float(qty_val))
+                res.setdefault("quantity", float(qty_val))
+                if float(res.get("avg_price") or 0.0) <= 0 and float(res.get("price") or 0.0) <= 0:
+                    fill_px = 0.0
+                    if not self.is_offline and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1":
+                        try:
+                            pos_live = self.find_open_position(pair_clean)
+                            if pos_live and float(pos_live.get("avg_price") or 0.0) > 0:
+                                fill_px = float(pos_live["avg_price"])
+                        except Exception:
+                            pass
+                    res["avg_price"] = fill_px if fill_px > 0 else float(cur_p_usdt)
+                c_px = float(res.get("avg_price") or res.get("price") or cur_p_usdt)
+                c_qty = float(res.get("filled_quantity") or res.get("total_quantity") or res.get("quantity") or qty_val)
+                res["contract_multiplier"] = contract_mult
+                res["spot_equivalent_price"] = (c_px / contract_mult) if contract_mult > 1.0 else c_px
+                res["spot_equivalent_quantity"] = (c_qty * contract_mult) if contract_mult > 1.0 else c_qty
+                res["actual_margin_usd"] = round((c_qty * c_px) / max(1.0, float(res.get("leverage") or eff_lev)), 4) if c_px > 0 else 0.0
         else:
             err_msg = res.get("message") if isinstance(res, dict) else str(res)
             log_audit_event(self.user_id, "FUTURES_ORDER_REJECTED", f"CoinDCX Futures rejected: {err_msg}", severity="WARNING", details=order)

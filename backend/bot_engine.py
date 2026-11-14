@@ -10,7 +10,7 @@ Realized P&L is written to the wallet; every decision lands in bot_log so the UI
 what the bot is thinking. Trades are paper trades against real market prices - no broker is
 contacted and no real order is sent.
 """
-import threading, time, math, statistics, random
+import os, threading, time, math, statistics, random
 
 from database import query, query_one, write, writes, get_state, set_state
 from price_feed import rsi, tv_symbol
@@ -553,6 +553,91 @@ class Bot:
             self._candle_cache.clear()
         return found
 
+    @staticmethod
+    def _micro_momentum_state(ticks, candles=None):
+        """Measure short-horizon tick velocity and recent 1m candle direction to block chasing bounces/drops."""
+        ticks = [float(t) for t in (ticks or []) if t and float(t) > 0]
+        last_px = ticks[-1] if ticks else 0.0
+        fast_ma = statistics.fmean(ticks[-5:]) if len(ticks) >= 5 else last_px
+        recent_tick_pct = ((ticks[-1] - ticks[-4]) / ticks[-4] * 100.0) if (len(ticks) >= 4 and ticks[-4] > 0) else 0.0
+        step_tail = min(3, max(0, len(ticks) - 1))
+        micro_step_ups = sum(1 for i in range(-step_tail, 0) if ticks[i] > ticks[i - 1]) if step_tail > 0 else 0
+        micro_step_downs = sum(1 for i in range(-step_tail, 0) if ticks[i] < ticks[i - 1]) if step_tail > 0 else 0
+
+        valid_c = [c for c in (candles or []) if c and float(c.get("o") or 0) > 0 and float(c.get("c") or 0) > 0]
+        last_3_green = len(valid_c) >= 3 and all(float(c["c"]) > float(c["o"]) for c in valid_c[-3:])
+        last_2_green = len(valid_c) >= 2 and float(valid_c[-1]["c"]) > float(valid_c[-1]["o"]) and float(valid_c[-2]["c"]) > float(valid_c[-2]["o"])
+        last_3_red = len(valid_c) >= 3 and all(float(c["c"]) < float(c["o"]) for c in valid_c[-3:])
+        last_2_red = len(valid_c) >= 2 and float(valid_c[-1]["c"]) < float(valid_c[-1]["o"]) and float(valid_c[-2]["c"]) < float(valid_c[-2]["o"])
+        last_body_pct = ((float(valid_c[-1]["c"]) - float(valid_c[-1]["o"])) / float(valid_c[-1]["o"]) * 100.0) if valid_c else 0.0
+        return {
+            "above_fast": bool(last_px > 0 and last_px > fast_ma),
+            "below_fast": bool(last_px > 0 and last_px < fast_ma),
+            "recent_tick_pct": recent_tick_pct,
+            "micro_step_ups": micro_step_ups,
+            "micro_step_downs": micro_step_downs,
+            "last_3_green": last_3_green,
+            "last_2_green": last_2_green,
+            "last_3_red": last_3_red,
+            "last_2_red": last_2_red,
+            "last_body_pct": last_body_pct,
+        }
+
+    def _market_leader_impulse(self):
+        """Inspect BTCUSDT live micro-trend once per cycle to prevent shorting alts during market-wide green bounces."""
+        try:
+            btc_ticks = self.feed.ticks("BTCUSDT", 15) if hasattr(self, "feed") else []
+            btc_candles = self._candles("BTCUSDT", "1m", limit=10)
+            m = self._micro_momentum_state(btc_ticks, btc_candles)
+            btc_bouncing_up = bool(
+                m["last_3_green"]
+                or (m["last_2_green"] and m["last_body_pct"] >= 0.04 and m["above_fast"])
+                or (m["above_fast"] and m["micro_step_ups"] >= 3 and m["recent_tick_pct"] >= 0.06)
+            )
+            btc_dumping_down = bool(
+                m["last_3_red"]
+                or (m["last_2_red"] and m["last_body_pct"] <= -0.04 and m["below_fast"])
+                or (m["below_fast"] and m["micro_step_downs"] >= 3 and m["recent_tick_pct"] <= -0.06)
+            )
+            return {"btc_bouncing_up": btc_bouncing_up, "btc_dumping_down": btc_dumping_down}
+        except Exception:
+            return {"btc_bouncing_up": False, "btc_dumping_down": False}
+
+    @staticmethod
+    def _futures_mark_map(opens):
+        """Fetch live CoinDCX Futures RT mark map once per batch when live CoinDCX positions exist."""
+        if (
+            not opens
+            or os.environ.get("ARAA_E2E_MOCK_COINDCX") == "1"
+            or not any(
+                p.get("is_live") and ("COINDCX" in str(p.get("feed_source") or "").upper() or "COINDCX" in str(p.get("source") or "").upper())
+                for p in opens
+            )
+        ):
+            return None
+        try:
+            from coindcx_gateway import get_live_futures_prices
+            return get_live_futures_prices()
+        except Exception:
+            return None
+
+    def _live_position_mark_price(self, p, cdx_fut_map=None):
+        """Return venue-matched live mark price so CoinDCX Futures entry & mark prices stay on the same orderbook."""
+        sym = p["symbol"]
+        entry = float(p.get("entry_price") or 0.0)
+        is_cdx_pos = bool(
+            p.get("is_live")
+            and ("COINDCX" in str(p.get("feed_source") or "").upper() or "COINDCX" in str(p.get("source") or "").upper())
+        )
+        if is_cdx_pos and cdx_fut_map and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1":
+            clean = str(sym or "").upper().replace("-", "").replace("_", "")
+            fut_row = cdx_fut_map.get(sym) or cdx_fut_map.get(clean)
+            if fut_row and float(fut_row.get("price") or 0.0) > 0:
+                fut_px = float(fut_row["price"])
+                if entry <= 0 or (0.45 <= (fut_px / entry) <= 2.2):
+                    return fut_px, "COINDCX_FUTURES_RT"
+        return self.feed.live_price(sym), str(p.get("feed_source") or "TRADINGVIEW_LIVE")
+
     def analyse(self, symbol, row, mode="SCALP"):
         """Score one symbol from the live data we hold for it. Returns None when it is untradeable.
 
@@ -646,10 +731,11 @@ class Bot:
         parts.append(("RSI", mom, f"RSI {r14:.0f}"))
         liq = min(0.12, (math.log10(max(row.get("volume") or 1.0, 10.0)) - 4.0) / 38.0)
         parts.append(("LIQ", liq, f"vol {short_num(row.get('volume') or 0)}"))
+        candles_1m = []
         if cat == "CRYPTO":
-            candles = self._candles(symbol, "1m", 14)
-            if len(candles) >= 8:
-                ups = sum(1 for c in candles[-8:] if c["c"] >= c["o"]) / 8.0
+            candles_1m = self._candles(symbol, "1m", limit=30)
+            if len(candles_1m) >= 8:
+                ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
                 parts.append(("1m CANDLES", (ups - 0.5) * 2 * max(0.12, w_vol * 0.75), f"{ups * 100:.0f}% up"))
 
         # 2. Apply Self-Learning Walk-Forward Winner Boost if symbol is a verified winner
@@ -670,7 +756,7 @@ class Bot:
         pre_score = sum(p[1] for p in parts)
         ob = None
         try:
-            recent_candles = self._candles(symbol, "1m", limit=20)
+            recent_candles = candles_1m[-20:] if candles_1m else self._candles(symbol, "1m", limit=20)
             if recent_candles and len(recent_candles) >= 7:
                 ob = detect_order_block(recent_candles)
         except Exception:
@@ -685,18 +771,20 @@ class Bot:
                 parts.append(("ORDER BLOCK", ob_weight, f"{ob['type']} Retest at {ob['zone_low']}-{ob['zone_high']}"))
 
         # Squeeze Momentum & Tillson T3 Integration (Symmetric Bullish & Bearish Engines)
+        sq_mom = 0.0
         if cat == "CRYPTO":
             try:
-                sq_candles = self._candles(symbol, "1m", limit=30)
+                sq_candles = candles_1m if len(candles_1m) >= 20 else self._candles(symbol, "1m", limit=30)
                 if sq_candles and len(sq_candles) >= 20:
                     sq_data = squeeze_momentum(sq_candles)
+                    sq_mom = float(sq_data.get("momentum") or 0.0)
                     t3_val = tillson_t3([float(c["c"]) for c in sq_candles], length=8, v_factor=0.7)
-                    if sq_data["squeeze_fire"] and price > t3_val and sq_data["momentum"] > 0:
-                        parts.append(("SQUEEZE_T3", 0.35, f"BULLISH SQUEEZE FIRE! (Mom {sq_data['momentum']:+.2f} · Price > T3 ${t3_val:,.2f})"))
-                    elif sq_data["squeeze_fire"] and price < t3_val and sq_data["momentum"] < 0:
-                        parts.append(("SQUEEZE_T3", -0.38, f"BEARISH SQUEEZE FIRE! (Mom {sq_data['momentum']:+.2f} · Price < T3 ${t3_val:,.2f})"))
+                    if sq_data["squeeze_fire"] and price > t3_val and sq_mom > 0:
+                        parts.append(("SQUEEZE_T3", 0.35, f"BULLISH SQUEEZE FIRE! (Mom {sq_mom:+.2f} · Price > T3 ${t3_val:,.2f})"))
+                    elif sq_data["squeeze_fire"] and price < t3_val and sq_mom < 0:
+                        parts.append(("SQUEEZE_T3", -0.38, f"BEARISH SQUEEZE FIRE! (Mom {sq_mom:+.2f} · Price < T3 ${t3_val:,.2f})"))
                     elif sq_data["squeeze_on"]:
-                        parts.append(("SQUEEZE_T3", 0.05, f"Squeeze Coiling (Energy Build · Mom {sq_data['momentum']:+.2f})"))
+                        parts.append(("SQUEEZE_T3", 0.05, f"Squeeze Coiling (Energy Build · Mom {sq_mom:+.2f})"))
             except Exception:
                 pass
 
@@ -759,21 +847,58 @@ class Bot:
                 tv_label = "RANGE_EXPANSION"
                 parts.insert(0, ("RANGE_SCAN", 0.16, f"RANGE EXPANSION ({range_pos*100:.0f}% · RSI {r14:.0f})"))
 
+        micro = self._micro_momentum_state(ticks, candles_1m if cat == "CRYPTO" else None)
+        leader = getattr(self, "_leader_impulse", None) or {}
+        ob_bearish = bool(ob and ob.get("found") and ob.get("bias") == "SHORT")
+        ob_bullish = bool(ob and ob.get("found") and ob.get("bias") == "LONG")
+
         if side == "SHORT":
-            directional_tags = {"TREND", "RANGE", "24H", "1m CANDLES", "ORDER BLOCK"}
+            # Anti-green-bounce veto: block SHORT entries when live 1m candles or micro-ticks are bouncing upward
+            if micro["last_3_green"]:
+                return None
+            if micro["last_2_green"] and micro["above_fast"] and (micro["last_body_pct"] >= 0.04 or micro["recent_tick_pct"] >= 0.03):
+                return None
+            if micro["above_fast"] and micro["micro_step_ups"] >= 2 and micro["recent_tick_pct"] >= 0.05:
+                return None
+            if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_bouncing_up") and not (slope_z < -0.25 and micro["below_fast"] and micro["recent_tick_pct"] < -0.05):
+                return None
+            if change <= -4.0 and range_pos <= 0.25 and (micro["above_fast"] or micro["recent_tick_pct"] > -0.01 or slope_z > -0.10):
+                return None
+            if cat == "CRYPTO" and not (slope_z < -0.02 or micro["recent_tick_pct"] < -0.02 or micro["last_body_pct"] < -0.02 or sq_mom < 0 or ob_bearish):
+                return None
+
+            directional_tags = {"TREND", "24H", "1m CANDLES", "ORDER BLOCK"}
+            if slope_z <= -0.15:
+                directional_tags.add("RANGE")
             score = 0.0
             for p_name, p_val, _ in parts:
                 if p_name in directional_tags or (p_name == "SQUEEZE_T3" and abs(p_val) >= 0.10):
                     # Bearish negative factors boost SHORT conviction; counter-trend bullish factors penalize it.
                     score += -p_val
-                elif p_name == "RSI" and r14 <= 22:
-                    score += -0.06  # Avoid shorting extreme oversold bottom exhaustion
+                elif p_name == "RANGE":
+                    # Near day lows without active breakdown means bounce risk — never treat sitting on support as SHORT alpha.
+                    score += -0.05 if p_val < 0 else -p_val
+                elif p_name == "RSI" and r14 <= 30:
+                    score += -0.08  # Avoid shorting oversold capitulation bounce zone
                 else:
                     score += p_val
-            if cat == "CRYPTO" and slope_z < -0.35 and change <= -1.0:
+            if cat == "CRYPTO" and slope_z < -0.35 and change <= -1.0 and micro["below_fast"]:
                 score += 0.08
                 parts.append(("BEAR_IMPULSE", 0.08, f"Breakdown Velocity ({change:+.2f}%)"))
         else:
+            # Anti-red-waterfall veto: block LONG entries when live 1m candles or micro-ticks are dropping sharply
+            if micro["last_3_red"]:
+                return None
+            if micro["last_2_red"] and micro["below_fast"] and (micro["last_body_pct"] <= -0.04 or micro["recent_tick_pct"] <= -0.03):
+                return None
+            if micro["below_fast"] and micro["micro_step_downs"] >= 2 and micro["recent_tick_pct"] <= -0.05:
+                return None
+            if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_dumping_down") and not (slope_z > 0.25 and micro["above_fast"] and micro["recent_tick_pct"] > 0.05):
+                return None
+            if change >= 6.0 and range_pos >= 0.85 and (micro["below_fast"] or micro["recent_tick_pct"] < 0.01 or slope_z < 0.10):
+                return None
+            if cat == "CRYPTO" and not (slope_z > 0.02 or micro["recent_tick_pct"] > 0.02 or micro["last_body_pct"] > 0.02 or sq_mom > 0 or ob_bullish):
+                return None
             score = sum(p[1] for p in parts)
         if score <= -0.20:
             return None
@@ -841,6 +966,7 @@ class Bot:
             self._trainer_state = get_training_state() or {}
         except Exception:
             self._trainer_state = {}
+        self._leader_impulse = self._market_leader_impulse()
         setups, rejected, ready = [], dict.fromkeys(CATEGORIES, 0), dict.fromkeys(CATEGORIES, 0)
         for sym, row in self.candidates:
             cat = row.get("category", "CRYPTO")
@@ -1037,9 +1163,10 @@ class Bot:
         opens = query("SELECT * FROM positions WHERE status='OPEN'")
         if not opens:
             return {}
+        cdx_fut_map = self._futures_mark_map(opens)
         by_user = {}
         for p in opens:
-            price = self.feed.live_price(p["symbol"])
+            price, _ = self._live_position_mark_price(p, cdx_fut_map=cdx_fut_map)
             if not price:
                 # No confirmed quote yet (a restart has to warm the feed up first), so keep the
                 # mark the position already carries instead of inventing one from a placeholder.
@@ -1606,9 +1733,16 @@ class Bot:
                 return len(open_list), 0
 
         opened = 0
-        free = capital
+        locked_live = sum(max(0.0, float(p.get("margin") or 0.0)) for p in all_opens) if is_live_flag else 0.0
+        if is_live_flag:
+            live_total_ref = float(b_conn.get("live_balance") or capital or 0.0)
+            free = max(0.0, round(min(capital, max(0.0, live_total_ref - locked_live)), 4))
+        else:
+            free = capital
         is_pure_crypto = bool(mode_spec.get("pure_crypto")) or (is_live_flag and broker_name == "COINDCX") or (is_live_flag and market_focus in ("FUTURES_USD", "COINDCX_CRYPTO", "CRYPTO"))
         while slots - opened > 0:
+            if free < min_margin:
+                break
             if is_pure_crypto:
                 order = ["CRYPTO"]
             elif is_live_flag:
@@ -1639,14 +1773,14 @@ class Bot:
                     return 2
 
                 if bot_dir == "SHORT":
+                    pool = [x for x in pool if x.get("side") in ("SHORT", "SELL")]
                     pool.sort(key=lambda x: (
-                        0 if x.get("side") in ("SHORT", "SELL") else 1,
                         _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0)
                     ))
                 elif bot_dir == "LONG":
+                    pool = [x for x in pool if x.get("side") in ("LONG", "BUY")]
                     pool.sort(key=lambda x: (
-                        0 if x.get("side") in ("LONG", "BUY") else 1,
                         _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0)
                     ))
@@ -1693,12 +1827,11 @@ class Bot:
                                 max_spread = 1.25 if check_sym.endswith("INR") else 0.45
                                 if cdx_spread > max_spread:
                                     continue
-                    # DIRECTION GUARD: Support BOTH, LONG-only, or SHORT-only trading based on user preference
-                    if not is_coindcx_live or is_futures_usd:
-                        if bot_dir == "SHORT" and cand.get("side") in ("BUY", "LONG"):
-                            cand["side"] = "SHORT"
-                        elif bot_dir == "LONG" and cand.get("side") in ("SELL", "SHORT"):
-                            cand["side"] = "LONG"
+                    # Enforce user's direction filter without converting counter-trend setups into losing opposite trades
+                    if bot_dir == "SHORT" and cand.get("side") not in ("SELL", "SHORT"):
+                        continue
+                    if bot_dir == "LONG" and cand.get("side") not in ("BUY", "LONG"):
+                        continue
                     picked = cand
                     break
                 if picked:
@@ -1737,30 +1870,12 @@ class Bot:
                 }
             slope_z = picked.get("slope_z") if picked.get("slope_z") is not None else (picked.get("score") or 0.0)
 
-            # Align trade side with live momentum when user allows BOTH directions so counter-trend skips don't block execution
+            # Respect real live metrics before AI pre-entry validation; never forge adverse market readings into fake signals
             bot_dir_pref = str(user.get("bot_trade_direction") or "BOTH").upper()
-            if bot_dir_pref == "BOTH":
-                if picked["side"] in ("SELL", "SHORT") and (change > 1.5 or slope_z > 0.20):
-                    picked["side"] = "LONG" if picked["side"] == "SHORT" else "BUY"
-                elif picked["side"] in ("BUY", "LONG") and (change < -1.5 or slope_z < -0.20):
-                    if not is_coindcx_live or is_futures_usd:
-                        picked["side"] = "SHORT" if picked["side"] == "LONG" else "SELL"
-            elif bot_dir_pref == "SHORT":
-                picked["side"] = "SHORT"
-                if change > 1.5:
-                    change = -abs(change) * 0.35
-                if slope_z > 0.15:
-                    slope_z = -abs(slope_z) * 0.35
-                if tv_indicators and (tv_indicators.get("tv_recommend") or 0) > 0.2:
-                    tv_indicators = dict(tv_indicators, tv_recommend=-0.25)
-            elif bot_dir_pref == "LONG":
-                picked["side"] = "LONG"
-                if change < -1.5:
-                    change = abs(change) * 0.35
-                if slope_z < -0.15:
-                    slope_z = abs(slope_z) * 0.35
-                if tv_indicators and (tv_indicators.get("tv_recommend") or 0) < -0.2:
-                    tv_indicators = dict(tv_indicators, tv_recommend=0.25)
+            if bot_dir_pref == "SHORT" and picked.get("side") not in ("SHORT", "SELL"):
+                continue
+            if bot_dir_pref == "LONG" and picked.get("side") not in ("LONG", "BUY"):
+                continue
 
             user_lev = min(500.0, max(1.0, float(user.get("bot_leverage") or 500.0)))
             try:
@@ -1945,12 +2060,38 @@ class Bot:
             if margin < min_pos_margin or qty <= 0:
                 continue
 
+            # Fresh micro-tick reversal guard right before order submission: skip if price snapped adversely
+            fresh_ticks = self.feed.ticks(picked["symbol"], 6)
+            live_now = self.feed.live_price(picked["symbol"]) or picked["price"]
+            is_short_order = picked["side"] in ("SHORT", "SELL")
+            if picked["price"] > 0 and live_now > 0:
+                slip_pct = (live_now - picked["price"]) / picked["price"] * 100.0
+                if is_short_order and slip_pct > 0.12:
+                    self._log(user["id"], "REVERSAL_SKIP", f"Skipped SHORT {picked['symbol']}: price bounced +{slip_pct:.2f}% before fill.")
+                    continue
+                if (not is_short_order) and slip_pct < -0.12:
+                    self._log(user["id"], "REVERSAL_SKIP", f"Skipped LONG {picked['symbol']}: price dropped {slip_pct:.2f}% before fill.")
+                    continue
+            if len(fresh_ticks) >= 4:
+                ft = self._micro_momentum_state(fresh_ticks)
+                if is_short_order and ft["above_fast"] and ft["micro_step_ups"] >= 3 and ft["recent_tick_pct"] >= 0.05:
+                    self._log(user["id"], "REVERSAL_SKIP", f"Skipped SHORT {picked['symbol']}: live micro-ticks bouncing upward ({ft['recent_tick_pct']:+.2f}%).")
+                    continue
+                if (not is_short_order) and ft["below_fast"] and ft["micro_step_downs"] >= 3 and ft["recent_tick_pct"] <= -0.05:
+                    self._log(user["id"], "REVERSAL_SKIP", f"Skipped LONG {picked['symbol']}: live micro-ticks dropping ({ft['recent_tick_pct']:+.2f}%).")
+                    continue
+
             # Real Exchange Execution Bridge (AraaBot StrategyEngine + CoinDCXExecutionAdapter)
             real_res = None
             if is_coindcx_live:
                 try:
                     from strategy_engine import StrategyEngine
                     from coindcx_adapter import CoinDCXExecutionAdapter
+                    from coindcx_gateway import resolve_live_futures_price
+                    if is_futures_usd and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1":
+                        cdx_fut_px = resolve_live_futures_price(picked["symbol"])
+                        if cdx_fut_px > 0 and picked["price"] > 0 and (0.5 <= (cdx_fut_px / picked["price"]) <= 1.5):
+                            picked["price"] = cdx_fut_px
                     StrategyEngine.ensure_user_strategies(user["id"])
                     strat = StrategyEngine.get_strategy(user["id"], "araa_ai_default")
                     if not strat or not int(strat.get("enabled") or 0):
@@ -2058,6 +2199,7 @@ class Bot:
                         "exchange": "COINDCX",
                         "qty": filled_qty,
                         "leverage": float(ad_res.get("leverage") or effective_lev),
+                        "actual_margin_usd": float(ad_res.get("actual_margin_usd") or margin),
                         "order_id": ad_res.get("exchange_order_id"),
                         "protection_verified": bool(prot_res.get("protection_verified")),
                     }
@@ -2098,6 +2240,8 @@ class Bot:
                 if exchange_lev >= 1.0:
                     effective_lev = exchange_lev
                 qty = float(real_res.get("qty") or qty)
+                if float(real_res.get("actual_margin_usd") or 0.0) > 0:
+                    margin = float(real_res["actual_margin_usd"])
                 lev = effective_lev
             ai_prob = picked.get("ai_win_prob") or 75.0
             is_coindcx_live = bool(is_live_flag and broker_name == "COINDCX")

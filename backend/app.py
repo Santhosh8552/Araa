@@ -429,12 +429,16 @@ def portfolio(uid):
     pos_filter = "is_live=1" if is_live_mode else "(is_live=0 OR is_live IS NULL)"
 
     opens = query(f"SELECT * FROM positions WHERE user_id=? AND status='OPEN' AND {pos_filter}", (uid,))
-    # Dynamically inject the most up-to-the-millisecond live price as Mark Price and accurate USD metrics:
+    cdx_fut_map = bot._futures_mark_map(opens)
+    # Dynamically inject venue-consistent live price as Mark Price and accurate USD metrics:
     for p in opens:
-        live = feed.live_price(p["symbol"]) or feed.price(p["symbol"]) or p.get("current_price") or p.get("entry_price")
+        live, mark_src = bot._live_position_mark_price(p, cdx_fut_map=cdx_fut_map)
+        if not live:
+            live = feed.price(p["symbol"]) or p.get("current_price") or p.get("entry_price")
         if live and live > 0:
             pnl, move_pct, roi_pct, healed_qty = bot._compute_position_metrics(p, float(live))
             p["current_price"] = float(live)
+            p["mark_source"] = mark_src
             p["qty"] = healed_qty
             p["unrealized_pnl"] = round(pnl, 4)
             p["move_pct"] = round(move_pct, 4)
@@ -3963,8 +3967,16 @@ def api_coindcx_order_execute():
     tickers = get_live_tickers()
     mkt = to_coindcx_market(fut_sym if use_futures else symbol)
     fut_pair = cdx.futures.to_futures_pair(fut_sym) if use_futures else mkt
+    fut_rt_p = 0.0
+    if use_futures and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1":
+        try:
+            from coindcx_gateway import resolve_live_futures_price
+            fut_rt_p = resolve_live_futures_price(fut_sym)
+        except Exception:
+            fut_rt_p = 0.0
     cur_p = float(
-        (feed.live_price(fut_sym) if use_futures else 0)
+        (fut_rt_p if fut_rt_p > 0 else 0)
+        or (feed.live_price(fut_sym) if use_futures else 0)
         or tickers.get(fut_sym, {}).get("last_price")
         or (tickers.get(fut_pair, {}).get("last_price") if use_futures else 0)
         or tickers.get(mkt, {}).get("last_price")
@@ -4054,8 +4066,8 @@ def api_coindcx_order_execute():
         err_msg = res_ord.get("message") if isinstance(res_ord, dict) else str(res_ord)
         return fail(f"CoinDCX Execution Error: {err_msg}", 400)
 
-    fill_price = float((res_ord or {}).get("avg_price") or (res_ord or {}).get("price") or (res_ord or {}).get("price_per_unit") or cur_p)
-    filled_qty = float((res_ord or {}).get("total_quantity") or (res_ord or {}).get("filled_quantity") or quantity)
+    fill_price = float((res_ord or {}).get("spot_equivalent_price") or (res_ord or {}).get("avg_price") or (res_ord or {}).get("price") or (res_ord or {}).get("price_per_unit") or cur_p)
+    filled_qty = float((res_ord or {}).get("spot_equivalent_quantity") or (res_ord or {}).get("total_quantity") or (res_ord or {}).get("filled_quantity") or quantity)
     exchange_ord_id = str((res_ord or {}).get("id") or client_ord_id)
     store_sym = fut_sym if use_futures else symbol
 
