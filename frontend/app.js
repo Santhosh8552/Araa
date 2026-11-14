@@ -30,7 +30,7 @@ const API = (window.location.hostname === "araabot.in")
 const $ = (id) => document.getElementById(id);
 const S = {token: localStorage.getItem("tp_token") || "", user: null, wallet: null, pf: null,
            orders: [], markets: [], symbol: "BTCUSDT", side: "LONG", tf: "1m", otype: "MARKET",
-           cat: "COINDCX_USDT", size: 50, chartMode: "tv", tvKey: "", candles: [], quote: {}, ind: {},
+           cat: "COINDCX_USDT", size: 50, chartMode: "local", tvKey: "", candles: [], quote: {}, ind: {},
            showSmcDna: true, smcDna: null,
            tab: "positions", authMode: "login", live: false, note: "", lat: 0, syms: 0,
            country: "", showAll: false,
@@ -6334,10 +6334,10 @@ async function showChart(tvSymbol, candles) {
   if (!useTV || !ready) {
     if (host) host.classList.add("hide");
     if (local) local.classList.remove("hide");
-    if (!tvSymbol && S.chartMode === "tv") {
-      note.textContent = "Live real-time price feed active. (Streaming via CoinDCX high-speed live feed). " + NOTE_LIVE;
+    if (!tvSymbol || S.chartMode === "local") {
+      note.textContent = "CoinDCX Futures Live Chart (" + S.symbol + " · " + S.tf + " candles) — 100% synced with CoinDCX execution & signals. " + NOTE_LIVE;
     } else if (useTV && !ready) {
-      note.textContent = "Connecting to TradingView live stream... (Rendering live feed in real-time). " + NOTE_QUOTE;
+      note.textContent = "Connecting to live stream... " + NOTE_LIVE;
     } else {
       note.textContent = NOTE_LIVE;
     }
@@ -7369,7 +7369,7 @@ if (btnApplyCopilot && !btnApplyCopilot._bound) {
 function pickPair(symbol, side, preferAiChart) {
   if (!symbol) return;
   S.symbol = symbol;
-  S.chartMode = preferAiChart ? "local" : "tv";
+  S.chartMode = "local";
   S.tvKey = "";
   document.querySelectorAll("#chart_mode [data-mode]").forEach(x => {
     x.classList.toggle("active", x.dataset.mode === S.chartMode);

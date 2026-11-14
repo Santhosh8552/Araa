@@ -246,13 +246,8 @@ def tv_symbol(symbol):
         if ":" in symbol:
             code = symbol
         else:
-            if symbol.startswith("B-") and symbol.endswith("_USDT"):
-                code = "COINBASE:" + symbol[2:-5] + "USD"
-            elif symbol.endswith("USDT"):
-                code = "COINBASE:" + symbol[:-4] + "USD"
-            elif symbol.endswith("INR"):
-                base_c = symbol[:-3]
-                code = "COINBASE:" + base_c + "USD"
+            if (symbol.startswith("B-") and symbol.endswith("_USDT")) or symbol.endswith("USDT") or symbol.endswith("INR"):
+                return None
             else:
                 code = None
         if not code:
@@ -998,207 +993,28 @@ class PriceFeed:
             return False
 
     def refresh_crypto_tradingview(self, force=False):
-        """Fetch live TradingView multi-timeframe technical signals (1m, 5m, 1D Recommend.All, Recommend.MA, RSI, MACD, EMA) for all crypto pairs."""
+        """Compute live multi-timeframe (1m, 5m, 1D) technical ratings directly from CoinDCX Futures candles & live prices."""
         now = time.time()
         last_scan = getattr(self, "_last_tv_crypto_scan", 0.0)
         if not force and (now - last_scan) < 10.0:
             return True
         self._last_tv_crypto_scan = now
         try:
-            with self.lock:
-                raw_cryptos = [s for s, r in self.prices.items() if r.get("category", "CRYPTO") == "CRYPTO" and (s.endswith("USDT") or s.startswith("B-"))]
-            if not raw_cryptos:
-                return False
-            # Normalize B-BTC_USDT -> BTCUSDT so TradingView COINBASE:<BASE>USD resolves every CoinDCX contract
-            norm_to_keys = defaultdict(list)
-            for s in raw_cryptos:
-                clean = s[2:].replace("_", "") if s.startswith("B-") else s.replace("_", "")
-                if clean.endswith("USDT"):
-                    norm_to_keys[clean].append(s)
-            clean_syms = sorted(norm_to_keys.keys())
-            if not clean_syms:
-                return False
-            tv_tickers = [f"COINBASE:{s[:-4]}USD" for s in clean_syms]
-            chunk = 150
-            cols = [
-                "close", "change", "high", "low", "volume", "open", "24h_vol|5",
-                "RSI", "Recommend.All", "Recommend.MA", "Recommend.Other",
-                "RSI|1", "Recommend.All|1", "Recommend.MA|1", "Recommend.Other|1",
-                "RSI|5", "Recommend.All|5", "Recommend.MA|5", "Recommend.Other|5",
-                "MACD.macd|1", "MACD.signal|1", "MACD.macd|5", "MACD.signal|5",
-                "EMA20|1", "EMA50|1", "EMA20|5", "EMA50|5",
-                "change|1", "change|5"
-            ]
-            headers = {
-                **BROWSER_HEADERS,
-                "Content-Type": "application/json",
-                "Origin": "https://www.tradingview.com",
-                "Referer": "https://www.tradingview.com/",
-            }
+            self.refresh_active_crypto_klines(max_symbols=40)
             updated_any = False
-            for i in range(0, len(tv_tickers), chunk):
-                sub_tickers = tv_tickers[i:i + chunk]
-                body = {
-                    "symbols": {"tickers": sub_tickers, "query": {"types": []}},
-                    "columns": cols,
-                    "range": [0, len(sub_tickers)],
-                }
-                try:
-                    req = urllib.request.Request(
-                        TV_CRYPTO_SCAN_URL,
-                        data=json.dumps(body).encode(),
-                        headers=headers
-                    )
-                    with urllib.request.urlopen(req, timeout=10) as r:
-                        tv_data = json.loads(r.read().decode())
-                except Exception:
-                    continue
-
-                with self.lock:
-                    for item in tv_data.get("data") or []:
-                        try:
-                            s_code = item.get("s", "")
-                            if not (s_code.startswith("COINBASE:") and s_code.endswith("USD")):
-                                continue
-                            sym = s_code.replace("COINBASE:", "")[:-3] + "USDT"
-                            vals = item.get("d") or []
-                            if not vals or vals[0] in (None, "", 0):
-                                continue
-                            price = float(vals[0])
-                            chg = float(vals[1]) if len(vals) > 1 and vals[1] is not None else 0.0
-                            high = float(vals[2]) if len(vals) > 2 and vals[2] is not None else price
-                            low = float(vals[3]) if len(vals) > 3 and vals[3] is not None else price
-                            vol = float(vals[6]) if len(vals) > 6 and vals[6] is not None else (float(vals[4]) * price if len(vals) > 4 and vals[4] is not None else 0.0)
-                            open_p = float(vals[5]) if len(vals) > 5 and vals[5] is not None else price
-                            tv_rsi_1d = float(vals[7]) if len(vals) > 7 and vals[7] is not None else None
-                            tv_rec_1d = float(vals[8]) if len(vals) > 8 and vals[8] is not None else None
-                            tv_ma_1d = float(vals[9]) if len(vals) > 9 and vals[9] is not None else None
-                            tv_other_1d = float(vals[10]) if len(vals) > 10 and vals[10] is not None else None
-
-                            tv_rsi_1m = float(vals[11]) if len(vals) > 11 and vals[11] is not None else None
-                            tv_rec_1m = float(vals[12]) if len(vals) > 12 and vals[12] is not None else None
-                            tv_ma_1m = float(vals[13]) if len(vals) > 13 and vals[13] is not None else None
-                            tv_other_1m = float(vals[14]) if len(vals) > 14 and vals[14] is not None else None
-
-                            tv_rsi_5m = float(vals[15]) if len(vals) > 15 and vals[15] is not None else None
-                            tv_rec_5m = float(vals[16]) if len(vals) > 16 and vals[16] is not None else None
-                            tv_ma_5m = float(vals[17]) if len(vals) > 17 and vals[17] is not None else None
-                            tv_other_5m = float(vals[18]) if len(vals) > 18 and vals[18] is not None else None
-
-                            macd_1m = float(vals[19]) if len(vals) > 19 and vals[19] is not None else None
-                            macd_sig_1m = float(vals[20]) if len(vals) > 20 and vals[20] is not None else None
-                            macd_5m = float(vals[21]) if len(vals) > 21 and vals[21] is not None else None
-                            macd_sig_5m = float(vals[22]) if len(vals) > 22 and vals[22] is not None else None
-
-                            ema20_1m = float(vals[23]) if len(vals) > 23 and vals[23] is not None else None
-                            ema50_1m = float(vals[24]) if len(vals) > 24 and vals[24] is not None else None
-                            ema20_5m = float(vals[25]) if len(vals) > 25 and vals[25] is not None else None
-                            ema50_5m = float(vals[26]) if len(vals) > 26 and vals[26] is not None else None
-
-                            chg_1m = float(vals[27]) if len(vals) > 27 and vals[27] is not None else None
-                            chg_5m = float(vals[28]) if len(vals) > 28 and vals[28] is not None else None
-
-                            # Multi-timeframe TradingView Scalp Consensus (pure 1m + 5m primary, never inverted by 1D)
-                            if tv_rec_1m is not None and tv_rec_5m is not None:
-                                if (tv_rec_1m > 0.05 and tv_rec_5m < -0.05) or (tv_rec_1m < -0.05 and tv_rec_5m > 0.05):
-                                    tv_recommend = 0.0
-                                else:
-                                    tv_recommend = round(0.58 * tv_rec_1m + 0.42 * tv_rec_5m, 4)
-                            elif tv_rec_1m is not None:
-                                tv_recommend = round(float(tv_rec_1m), 4)
-                            elif tv_rec_5m is not None:
-                                tv_recommend = round(float(tv_rec_5m), 4)
-                            else:
-                                tv_recommend = tv_rec_1d
-
-                            if tv_ma_1m is not None and tv_ma_5m is not None:
-                                tv_ma = round(0.58 * tv_ma_1m + 0.42 * tv_ma_5m, 4)
-                            else:
-                                tv_ma = tv_ma_1m if tv_ma_1m is not None else tv_ma_1d
-
-                            if tv_other_1m is not None and tv_other_5m is not None:
-                                tv_other = round(0.58 * tv_other_1m + 0.42 * tv_other_5m, 4)
-                            else:
-                                tv_other = tv_other_1m if tv_other_1m is not None else tv_other_1d
-
-                            tv_rsi = tv_rsi_1m if tv_rsi_1m is not None else (tv_rsi_5m if tv_rsi_5m is not None else tv_rsi_1d)
-
-                            tv_signal = "NEUTRAL"
-                            if tv_recommend is not None:
-                                if tv_recommend >= 0.45: tv_signal = "STRONG_BUY"
-                                elif tv_recommend >= 0.08: tv_signal = "BUY"
-                                elif tv_recommend <= -0.45: tv_signal = "STRONG_SELL"
-                                elif tv_recommend <= -0.08: tv_signal = "SELL"
-
-                            tv_payload = {
-                                "tv_rsi": tv_rsi,
-                                "tv_rsi_1m": tv_rsi_1m,
-                                "tv_rsi_5m": tv_rsi_5m,
-                                "tv_rsi_1d": tv_rsi_1d,
-                                "tv_recommend": tv_recommend,
-                                "tv_rec_1m": tv_rec_1m,
-                                "tv_rec_5m": tv_rec_5m,
-                                "tv_rec_1d": tv_rec_1d,
-                                "tv_ma": tv_ma,
-                                "tv_ma_1m": tv_ma_1m,
-                                "tv_ma_5m": tv_ma_5m,
-                                "tv_other": tv_other,
-                                "tv_other_1m": tv_other_1m,
-                                "tv_other_5m": tv_other_5m,
-                                "tv_macd_1m": macd_1m,
-                                "tv_macd_sig_1m": macd_sig_1m,
-                                "tv_macd_5m": macd_5m,
-                                "tv_macd_sig_5m": macd_sig_5m,
-                                "tv_ema20_1m": ema20_1m,
-                                "tv_ema50_1m": ema50_1m,
-                                "tv_ema20_5m": ema20_5m,
-                                "tv_ema50_5m": ema50_5m,
-                                "tv_chg_1m": chg_1m,
-                                "tv_chg_5m": chg_5m,
-                                "tv_signal": tv_signal,
-                            }
-
-                            for target_key in norm_to_keys.get(sym, [sym]):
-                                row = self.prices.get(target_key)
-                                if not row:
-                                    continue
-                                first_quote = not row.get("live") or not row.get("seeded_real")
-                                updates = {
-                                    **tv_payload,
-                                    "high": high,
-                                    "low": low,
-                                    "volume": vol or row.get("volume", 0),
-                                    "target": price,
-                                    "live": True,
-                                    "seeded_real": True,
-                                    "_tv_scanner_ts": time.time(),
-                                }
-                                if first_quote or row.get("source") == "TRADINGVIEW" or not row.get("price"):
-                                    updates["price"] = price
-                                    updates["open24h"] = open_p
-                                    updates["change_pct"] = chg
-                                    updates["source"] = "TRADINGVIEW"
-                                row.update(updates)
-                                hist = self.history[target_key]
-                                decimals = 8 if price < 0.01 else (6 if price < 1 else (4 if price < 10 else 2))
-                                if first_quote or len(hist) < 15 or len(set(round(float(x), 8) for x in list(hist)[-15:])) <= 2:
-                                    hist.clear()
-                                    if ema50_1m and ema50_1m > 0 and abs(price - ema50_1m) / price <= 0.04:
-                                        start_p = float(ema50_1m)
-                                    elif chg_5m is not None and abs(float(chg_5m)) <= 5.0 and abs(float(chg_5m)) > 0.005:
-                                        start_p = price / (1.0 + float(chg_5m) / 100.0)
-                                    elif tv_recommend is not None and abs(float(tv_recommend)) >= 0.05:
-                                        start_p = price / (1.0 + float(tv_recommend) * 0.003)
-                                    else:
-                                        start_p = price
-                                    for k_i in range(20):
-                                        frac = (k_i + 1) / 20.0
-                                        hist.append(round(start_p + (price - start_p) * frac, decimals))
-                                elif not hist or abs(hist[-1] - price) > price * 1e-7:
-                                    hist.append(price)
-                            updated_any = True
-                        except Exception:
-                            continue
+            with self.lock:
+                for sym, row in self.prices.items():
+                    if row.get("category", "CRYPTO") != "CRYPTO":
+                        continue
+                    if not (sym.endswith("USDT") or sym.startswith("B-") or sym.endswith("INR")):
+                        continue
+                    price = float(row.get("price") or 0.0)
+                    if price <= 0:
+                        continue
+                    row.pop("_tv_scanner_ts", None)
+                    hist = self.history[sym]
+                    self._compute_live_tv_ratings(sym, row, hist)
+                    updated_any = True
             return updated_any
         except Exception:
             return False
