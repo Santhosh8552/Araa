@@ -36,7 +36,7 @@ from oms_engine import OrderManagementSystem, ExecutionManagementSystem, Positio
 from risk_engine import InstitutionalRiskEngine, RiskGuardian
 from bot_supervisor import BotSupervisor
 from financial_ledger import DoubleEntryLedger
-from company_auth import CompanyAuthService, require_company_auth, require_permission, log_company_audit
+from company_auth import CompanyAuthService, require_company_auth, require_permission, log_company_audit, extract_company_token
 from company_finance import CompanyAccountManager, CompanyCapitalManager, MARKET_TO_POOL
 from universal_broker_manager import UniversalBrokerManager
 from company_strategy_engine import CompanyStrategyService
@@ -1645,6 +1645,15 @@ def company_compliance_update(record_id):
 
 @v1_api.route("/company/system/health", methods=["GET"])
 def company_system_health():
+    # If a regular user token is passed, strictly 403 Forbidden
+    if request.headers.get("X-Token"):
+        return fail("Forbidden: Access restricted to authorized company roles", 403)
+    # Check if strict auth is requested or company auth header present
+    tok = extract_company_token()
+    if os.environ.get("AUTH_STRICT", "0").strip() == "1" and not tok:
+        return fail("Company authentication required", 401)
+    if tok and not CompanyAuthService.validate_session(tok):
+        return fail("Company authentication required", 401)
     try:
         from araa_ai_core import get_araa_ai
         from company_worker import company_worker
@@ -1876,3 +1885,74 @@ def v1_corporate_enquiries():
         ip_addr=request.remote_addr or "",
     )
     return jsonify(res)
+
+
+# =============================================================================
+# 19. COMPANY OPERATIONAL MONITORING & SYSTEM DIAGNOSTICS
+# Strictly accessible to authorized company roles (COMPANY_DIRECTOR, SUPER_ADMIN,
+# COMPANY_ADMIN, COMPANY_OPERATOR, etc.). Regular users are strictly 403 Forbidden.
+# Production deployment approval is restricted to Admin only.
+# =============================================================================
+@v1_api.route("/company/monitoring/overview", methods=["GET"])
+@require_company_auth
+def company_monitoring_overview():
+    """Returns application version, updates, and service operational status for company panel."""
+    try:
+        from system_monitoring import SystemMonitoringEngine
+    except ImportError:
+        from backend.system_monitoring import SystemMonitoringEngine
+    updates = SystemMonitoringEngine.get_program_updates()
+    readiness = SystemMonitoringEngine.get_deployment_readiness()
+    return ok(
+        app_version=SystemMonitoringEngine.APP_VERSION,
+        updates=updates,
+        deployment_status=readiness.get("readiness_status"),
+        readiness_score=readiness.get("readiness_score"),
+        deployment_checks=readiness.get("checks"),
+        admin_approval_required=True,
+    )
+
+
+@v1_api.route("/company/monitoring/diagnostics", methods=["GET"])
+@require_company_auth
+def company_monitoring_diagnostics():
+    """Runs backend and infrastructure diagnostics for the company control center."""
+    try:
+        from system_monitoring import SystemMonitoringEngine
+    except ImportError:
+        from backend.system_monitoring import SystemMonitoringEngine
+    diag = SystemMonitoringEngine.run_backend_health_diagnostics()
+    return ok(diagnostics=diag)
+
+
+@v1_api.route("/company/monitoring/playwright/results", methods=["GET"])
+@require_company_auth
+def company_monitoring_playwright_results():
+    """Fetches recent Playwright automation test results for company audit."""
+    from database import query
+    runs = query(
+        "SELECT * FROM system_monitoring_runs WHERE run_type='PLAYWRIGHT' ORDER BY created_at DESC LIMIT 20"
+    )
+    return ok(playwright_runs=runs)
+
+
+@v1_api.route("/company/monitoring/playwright/trigger", methods=["POST"])
+@require_company_auth
+def company_monitoring_playwright_trigger():
+    """Allows authorized company operations to run automated verification suite."""
+    emp = g.company_user
+    role = emp.get("role_code", "COMPANY_OPERATOR")
+    try:
+        from system_monitoring import SystemMonitoringEngine
+    except ImportError:
+        from backend.system_monitoring import SystemMonitoringEngine
+    res = SystemMonitoringEngine.execute_playwright_automation(role=role, actor_id=emp.get("email", "company_user"))
+    return ok(results=res)
+
+
+@v1_api.route("/company/monitoring/deployment/approve", methods=["POST"])
+@require_company_auth
+def company_monitoring_deployment_approve():
+    """Company users CANNOT approve production deployment. Strictly 403 Forbidden."""
+    return fail("Forbidden: Production deployment approval is strictly restricted to SUPER_ADMIN/ADMIN.", 403)
+

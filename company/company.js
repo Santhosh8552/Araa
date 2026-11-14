@@ -22,6 +22,7 @@
     company_profile: "Company Legal Profile & Compliance",
     employees: "Employees, 7-Role RBAC, MFA & Approvals",
     audit: "Audit Logs & System Health",
+    system_monitoring: "Operational Diagnostics & Test Status",
   };
 
   const state = {
@@ -161,6 +162,7 @@
       else if (v === "company_profile") await loadCompanyProfileView();
       else if (v === "employees") await loadEmployeesView();
       else if (v === "audit") await loadAuditView();
+      else if (v === "system_monitoring") await loadCompanyMonitoring();
     } catch (e) {
       notice(e.message, "err");
     }
@@ -1134,10 +1136,84 @@
     applyCompanyTheme(isDark ? "light" : "dark");
   }
 
+  async function loadCompanyMonitoring(manual = false) {
+    try {
+      const res = await api("/api/v1/company/monitoring/overview");
+      if (res && res.success) {
+        if ($("cmp_diag_app_ver")) $("cmp_diag_app_ver").textContent = res.app_version || "2.1.0-ENTERPRISE";
+        if ($("cmp_diag_branch")) $("cmp_diag_branch").textContent = `Branch: ${res.updates?.branch || "main"}`;
+        if ($("cmp_diag_commit_tag")) $("cmp_diag_commit_tag").textContent = (res.updates?.current_commit || "HEAD").substring(0, 10);
+
+        if ($("cmp_diag_commits_list") && Array.isArray(res.updates?.recent_commits)) {
+          $("cmp_diag_commits_list").innerHTML = res.updates.recent_commits.map(c => `
+            <div style="border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:4px;">
+              <span style="color:var(--primary);">[${c.hash}]</span> <b>${esc(c.message)}</b>
+              <div style="font-size:10px; color:var(--muted);">${esc(c.author)} · ${c.date}</div>
+            </div>
+          `).join("");
+        }
+
+        if ($("cmp_diag_checklist") && Array.isArray(res.deployment_checks)) {
+          $("cmp_diag_checklist").innerHTML = res.deployment_checks.map(c => `
+            <div style="color:${c.passed ? 'var(--green)' : 'var(--red)'};">
+              ${c.passed ? '✔' : '✖'} ${esc(c.criterion)}
+            </div>
+          `).join("");
+        }
+      }
+
+      const diag = await api("/api/v1/company/monitoring/diagnostics");
+      if (diag && diag.success && diag.diagnostics) {
+        const d = diag.diagnostics;
+        if ($("cmp_diag_db_status")) $("cmp_diag_db_status").textContent = d.services?.database?.status || "HEALTHY";
+        if ($("cmp_diag_db_lat")) $("cmp_diag_db_lat").textContent = `Latency: ${d.services?.database?.latency_ms || 0}ms · ${d.services?.database?.wal_mode || 'WAL'}`;
+        if ($("cmp_diag_cdcx_status")) $("cmp_diag_cdcx_status").textContent = d.services?.coindcx_integration?.status || "HEALTHY";
+        if ($("cmp_diag_cdcx_info")) $("cmp_diag_cdcx_info").textContent = `${d.services?.coindcx_integration?.active_instruments_tracked || 0} pairs tracked`;
+      }
+
+      const pw = await api("/api/v1/company/monitoring/playwright/results");
+      if (pw && pw.success && Array.isArray(pw.playwright_runs)) {
+        if ($("cmp_diag_tests_list")) {
+          if (pw.playwright_runs.length === 0) {
+            $("cmp_diag_tests_list").innerHTML = "<div>No automated test runs recorded. Click 'Run Automated Tests' to trigger.</div>";
+          } else {
+            $("cmp_diag_tests_list").innerHTML = pw.playwright_runs.map(r => `
+              <div style="border-bottom:1px solid rgba(255,255,255,0.05); padding:4px 0;">
+                <b style="color:${r.status === 'PASSED' ? 'var(--green)' : 'var(--red)'};">[${r.status}]</b> ${esc(r.suite_name)}
+                <div style="font-size:10px; color:var(--muted);">${r.passed_tests}/${r.total_tests} passed (${r.duration_ms}ms) · ${tsFmt(r.created_at)}</div>
+              </div>
+            `).join("");
+          }
+        }
+      }
+
+      if (manual) notice("Operational telemetry refreshed", "ok");
+    } catch (e) {
+      notice("Failed to load company diagnostics: " + e.message, "err");
+    }
+  }
+
+  async function triggerCompanyPlaywright() {
+    notice("Executing automated Playwright & backend test suite...", "info");
+    try {
+      const res = await api("/api/v1/company/monitoring/playwright/trigger", { method: "POST" });
+      if (res && res.success) {
+        notice(`Test run finished: ${res.results?.passed_tests || 0}/${res.results?.total_tests || 0} passed`, "ok");
+        await loadCompanyMonitoring();
+      } else {
+        notice("Test run failed: " + (res.error || "Unknown"), "err");
+      }
+    } catch (e) {
+      notice("Execution error: " + e.message, "err");
+    }
+  }
+
   const _rawApp = {
     toggleTheme,
     nav,
     refreshCurrent,
+    loadCompanyMonitoring,
+    triggerCompanyPlaywright,
     submitAuth,
     logout,
     registerBroker,
