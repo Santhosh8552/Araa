@@ -385,7 +385,7 @@ class Bot:
     # ---------- switch ----------
     @property
     def is_running(self):
-        return get_state("bot_running", "0") == "1"
+        return get_state("bot_running", "1") == "1"
 
     def start(self):
         set_state("bot_running", "1")

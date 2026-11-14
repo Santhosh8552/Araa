@@ -6837,6 +6837,8 @@ def boot_data():
         print("[BOOT] seeding demo users and history")
         ids = db.seed_users()
         db.seed_history(ids)
+    if get_state("bot_running") is None:
+        set_state("bot_running", "1")
     bot.start_loop()
     feed.start()
 

@@ -343,9 +343,27 @@ Respond ONLY with valid JSON:
             retest_status = "Retest Active" if ob_retest else "Formed"
             ob_info = f" | Institutional {ob_type} ({retest_status} · {ob_disp}x Disp)"
 
+    tv_rating = tv_indicators.get("tv_recommend") if tv_indicators else None
+    tv_rec_1m = tv_indicators.get("tv_rec_1m") if tv_indicators else None
+    tv_rec_5m = tv_indicators.get("tv_rec_5m") if tv_indicators else None
+    tv_aligned_buy = bool(
+        tv_rating is not None and float(tv_rating) >= 0.08
+        and (tv_rec_1m is None or float(tv_rec_1m) >= 0.05)
+        and (tv_rec_5m is None or float(tv_rec_5m) >= -0.05)
+        and slope_z > 0.05
+    )
+    tv_aligned_sell = bool(
+        tv_rating is not None and float(tv_rating) <= -0.08
+        and (tv_rec_1m is None or float(tv_rec_1m) <= -0.05)
+        and (tv_rec_5m is None or float(tv_rec_5m) <= 0.05)
+        and slope_z < -0.05
+    )
+
     if category == "CRYPTO":
-        counter_trend = (pred_direction == "BUY" and (change_pct < -4.5 or rsi_val < 22 or slope_z < -0.35)) or \
-                        (pred_direction == "SELL" and (change_pct > 4.5 or rsi_val > 78 or slope_z > 0.35))
+        counter_trend = (
+            (pred_direction == "BUY" and ((change_pct < -4.5 and not tv_aligned_buy) or rsi_val < 22 or slope_z < -0.35))
+            or (pred_direction == "SELL" and ((change_pct > 4.5 and not tv_aligned_sell) or rsi_val > 78 or slope_z > 0.35))
+        )
         exhaustion_trap = (pred_direction == "BUY" and rsi_val > 82) or \
                           (pred_direction == "SELL" and rsi_val < 24)
         min_required_rr = min(cfg.get("rr_min", 1.4), 1.25)
@@ -359,12 +377,16 @@ Respond ONLY with valid JSON:
     adverse_slope = (pred_direction == "BUY" and slope_z < -0.35 and change_pct < -2.0) or \
                     (pred_direction == "SELL" and slope_z > 0.35 and change_pct > 2.0)
 
-    tv_rating = tv_indicators.get("tv_recommend") if tv_indicators else None
     tv_conflict = False
     if tv_rating is not None:
-        if pred_direction == "BUY" and tv_rating < -0.25:
+        if pred_direction == "BUY" and float(tv_rating) < -0.05:
             tv_conflict = True
-        elif pred_direction == "SELL" and tv_rating > 0.25:
+        elif pred_direction == "SELL" and float(tv_rating) > 0.05:
+            tv_conflict = True
+    if tv_rec_1m is not None:
+        if pred_direction == "BUY" and float(tv_rec_1m) < -0.05:
+            tv_conflict = True
+        elif pred_direction == "SELL" and float(tv_rec_1m) > 0.05:
             tv_conflict = True
 
     if mode == "PURE_CRYPTO" and category != "CRYPTO":
