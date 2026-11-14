@@ -545,12 +545,12 @@ class CoinDCXExecutionAdapter:
                     sl_price = round_to_increment(sl_price, p_inc)
                     tp_price = round_to_increment(tp_price, p_inc)
                 if pos_uuid:
+                    # Profit-Only Real Mode: attach exchange-side Take Profit only (no forced SL close at a loss)
                     ok_tpsl, res_tpsl = cdx.futures._call(
                         "/exchange/v1/derivatives/futures/positions/create_tpsl",
                         body={
                             "id": pos_uuid,
                             "take_profit": {"stop_price": str(tp_price), "order_type": "take_profit_market"},
-                            "stop_loss": {"stop_price": str(sl_price), "order_type": "stop_market"},
                         },
                         attempts=2,
                     )

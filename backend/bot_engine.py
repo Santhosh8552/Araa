@@ -1037,34 +1037,23 @@ class Bot:
                 continue
 
             # =========================================================================
-            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO NOISE CHURN)
-            # Gives live trades 90s + full StrategyEngine SL breathing room past spread/fees
+            # RULE 0B / 1A / 1B: STOP-LOSS GUARDS (SKIPPED IN PROFIT-ONLY REAL MODE)
+            # In Real Mode (is_live=True), never auto-close CoinDCX positions at a loss;
+            # only close on profit targets, trailing profit locks, or manual user close.
             # =========================================================================
-            sl = float(p.get("stop_pct") or (0.55 if p.get("is_live") else 0.85))
-            if p.get("is_live"):
-                sl = max(sl, 0.50)
-            if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
-                self.close(p, price, f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 1A: FAST DOWNSIDE STOP-LOSS GUARD (REAL CAPITAL PRESERVATION)
-            # Never allow a real-money trade to sink into excessive loss
-            # =========================================================================
-            if p.get("is_live"):
-                if pnl <= -20.0 or move_pct <= -max(sl * 1.15, 0.70):
-                    self.close(p, price, f"REAL_CAPITAL_PRESERVATION_STOP_LOSS ({move_pct:.2f}% | -${abs(pnl):.2f})")
+            if not p.get("is_live"):
+                sl = float(p.get("stop_pct") or 0.85)
+                if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
+                    self.close(p, price, f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
                     continue
-            elif roi_pct <= -25.0 or pnl <= -250.0:
-                self.close(p, price, f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(pnl):.2f})")
-                continue
 
-            # =========================================================================
-            # RULE 1B: TECHNICAL STOP LOSS & PERCENTAGE INVALIDATION
-            # =========================================================================
-            if move_pct <= -sl:
-                self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
-                continue
+                if roi_pct <= -25.0 or pnl <= -250.0:
+                    self.close(p, price, f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(pnl):.2f})")
+                    continue
+
+                if move_pct <= -sl:
+                    self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
+                    continue
 
             # =========================================================================
             # RULE 2: INSTANT FLASH PROFIT SPIKE CAPTURE (+$250 / +$500 / +$1,000+ SPIKES)
@@ -1354,33 +1343,23 @@ class Bot:
                 continue
 
             # =========================================================================
-            # RULE 0B: SMART TREND-BREATHING STOP GUARD (NO NOISE CHURN)
+            # RULE 0B / 1A / 1B: STOP-LOSS GUARDS (SKIPPED IN PROFIT-ONLY REAL MODE)
+            # In Real Mode (is_live=True), never auto-close CoinDCX positions at a loss;
+            # only close on profit targets, trailing profit locks, or manual user close.
             # =========================================================================
-            sl = float(p.get("stop_pct") or (0.55 if p.get("is_live") else 0.85))
-            if p.get("is_live"):
-                sl = max(sl, 0.50)
-            if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
-                self.close(p, price, f"SMART_STOP_PROTECT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 1A: FAST DOWNSIDE STOP-LOSS GUARD (PROTECTS ACCUMULATED PROFITS)
-            # Never allow a trade to sink into excessive loss
-            # =========================================================================
-            if p.get("is_live"):
-                if current_pnl <= -20.0 or move_pct <= -max(sl * 1.15, 0.70):
-                    self.close(p, price, f"REAL_CAPITAL_PRESERVATION_STOP_LOSS ({move_pct:.2f}% | -${abs(current_pnl):.2f})")
+            if not p.get("is_live"):
+                sl = float(p.get("stop_pct") or 0.85)
+                if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
+                    self.close(p, price, f"SMART_STOP_PROTECT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
                     continue
-            elif roi_pct <= -25.0 or current_pnl <= -250.0:
-                self.close(p, price, f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(current_pnl):.2f})")
-                continue
 
-            # =========================================================================
-            # RULE 1B: TECHNICAL STOP LOSS & PERCENTAGE INVALIDATION
-            # =========================================================================
-            if move_pct <= -sl:
-                self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
-                continue
+                if roi_pct <= -25.0 or current_pnl <= -250.0:
+                    self.close(p, price, f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(current_pnl):.2f})")
+                    continue
+
+                if move_pct <= -sl:
+                    self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
+                    continue
 
             # =========================================================================
             # RULE 2: INSTANT FLASH PROFIT SPIKE CAPTURE (+$250 / +$500 / +$1,000+ SPIKES)
