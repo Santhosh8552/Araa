@@ -4018,7 +4018,14 @@ async function refreshExnessTerminal() {
   } catch (err) {
     console.error("Error refreshing CoinDCX terminal:", err);
     const statusBadge = $("exness_status_badge");
-    if (statusBadge && (statusBadge.textContent === "CHECKING..." || statusBadge.textContent === "READY FOR SETUP")) {
+    if (S.broker && S.broker.is_coindcx && (S.broker.is_connected || S.broker.is_live)) {
+      if (statusBadge) {
+        statusBadge.textContent = "🔴 COINDCX LIVE (REAL MONEY)";
+        statusBadge.style.background = "rgba(239,68,68,0.2)";
+        statusBadge.style.color = "#f87171";
+        statusBadge.style.borderColor = "#ef4444";
+      }
+    } else if (statusBadge && (statusBadge.textContent === "CHECKING..." || statusBadge.textContent === "READY FOR SETUP")) {
       statusBadge.textContent = "⚪ COINDCX DISCONNECTED";
       statusBadge.style.background = "rgba(100,116,139,0.2)";
       statusBadge.style.color = "#94a3b8";
@@ -4763,6 +4770,12 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
   }
 
   // Immediately render topbar, portfolio & rules bar before network calls
+  if ($("exness_status_badge")) {
+    $("exness_status_badge").textContent = "🔴 COINDCX LIVE (REAL MONEY)";
+    $("exness_status_badge").style.background = "rgba(239,68,68,0.2)";
+    $("exness_status_badge").style.color = "#f87171";
+    $("exness_status_badge").style.borderColor = "#ef4444";
+  }
   renderTopbar();
   if (typeof renderGoal === "function") renderGoal(S.pf);
   if (typeof renderKpi === "function") renderKpi(S.pf);
