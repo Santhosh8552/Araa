@@ -128,7 +128,8 @@ class StrategyEngine:
             market_type = "FUTURES"
         enabled = 1 if int(cfg.get("enabled", (existing or {}).get("enabled", 1))) else 0
         risk_pct = max(0.1, min(25.0, float(cfg.get("risk_per_trade_pct", (existing or {}).get("risk_per_trade_pct", 2.0)))))
-        max_pos = max(1, min(20, int(cfg.get("max_open_positions", (existing or {}).get("max_open_positions", 3)))))
+        raw_max_pos = int(cfg.get("max_open_positions", (existing or {}).get("max_open_positions", 10)))
+        max_pos = 999 if (raw_max_pos >= 999 or raw_max_pos <= 0) else max(1, min(100, raw_max_pos))
         max_daily_loss = max(1.0, min(10000.0, float(cfg.get("max_daily_loss_usd", (existing or {}).get("max_daily_loss_usd", 15.0)))))
         cooldown = max(0.0, min(3600.0, float(cfg.get("cooldown_seconds", (existing or {}).get("cooldown_seconds", 60.0)))))
         sl_pct = max(0.1, min(25.0, float(cfg.get("stop_loss_pct", (existing or {}).get("stop_loss_pct", 0.50)))))
@@ -166,6 +167,48 @@ class StrategyEngine:
             ),
         )
         return cls.get_strategy(user_id, sid) or {}
+
+    @classmethod
+    def sync_from_bot_config(
+        cls,
+        user_id: int,
+        *,
+        allowed_directions: Optional[str] = None,
+        max_open_positions: Optional[int] = None,
+        max_daily_loss_usd: Optional[float] = None,
+        risk_per_trade_pct: Optional[float] = None,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
+        leverage: Optional[float] = None,
+    ) -> None:
+        """Keep default user strategy rules aligned with saved bot settings."""
+        cls.ensure_user_strategies(user_id)
+        sets = ["updated_at=?"]
+        vals: List[Any] = [time.time()]
+        if allowed_directions and str(allowed_directions).upper() in ("BOTH", "LONG", "SHORT"):
+            sets.append("allowed_directions=?")
+            vals.append(str(allowed_directions).upper())
+        if max_open_positions is not None:
+            raw_m = int(max_open_positions)
+            sets.append("max_open_positions=?")
+            vals.append(999 if (raw_m >= 999 or raw_m <= 0) else max(1, min(100, raw_m)))
+        if max_daily_loss_usd is not None:
+            sets.append("max_daily_loss_usd=?")
+            vals.append(max(5.0, min(50000.0, float(max_daily_loss_usd))))
+        if risk_per_trade_pct is not None:
+            sets.append("risk_per_trade_pct=?")
+            vals.append(max(0.1, min(25.0, float(risk_per_trade_pct))))
+        if stop_loss_pct is not None:
+            sets.append("stop_loss_pct=?")
+            vals.append(max(0.1, min(50.0, float(stop_loss_pct))))
+        if take_profit_pct is not None:
+            sets.append("take_profit_pct=?")
+            vals.append(max(0.2, min(100.0, float(take_profit_pct))))
+        if leverage is not None:
+            sets.append("leverage=?")
+            vals.append(max(1.0, min(500.0, float(leverage))))
+        vals.append(user_id)
+        write(f"UPDATE strategy_configs SET {', '.join(sets)} WHERE user_id=?", tuple(vals))
 
     @classmethod
     def get_or_create_webhook_secret(cls, user_id: int) -> str:
@@ -223,9 +266,9 @@ class StrategyEngine:
             (user_id,),
         )
         open_cnt = int((open_cnt_row or {}).get("c") or 0)
-        max_pos = int(strategy.get("max_open_positions") or 3)
-        if open_cnt >= max_pos:
-            return False, f"Max open positions limit reached ({open_cnt}/{max_pos})."
+        raw_max = int(strategy.get("max_open_positions") or 10)
+        if raw_max < 999 and open_cnt >= raw_max:
+            return False, f"Max open positions limit reached ({open_cnt}/{raw_max})."
 
         # Daily loss limit check (today UTC)
         day_start = time.time() - (time.time() % 86400)
@@ -234,7 +277,7 @@ class StrategyEngine:
             (user_id, day_start),
         )
         today_pnl = float((loss_row or {}).get("pnl") or 0.0)
-        max_daily_loss = float(strategy.get("max_daily_loss_usd") or 15.0)
+        max_daily_loss = float(strategy.get("max_daily_loss_usd") or 250.0)
         if today_pnl <= -abs(max_daily_loss):
             return False, f"Max daily loss limit reached (${today_pnl:.2f} <= -${max_daily_loss:.2f})."
 

@@ -1956,6 +1956,17 @@ def bot_config():
     try:
         write("UPDATE broker_connections SET leverage=?, max_positions=?, market_focus=? WHERE user_id=?",
               (leverage, max_pos, market_focus, u["id"]))
+        from strategy_engine import StrategyEngine
+        StrategyEngine.sync_from_bot_config(
+            u["id"],
+            allowed_directions=trade_dir,
+            max_open_positions=max_pos,
+            max_daily_loss_usd=daily_loss,
+            risk_per_trade_pct=risk,
+            stop_loss_pct=sl_pct,
+            take_profit_pct=tp_pct,
+            leverage=leverage,
+        )
     except Exception:
         pass
     bot._log(u["id"], "CONFIG", f"bot_enabled={enabled} max_positions={max_pos} risk={risk}% mode={mode} leverage={leverage:.0f}x direction={trade_dir} focus={market_focus}" +
@@ -2642,6 +2653,16 @@ def real_bot_toggle_state():
         write("UPDATE real_bot_configs SET bot_status='RUNNING', emergency_shutdown=0, updated_at=? WHERE user_id=?", (now, u["id"]))
         write("UPDATE broker_connections SET is_live_active=?, market_focus='FUTURES_USD', leverage=?, last_synced_at=? WHERE user_id=?", (live_active_target, user_lev, now, u["id"]))
         write("UPDATE users SET bot_enabled=1, bot_market_focus='FUTURES_USD', bot_leverage=?, bot_activated_at=0 WHERE id=?", (user_lev, u["id"]))
+        try:
+            from strategy_engine import StrategyEngine
+            StrategyEngine.sync_from_bot_config(
+                u["id"],
+                allowed_directions=req_dir if req_dir in ("BOTH", "SHORT", "LONG") else None,
+                max_open_positions=max_pos if raw_max is not None else None,
+                leverage=user_lev,
+            )
+        except Exception:
+            pass
         bot.start()
         threading.Thread(target=bot.cycle, daemon=True).start()
         if not is_offline and live_active_target == 1:
@@ -3806,6 +3827,11 @@ def coindcx_control():
         now_ts = time.time()
         write("UPDATE users SET bot_leverage=? WHERE id=?", (lev_val, u["id"]))
         write("UPDATE broker_connections SET leverage=? WHERE user_id=?", (lev_val, u["id"]))
+        try:
+            from strategy_engine import StrategyEngine
+            StrategyEngine.sync_from_bot_config(u["id"], leverage=lev_val)
+        except Exception:
+            pass
         bot._log(u["id"], "COINDCX_SETTINGS", f"⚡ AraaBot Real-Mode Leverage set to: {lev_val:.0f}x")
         return ok(success=True, leverage=lev_val, message=f"⚡ Leverage set to {lev_val:.0f}x")
 
@@ -3814,6 +3840,11 @@ def coindcx_control():
         if dir_val not in ("BOTH", "SHORT", "LONG"):
             dir_val = "BOTH"
         write("UPDATE users SET bot_trade_direction=? WHERE id=?", (dir_val, u["id"]))
+        try:
+            from strategy_engine import StrategyEngine
+            StrategyEngine.sync_from_bot_config(u["id"], allowed_directions=dir_val)
+        except Exception:
+            pass
         # Close any open positions in the opposite direction immediately
         closed_opp = 0
         if dir_val in ("SHORT", "LONG"):
@@ -3883,46 +3914,84 @@ def api_coindcx_ai_decision():
 
 @api.route("/api/coindcx/order/execute", methods=["POST"])
 def api_coindcx_order_execute():
-    """Live Order Submission to CoinDCX with server-side risk validation."""
+    """Live Order Submission to CoinDCX Futures (LONG/SHORT) or Spot with risk validation."""
     u = current_user()
     if not u:
         return fail("Not logged in", 401)
-    
+
     data = request.get_json(silent=True) or {}
-    symbol = str(data.get("symbol") or data.get("market") or "BTCINR").strip()
-    side = str(data.get("side") or "BUY").upper().strip()
-    margin = float(data.get("margin") or 500.0)
-    leverage = float(data.get("leverage") or 10.0)
+    symbol = str(data.get("symbol") or data.get("market") or "BTCUSDT").strip().upper()
+    raw_side = str(data.get("side") or "LONG").upper().strip()
+    if raw_side in ("BUY", "LONG"):
+        norm_side = "LONG"
+        exch_side = "buy"
+    elif raw_side in ("SELL", "SHORT"):
+        norm_side = "SHORT"
+        exch_side = "sell"
+    else:
+        return fail(f"Side must be LONG/BUY or SHORT/SELL (got {raw_side})", 400)
+
+    try:
+        margin = float(data.get("margin") or 0.0)
+    except (TypeError, ValueError):
+        margin = 0.0
+    if margin <= 0:
+        return fail("Enter order margin above $0.00", 400)
+
+    leverage = max(1.0, min(500.0, float(data.get("leverage") or 10.0)))
     quantity = float(data.get("quantity") or 0.0)
-    order_type = str(data.get("order_type") or "market_order").strip()
+    raw_otype = str(data.get("order_type") or "market_order").strip().lower()
+    exec_order_type = "limit_order" if "limit" in raw_otype else "market_order"
     price = float(data.get("price")) if data.get("price") else None
-    
+    if exec_order_type == "limit_order" and (not price or price <= 0):
+        return fail("Limit price must be above 0", 400)
+
     from coindcx_gateway import get_user_coindcx_client, to_coindcx_market, verify_coindcx_risk, get_live_tickers
     cdx = get_user_coindcx_client(u["id"])
-    if not cdx:
-        return fail("CoinDCX API not connected. Connect your keys in Institutional Terminal.", 400)
-    
-    # 1. Independent Risk Check
+    if not cdx or cdx.is_offline:
+        return fail("CoinDCX Live API not connected. Connect your CoinDCX API key in Real Mode first.", 400)
+
+    # Normalize CoinDCX Futures USDT pair for leveraged and SHORT/SELL trades
+    use_futures = bool(leverage > 1.0 or norm_side == "SHORT" or symbol.endswith("USDT") or symbol.startswith("B-"))
+    fut_sym = symbol
+    if use_futures:
+        if fut_sym.endswith("INR"):
+            fut_sym = fut_sym[:-3] + "USDT"
+        elif not fut_sym.endswith("USDT") and not fut_sym.startswith("B-"):
+            fut_sym = fut_sym + "USDT"
+
     tickers = get_live_tickers()
-    mkt = to_coindcx_market(symbol)
-    cur_p = price or (tickers.get(mkt, {}).get("last_price") or tickers.get(symbol, {}).get("last_price") or 100.0)
-    
-    # Derive quantity from margin & leverage if not given
+    mkt = to_coindcx_market(fut_sym if use_futures else symbol)
+    fut_pair = cdx.futures.to_futures_pair(fut_sym) if use_futures else mkt
+    cur_p = float(
+        (feed.live_price(fut_sym) if use_futures else 0)
+        or tickers.get(fut_sym, {}).get("last_price")
+        or (tickers.get(fut_pair, {}).get("last_price") if use_futures else 0)
+        or tickers.get(mkt, {}).get("last_price")
+        or feed.live_price(symbol)
+        or price
+        or 0.0
+    )
+    if cur_p <= 0:
+        return fail(f"No live market price available for {fut_sym}", 400)
+    if use_futures and symbol.endswith("INR") and fut_pair not in tickers and fut_sym not in tickers and not feed.live_price(fut_sym):
+        cur_p = cur_p / 90.0
+
+    # Derive contract quantity from margin & effective leverage
+    eff_lev = cdx.futures.resolve_leverage(fut_sym, leverage, exch_side) if use_futures else 1.0
     if not quantity and cur_p > 0:
-        quantity = round((margin * leverage) / cur_p, 6)
-        
-    est_inr_amount = cur_p * quantity if symbol.endswith("INR") else (cur_p * quantity * 90.0)
-    
-    risk_ok, risk_msg = verify_coindcx_risk(u["id"], symbol, requested_amount_inr=margin, leverage=leverage, side=side, price=cur_p)
+        quantity = round((margin * eff_lev) / cur_p, 6)
+
+    risk_ok, risk_msg = verify_coindcx_risk(u["id"], fut_sym if use_futures else symbol, requested_amount_inr=margin, leverage=eff_lev, side=norm_side, price=cur_p, is_manual=True)
     if not risk_ok:
         return fail(f"Risk Engine Rejection: {risk_msg}", 400)
 
-    # 1b. Araa AI Pre-Entry Gemini Evaluation
+    # Advisory Araa AI Evaluation (logs setup context without blocking explicit user BUY/SELL clicks)
     now = time.time()
-    tp = float(data.get("target_pct") or 0.40)
-    sl = float(data.get("stop_pct") or 0.20)
-    from gemini_advisor import predict_pre_entry, MODE_CONFIGS
-    row_q = feed.quote(symbol) or {}
+    tp = float(data.get("target_pct") or 0.0)
+    sl = float(data.get("stop_pct") or 0.0)
+    from gemini_advisor import predict_pre_entry
+    row_q = feed.quote(fut_sym) or feed.quote(symbol) or {}
     rsi_val = float(row_q.get("rsi") or 50.0)
     chg_pct = float(row_q.get("change_pct") or 0.0)
     slope_z = float(row_q.get("slope_z") or 0.0)
@@ -3933,90 +4002,95 @@ def api_coindcx_order_execute():
         "tv_ma": row_q.get("tv_ma")
     }
     pred = predict_pre_entry(
-        symbol=symbol,
+        symbol=fut_sym if use_futures else symbol,
         category="CRYPTO",
         price=cur_p,
         change_pct=chg_pct,
         rsi_val=rsi_val,
         slope_z=slope_z,
-        direction=side,
+        direction=norm_side,
         technical_conf=0.92,
-        target_pct=tp,
-        stop_pct=sl,
+        target_pct=tp or 1.0,
+        stop_pct=sl or 0.5,
         mode=user_mode,
-        leverage=leverage,
+        leverage=eff_lev,
         tv_indicators=tv_indicators
     )
     win_p = int(pred.get("win_probability") or 0)
-    mode_req_win = MODE_CONFIGS.get(user_mode, {}).get("min_win_rate", 80)
-    min_mode_win = max(80, mode_req_win)
 
-    if not pred.get("approved") or win_p < min_mode_win:
-        reject_reason = pred.get("rationale") or f"Win probability {win_p}% below required {min_mode_win}% threshold"
-        write("INSERT INTO ai_predictions(user_id,symbol,category,direction,action,entry_price,target_price,"
-              "stop_price,target_pct,stop_pct,risk_reward,win_probability,confidence,rationale,mode,"
-              "post_entry_status,outcome,created_at) "
-              "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'REJECTED','CANCELLED',?)",
-              (u["id"], symbol, "CRYPTO", pred["direction"], pred["action"],
-               pred["entry_price"], pred["target_price"], pred["stop_price"], pred["target_pct"],
-               pred["stop_pct"], pred["risk_reward"], win_p, pred["confidence"],
-               reject_reason, user_mode, now))
-        bot._log(u["id"], "AI_SKIP", f"Araa AI blocked manual CoinDCX {side} {symbol} ({win_p}% Win Prob): {reject_reason}")
-        return fail(f"Araa AI Filter Blocked: {reject_reason} (Win Probability: {win_p}% < {min_mode_win}%)", 400)
-    
-    # 2. Execute Order on CoinDCX
+    # Execute on CoinDCX Futures (supports both BUY/LONG and SELL/SHORT) or Spot
     client_ord_id = f"araa_{int(time.time()*1000)}_{u['id']}"
-    # Calculate spot quantity if routing to spot adapter
-    spot_exec_qty = round((margin / cur_p) * 0.95, 6) if (leverage > 1 and not symbol.endswith("USDT")) else round(((margin/90.0) / cur_p) * 0.95, 6) if leverage > 1 else quantity
-    ok_ord, res_ord = cdx.place_order(
-        side=side,
-        market=mkt,
-        quantity=spot_exec_qty,
-        order_type=order_type,
-        price=price,
-        client_order_id=client_ord_id
-    )
+    tp_price = None
+    sl_price = None
+    if tp > 0 and cur_p > 0:
+        tp_price = round(cur_p * (1.0 + tp / 100.0) if norm_side == "LONG" else cur_p * (1.0 - tp / 100.0), 6)
+    if sl > 0 and cur_p > 0:
+        sl_price = round(cur_p * (1.0 - sl / 100.0) if norm_side == "LONG" else cur_p * (1.0 + sl / 100.0), 6)
+
+    if use_futures:
+        ok_ord, res_ord = cdx.futures.place_futures_order(
+            symbol=fut_sym,
+            side=exch_side,
+            quantity=quantity,
+            leverage=eff_lev,
+            order_type=exec_order_type,
+            price=price if exec_order_type == "limit_order" else cur_p,
+            stop_loss=sl_price,
+            take_profit=tp_price,
+            client_order_id=client_ord_id,
+        )
+    else:
+        ok_ord, res_ord = cdx.place_order(
+            side=exch_side,
+            market=mkt,
+            quantity=quantity,
+            order_type=exec_order_type,
+            price=price,
+            client_order_id=client_ord_id
+        )
     if not ok_ord:
         err_msg = res_ord.get("message") if isinstance(res_ord, dict) else str(res_ord)
         return fail(f"CoinDCX Execution Error: {err_msg}", 400)
-    
-    fill_price = float(res_ord.get("avg_price") or res_ord.get("price_per_unit") or cur_p)
-    exchange_ord_id = str(res_ord.get("id") or client_ord_id)
-    
-    # 3. Store verified order & position in database
+
+    fill_price = float((res_ord or {}).get("avg_price") or (res_ord or {}).get("price") or (res_ord or {}).get("price_per_unit") or cur_p)
+    filled_qty = float((res_ord or {}).get("total_quantity") or (res_ord or {}).get("filled_quantity") or quantity)
+    exchange_ord_id = str((res_ord or {}).get("id") or client_ord_id)
+    store_sym = fut_sym if use_futures else symbol
+
+    # Store verified order & position in database
     pos_id = write(
         "INSERT INTO positions(user_id, symbol, side, qty, entry_price, current_price, margin, leverage, "
         "target_pct, stop_pct, status, opened_at, source, category, is_live, ai_win_prob, signal_reason, feed_source) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, 'COINDCX LIVE', 'CRYPTO', 1, ?, ?, 'COINDCX_LIVE')",
-        (u["id"], symbol, "LONG" if side == "BUY" else "SHORT", quantity, fill_price, fill_price, margin, leverage,
-         tp, sl, now, win_p, pred.get("rationale") or "Araa AI Pre-Entry Approved")
+        (u["id"], store_sym, norm_side, filled_qty, fill_price, fill_price, margin, eff_lev,
+         tp or 1.0, sl or 0.0, now, win_p, pred.get("rationale") or f"Manual CoinDCX {norm_side} Order")
     )
     write(
         "INSERT INTO orders(user_id, symbol, side, price, qty, status, margin, leverage, target_pct, stop_pct, created_at, filled_at, position_id, is_live) "
         "VALUES (?, ?, ?, ?, ?, 'FILLED', ?, ?, ?, ?, ?, ?, ?, 1)",
-        (u["id"], symbol, side, fill_price, quantity, margin, leverage, tp, sl, now, now, pos_id)
+        (u["id"], store_sym, norm_side, fill_price, filled_qty, margin, eff_lev, tp or 1.0, sl or 0.0, now, now, pos_id)
     )
-    # Link confirmed Araa AI prediction to position
     write("INSERT INTO ai_predictions(user_id,symbol,category,direction,action,entry_price,target_price,"
           "stop_price,target_pct,stop_pct,risk_reward,win_probability,confidence,rationale,mode,"
           "post_entry_status,outcome,created_at,position_id) "
           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'MONITORING','PENDING',?,?)",
-          (u["id"], symbol, "CRYPTO", pred["direction"], pred["action"],
-           pred["entry_price"], pred["target_price"], pred["stop_price"], pred["target_pct"],
-           pred["stop_pct"], pred["risk_reward"], win_p, pred["confidence"],
+          (u["id"], store_sym, "CRYPTO", norm_side, exch_side.upper(),
+           fill_price, pred["target_price"], pred["stop_price"], tp or pred["target_pct"],
+           sl or pred["stop_pct"], pred["risk_reward"], win_p, pred["confidence"],
            pred["rationale"], user_mode, now, pos_id))
-    bot._log(u["id"], "COINDCX_ORDER_FILLED", f"✓ Order Filled on CoinDCX: {side} {quantity} {symbol} @ ${fill_price:,.2f} [ID: {exchange_ord_id}] (AI Win Prob: {win_p}%)")
-    
+    bot._log(u["id"], "COINDCX_ORDER_FILLED", f"✓ Order Filled on CoinDCX Futures: {norm_side} ({exch_side.upper()}) {filled_qty} {store_sym} @ ${fill_price:,.4f} ({eff_lev:.0f}x) [ID: {exchange_ord_id}]")
+
     return ok(
         success=True,
         order_id=exchange_ord_id,
         client_order_id=client_ord_id,
-        symbol=symbol,
-        side=side,
+        symbol=store_sym,
+        side=norm_side,
+        leverage=eff_lev,
         fill_price=fill_price,
-        quantity=quantity,
+        quantity=filled_qty,
         status="FILLED",
-        message=f"✓ Order filled on CoinDCX @ ${fill_price:,.2f}"
+        message=f"✓ {norm_side} filled on CoinDCX @ ${fill_price:,.4f} ({eff_lev:.0f}x)"
     )
 
 
@@ -5409,15 +5483,16 @@ def manual_trade():
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
     symbol = (data.get("symbol") or "").upper()
-    side = (data.get("side") or "LONG").upper()
+    raw_side = (data.get("side") or "LONG").upper().strip()
+    side = "LONG" if raw_side in ("BUY", "LONG") else ("SHORT" if raw_side in ("SELL", "SHORT") else raw_side)
     margin = round(float(data.get("margin") or 0), 2)
     leverage = max(1.0, min(500.0, float(data.get("leverage") or 1.0)))
     if not query_one("SELECT symbol FROM instruments WHERE symbol=?", (symbol,)):
         return fail(f"Unknown pair {symbol}")
     if side not in ("LONG", "SHORT"):
         return fail("Side must be LONG or SHORT")
-    if margin < 15:
-        return fail("Trade size must be at least Rs 15")
+    if margin < 1.0:
+        return fail("Trade size must be at least $1.00")
     b_conn = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
     is_live_flag = 1 if (b_conn and b_conn["is_live_active"]) else 0
 
@@ -5468,21 +5543,6 @@ def manual_trade():
         tv_indicators=tv_indicators
     )
     win_p = int(pred.get("win_probability") or 0)
-    mode_req_win = MODE_CONFIGS.get(user_mode, {}).get("min_win_rate", 80)
-    min_mode_win = max(80, mode_req_win) if is_live_flag else 60
-
-    if is_live_flag and (not pred.get("approved") or win_p < min_mode_win):
-        reject_reason = pred.get("rationale") or f"Win probability {win_p}% below required {min_mode_win}% threshold"
-        write("INSERT INTO ai_predictions(user_id,symbol,category,direction,action,entry_price,target_price,"
-              "stop_price,target_pct,stop_pct,risk_reward,win_probability,confidence,rationale,mode,"
-              "post_entry_status,outcome,created_at) "
-              "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'REJECTED','CANCELLED',?)",
-              (u["id"], symbol, category, pred["direction"], pred["action"],
-               pred["entry_price"], pred["target_price"], pred["stop_price"], pred["target_pct"],
-               pred["stop_pct"], pred["risk_reward"], win_p, pred["confidence"],
-               reject_reason, user_mode, now))
-        bot._log(u["id"], "AI_SKIP", f"Araa AI blocked manual {side} {symbol} ({win_p}% Win Prob): {reject_reason}")
-        return fail(f"Araa AI Filter Blocked: {reject_reason} (Win Probability: {win_p}% < {min_mode_win}%)", 400)
 
     # Real Broker & Exness MT4 Bridge for Speed Trade / Instant Execution
     real_res = None
@@ -5593,7 +5653,8 @@ def place_order():
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
     symbol = (data.get("symbol") or "").upper()
-    side = (data.get("side") or "LONG").upper()
+    raw_side = (data.get("side") or "LONG").upper().strip()
+    side = "LONG" if raw_side in ("BUY", "LONG") else ("SHORT" if raw_side in ("SELL", "SHORT") else raw_side)
     price = round(float(data.get("price") or 0), 8)
     margin = round(float(data.get("margin") or 0), 2)
     qty = round(float(data.get("qty") or 0), 8)
@@ -5618,8 +5679,8 @@ def place_order():
     # exactly the margin capital is locked.
     if margin > 0:
         qty = round((margin * leverage) / price, 8)
-    if margin <= 100:
-        return fail("Order size must be above Rs 100")
+    if margin < 1.0:
+        return fail("Order size must be at least $1.00")
     w = wallet_of(u["id"])
     if margin > float(w.get("deposit_balance") or 0.0):
         return fail(f"Only ${float(w.get('deposit_balance') or 0.0):.2f} available for new orders")

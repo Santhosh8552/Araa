@@ -104,6 +104,34 @@ def _request(endpoint: str, method: str = "GET", body: Optional[dict] = None,
              api_key: Optional[str] = None, api_secret: Optional[str] = None,
              base_url: str = BASE_URL, timeout: int = 10, retries: int = 1) -> Tuple[bool, Any]:
     """Helper to execute signed or public requests to CoinDCX with robust error handling and retry."""
+    if os.environ.get("ARAA_E2E_MOCK_COINDCX") == "1" and api_key and str(api_key).startswith("e2e_"):
+        ep = endpoint.split("?")[0]
+        if ep == "/exchange/v1/users/info":
+            return True, {"first_name": "E2E", "last_name": "Verified Trader", "email": "e2e@araabot.in", "coindcx_id": "e2e-cdx-1", "kyc_status": "VERIFIED"}
+        if ep in ("/exchange/v1/users/balances", "/exchange/v1/orders/active_orders", "/exchange/v1/orders/trade_history", "/exchange/v1/derivatives/futures/orders"):
+            return True, []
+        if ep == "/exchange/v1/derivatives/futures/wallets":
+            return True, [{"currency_short_name": "USDT", "balance": 50.0, "locked_balance": 0.0}]
+        if ep == "/exchange/v1/derivatives/futures/positions":
+            return True, []
+        if ep == "/exchange/v1/derivatives/futures/positions/update_leverage":
+            return True, {"pair": (body or {}).get("pair"), "leverage": (body or {}).get("leverage")}
+        if ep == "/exchange/v1/derivatives/futures/orders/create":
+            ord_body = (body or {}).get("order") or {}
+            return True, [{
+                "id": f"e2e_fut_{int(time.time()*1000)}",
+                "pair": ord_body.get("pair") or "B-BTC_USDT",
+                "side": ord_body.get("side") or "sell",
+                "total_quantity": ord_body.get("total_quantity") or 0.001,
+                "leverage": ord_body.get("leverage") or 100,
+                "avg_price": ord_body.get("price") or 0.0,
+                "status": "filled",
+            }]
+        if ep == "/exchange/v1/derivatives/futures/positions/create_tpsl":
+            return True, {"stop_loss_order_id": "e2e_sl", "take_profit_order_id": "e2e_tp"}
+        if ep == "/exchange/v1/derivatives/futures/positions/exit":
+            return True, {"status": "exited"}
+
     url = f"{base_url}{endpoint}"
 
     for attempt in range(retries + 1):
@@ -227,10 +255,11 @@ def get_live_tickers(force: bool = False) -> Dict[str, Dict[str, Any]]:
         for fb_k, fb_v in futures_fallbacks.items():
             if fb_k not in parsed_map:
                 parsed_map[fb_k] = fb_v
-            # Also register under B- prefix for direct contract matching
+            # Register under B- prefix using LIVE ticker first so stale fallback prices never override live market data
             b_key = f"B-{fb_k.replace('USDT', '')}_USDT"
             if b_key not in parsed_map:
-                b_copy = dict(fb_v)
+                b_src = parsed_map.get(fb_k) or fb_v
+                b_copy = dict(b_src)
                 b_copy["market"] = b_key
                 parsed_map[b_key] = b_copy
 
@@ -327,7 +356,7 @@ def _get_live_usdt_inr_rate() -> float:
 
 def parse_futures_wallets(raw_wallets: Any, usdt_inr_rate: Optional[float] = None) -> Dict[str, Any]:
     """Parses CoinDCX GET /exchange/v1/derivatives/futures/wallets response."""
-    rate = float(usdt_inr_rate or _get_live_usdt_rate())
+    rate = float(usdt_inr_rate or _get_live_usdt_inr_rate())
     rows = raw_wallets if isinstance(raw_wallets, list) else (
         raw_wallets.get("wallets") if isinstance(raw_wallets, dict) and isinstance(raw_wallets.get("wallets"), list) else []
     )
@@ -383,7 +412,7 @@ def _merge_spot_and_futures_summary(spot_summary: Optional[Dict[str, Any]], fut_
     """Combines Spot balances and Derivatives Futures wallet balances into one unified portfolio summary."""
     spot = spot_summary or {}
     fut = fut_summary or {}
-    rate = float(spot.get("usdt_inr_rate") or fut.get("usdt_inr_rate") or _get_live_usdt_rate())
+    rate = float(spot.get("usdt_inr_rate") or fut.get("usdt_inr_rate") or _get_live_usdt_inr_rate())
 
     inr_free = float(spot.get("inr_free") or 0.0) + float(fut.get("fut_inr_free") or 0.0)
     inr_locked = float(spot.get("inr_locked") or 0.0) + float(fut.get("fut_inr_locked") or 0.0)
@@ -1428,8 +1457,7 @@ class CoinDCXFuturesAdapter:
         if pair_clean in tickers and float(tickers[pair_clean].get("last_price") or 0) > 0:
             cur_p_usdt = float(tickers[pair_clean]["last_price"])
         elif cur_p > 0:
-            # If price was passed in INR (> 2000 for BTC/ETH or pair ends with INR), convert to USDT ($1 ≈ $90)
-            cur_p_usdt = (cur_p / 90.0) if (cur_p > 1000.0 or str(symbol).upper().endswith("INR")) else cur_p
+            cur_p_usdt = (cur_p / 90.0) if str(symbol).upper().endswith("INR") else cur_p
         else:
             cur_p_usdt = 1.0
 
@@ -2265,7 +2293,7 @@ def generate_coindcx_ai_decision(symbol: str, interval: str = "1m", user_id: Opt
 
 def verify_coindcx_risk(user_id: int, symbol: str, requested_amount_inr: float = 1000.0, leverage: float = 1.0,
                         side: Optional[str] = None, price: Optional[float] = None,
-                        ai_win_prob: Optional[float] = None) -> Tuple[bool, str]:
+                        ai_win_prob: Optional[float] = None, is_manual: bool = False) -> Tuple[bool, str]:
     """
     AraaBot Institutional Real-Trading Adapter Gatekeeper:
     Validates user risk parameters and enforces ALL AraaBot rules before live CoinDCX order placement.
@@ -2309,6 +2337,11 @@ def verify_coindcx_risk(user_id: int, symbol: str, requested_amount_inr: float =
         msg = f"AraaBot Rule 2: Order margin ${order_margin:,.2f} exceeds configured maximum order limit of ${max_order_size:,.2f}"
         log_audit_event(user_id, "ORDER_REJECTED_RISK", msg, severity="WARNING", details={"requested_margin": order_margin, "limit": max_order_size})
         return False, msg
+
+    # Explicit manual UI ticket orders respect emergency shutdown, daily loss cap, and max order margin,
+    # without being blocked by the auto-trader's active slot count or automated AI filters.
+    if is_manual:
+        return True, "AraaBot live manual order rails verified: OK"
 
     # Rule 3: Open Positions Limit Check
     is_unlimited = (max_positions >= 999 or max_positions <= 0 or user_bot_max >= 999)

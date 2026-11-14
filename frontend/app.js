@@ -7338,14 +7338,16 @@ function pickPair(symbol, side, preferAiChart) {
   document.querySelectorAll("#chart_mode [data-mode]").forEach(x => {
     x.classList.toggle("active", x.dataset.mode === S.chartMode);
   });
-  if (side === "BUY" || side === "SELL") {
-    S.side = side;
+  if (side === "BUY" || side === "SELL" || side === "LONG" || side === "SHORT") {
+    const normSide = (side === "BUY" || side === "LONG") ? "LONG" : "SHORT";
+    S.side = normSide;
     document.querySelectorAll("[data-side]").forEach(x => {
-      x.classList.toggle("active", x.dataset.side === side);
+      x.classList.toggle("active", x.dataset.side === normSide);
     });
   }
   loadChart();
   loadWatch();
+  renderTicket();
 
   // Scroll smoothly to chart panel if viewport is mobile/tablet or chart is not currently visible
   const chartEl = document.querySelector(".chartpanel");
@@ -7436,58 +7438,60 @@ $("t_submit").onclick = async () => {
     const lev = S.ticketLev || 10;
     const tpVal = Number($("t_tp_in") ? $("t_tp_in").value : 0) || 0;
     const slVal = Number($("t_sl_in") ? $("t_sl_in").value : 0) || 0;
+    const margin = Number($("t_margin").value) || 0;
+    const refPrice = (S.otype === "LIMIT" ? Number($("t_price_in").value) : Number(S.quote.price)) || Number(S.quote.price) || 0;
     let target_pct = 0, stop_pct = 0;
+    if (tpVal > 0 && refPrice > 0) target_pct = Math.round(Math.abs(tpVal - refPrice) / refPrice * 10000) / 100;
+    if (slVal > 0 && refPrice > 0) stop_pct = Math.round(Math.abs(refPrice - slVal) / refPrice * 10000) / 100;
+    if (margin <= 0) {
+      $("t_msg").className = "msg red"; $("t_msg").textContent = "Enter an order amount above $0.00.";
+      return;
+    }
 
     const isLive = S.broker && S.broker.is_live;
     const isCoinDcx = Boolean(S.broker && (S.broker.name === "COINDCX" || S.broker.is_coindcx || S.broker.broker_name === "COINDCX"));
 
     if (isLive && isCoinDcx) {
-      const margin = Number($("t_margin").value);
       const res = await call("/api/coindcx/order/execute", {
         method: "POST",
         body: {
           symbol: S.symbol,
           side: S.side,
           order_type: S.otype || "MARKET",
-          price: Number($("t_price_in").value) || Number(S.quote.price) || 0,
+          price: refPrice,
           margin: margin,
-          leverage: lev
+          leverage: lev,
+          target_pct: target_pct,
+          stop_pct: stop_pct
         }
       });
       if (res && res.success) {
-        toast(`⚡ Live CoinDCX Order Executed! Filled ${S.side} ${S.symbol} · ${inr(margin)} margin`);
-        $("t_msg").className = "msg green"; $("t_msg").textContent = "Order executed live on CoinDCX ($).";
+        toast(`⚡ Live CoinDCX Order Executed! Filled ${res.side || S.side} ${res.symbol || S.symbol} · ${inr(margin)} margin`);
+        $("t_msg").className = "msg green"; $("t_msg").textContent = res.message || "Order executed live on CoinDCX ($).";
         await refreshAccount();
         return;
       }
     }
 
     if (S.otype === "LIMIT") {
-      const price = Number($("t_price_in").value), margin = Number($("t_margin").value);
-      if (tpVal > 0 && price > 0) target_pct = Math.abs(tpVal - price) / price * 100.0;
-      if (slVal > 0 && price > 0) stop_pct = Math.abs(price - slVal) / price * 100.0;
       d = await call("/api/order", {method: "POST", body: {
         symbol: S.symbol,
         side: S.side,
-        price,
+        price: refPrice,
         margin,
         leverage: lev,
-        target_pct: Math.round(target_pct * 100) / 100,
-        stop_pct: Math.round(stop_pct * 100) / 100
+        target_pct,
+        stop_pct
       }});
-      toast(`Limit order resting at ${priceFmt(price)} — ${inr(d.margin)} locked (${lev}x Lev)`);
+      toast(`Limit order resting at ${priceFmt(refPrice)} — ${inr(d.margin)} locked (${lev}x Lev)`);
     } else {
-      const price = S.quote.price || 1;
-      if (tpVal > 0 && price > 0) target_pct = Math.abs(tpVal - price) / price * 100.0;
-      if (slVal > 0 && price > 0) stop_pct = Math.abs(price - slVal) / price * 100.0;
-
       d = await call("/api/trade", {method: "POST", body: {
         symbol: S.symbol, 
         side: S.side,
-        margin: Number($("t_margin").value), 
+        margin, 
         leverage: lev,
-        target_pct: Math.round(target_pct * 100) / 100,
-        stop_pct: Math.round(stop_pct * 100) / 100
+        target_pct,
+        stop_pct
       }});
       toast(`Filled ${S.side} ${S.symbol} @ ${priceFmt(d.entry)} · qty ${qtyFmt(d.qty)} (${lev}x Lev)`);
     }
