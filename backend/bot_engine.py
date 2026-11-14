@@ -1321,11 +1321,17 @@ class Bot:
             return f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
         # RULE 0A: High-Velocity Scalp ROI Harvest (fee-safe across Live & Paper, 1x–500x leverage)
-        scalp_roi_goal = 22.0 if pos_lev >= 25.0 else (15.0 if pos_lev >= 8.0 else 10.0)
-        if (time_held >= 5.0 and move_pct >= 0.30 and roi_pct >= scalp_roi_goal
-                and pnl >= (min_net_profit * 1.15 if is_live else min_net_profit)):
-            if move_pct >= max(0.45, tp_pct * 0.85) or (peak_cash > 0 and pnl <= round(peak_cash * 0.92, 4)):
+        scalp_roi_goal = 12.0 if pos_lev >= 20.0 else 9.0
+        if (time_held >= 3.0 and move_pct >= 0.18 and roi_pct >= scalp_roi_goal
+                and pnl >= (max(0.15, est_fee * 1.5) if is_live else min_net_profit)):
+            if move_pct >= max(0.32, tp_pct * 0.75) or (peak_cash > 0 and pnl <= round(peak_cash * 0.88, 4)):
                 return f"SCALP_QUICK_WIN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # Fast Scalp Velocity Lock: harvest net profit if momentum fades after reaching +$0.12+
+        fast_lock_peak = max(0.12, round(est_fee * 1.6, 4)) if is_live else 0.12
+        if time_held >= 10.0 and peak_cash >= fast_lock_peak and pnl > (est_fee if is_live else 0.02):
+            if pnl <= round(peak_cash * 0.82, 4):
+                return f"SCALP_FAST_PROFIT_LOCK (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
         # RULE 0B: Progressive ROI & Fee-Aware Trailing Stop Ladder (works from +10% ROI upward)
         trail_floor = None
@@ -2424,7 +2430,8 @@ class Bot:
                 if effective_lev < 1.0:
                     self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: CoinDCX contract disallows this direction (0x leverage).")
                     continue
-                margin = round(min(free, base_margin), 4)
+                target_margin = max(base_margin, 8.0) if free >= 20.0 else base_margin
+                margin = round(min(free * 0.25 if free >= 20.0 else free, target_margin), 4)
                 qty = round((margin * effective_lev) / picked["price"], 8)
             else:
                 effective_lev = max(1.0, lev)
