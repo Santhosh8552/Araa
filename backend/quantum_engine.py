@@ -360,11 +360,15 @@ class AdaptiveTrailingEngine:
             elif r_key == "RANGING_COMPRESSION":
                 lock_aggression = 0.65  # Lock profits aggressively in chop
 
-        # Dynamic Rule 1: High Peak Lock (+25% ROI peaked, lock at least 50% of peak)
-        tier1_peak = max(0.10, margin * 0.25)
+        # Account for round-trip CoinDCX fee when locking live net profits
+        is_live = bool(position.get("is_live"))
+        est_fee = round(margin * lev * 0.0011, 4) if is_live else 0.0
+
+        # Dynamic Rule 1: Strong Peak Trail Lock (+45% ROI peaked, lock regime share above fees)
+        tier1_peak = max(0.35, margin * 0.45)
         if peak_cash >= tier1_peak:
-            trail_floor = peak_cash * lock_aggression
-            if live_pnl <= trail_floor and live_pnl > 0.01:
+            trail_floor = max(est_fee + max(0.05, margin * 0.08), peak_cash * lock_aggression)
+            if live_pnl <= trail_floor and live_pnl > est_fee + 0.02:
                 return {
                     "should_close": True,
                     "reason": f"QUANTUM_PROFIT_TRAIL_LOCK (Peaked +${peak_cash:.2f} -> Locked +${live_pnl:.2f} | {roi_pct:+.1f}% ROI)",
@@ -372,10 +376,10 @@ class AdaptiveTrailingEngine:
                     "pnl": round(live_pnl, 2)
                 }
 
-        # Dynamic Rule 2: Breakeven Invalidation Defense (+15% ROI peaked, NEVER lose money!)
-        be_peak = max(0.05, margin * 0.15)
-        be_floor = max(0.01, margin * 0.03)  # Guaranteed small gain
-        if peak_cash >= be_peak and live_pnl <= be_floor:
+        # Dynamic Rule 2: Breakeven + Fee Defense (+25% ROI peaked, protect net win without choking early)
+        be_peak = max(0.25, margin * 0.25)
+        be_floor = max(est_fee + 0.03, margin * 0.06)
+        if peak_cash >= be_peak and live_pnl <= be_floor and live_pnl > est_fee:
             return {
                 "should_close": True,
                 "reason": f"BREAKEVEN_PROFIT_GUARD (Protected gains: Peaked +${peak_cash:.2f} -> Saved +${live_pnl:.2f})",
@@ -383,8 +387,8 @@ class AdaptiveTrailingEngine:
                 "pnl": round(live_pnl, 2)
             }
 
-        # Dynamic Rule 3: Extreme Momentum Target (+50% ROI capture)
-        if roi_pct >= 50.0:
+        # Dynamic Rule 3: Parabolic Momentum Harvest (+120% ROI capture so 20x-25x TP targets run first)
+        if roi_pct >= 120.0 and live_pnl > est_fee + 0.05:
             return {
                 "should_close": True,
                 "reason": f"TARGET_ROI_HARVEST (Captured massive win: +${live_pnl:.2f} | +{roi_pct:.1f}% ROI)",

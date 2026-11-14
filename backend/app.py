@@ -3979,6 +3979,8 @@ def api_coindcx_order_execute():
 
     # Derive contract quantity from margin & effective leverage
     eff_lev = cdx.futures.resolve_leverage(fut_sym, leverage, exch_side) if use_futures else 1.0
+    if use_futures and eff_lev < 1.0:
+        return fail(f"CoinDCX Futures does not permit {norm_side} orders on {fut_sym} (contract max leverage 0x).", 400)
     if not quantity and cur_p > 0:
         quantity = round((margin * eff_lev) / cur_p, 6)
 

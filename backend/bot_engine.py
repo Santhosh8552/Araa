@@ -680,11 +680,11 @@ class Bot:
             if ob["bias"] == "LONG" and (pre_score >= 0 or r14 < 45):
                 ob_weight = 0.22 if ob["retest_active"] else 0.12
                 parts.append(("ORDER BLOCK", ob_weight, f"{ob['type']} Retest at {ob['zone_low']}-{ob['zone_high']}"))
-            elif ob["bias"] == "SHORT" and (pre_score <= 0 or r14 > 55):
+            elif ob["bias"] == "SHORT" and (pre_score <= 0 or r14 >= 38):
                 ob_weight = -0.22 if ob["retest_active"] else -0.12
                 parts.append(("ORDER BLOCK", ob_weight, f"{ob['type']} Retest at {ob['zone_low']}-{ob['zone_high']}"))
 
-        # Squeeze Momentum & Tillson T3 Integration (DaviddTech / John Carter Engine)
+        # Squeeze Momentum & Tillson T3 Integration (Symmetric Bullish & Bearish Engines)
         if cat == "CRYPTO":
             try:
                 sq_candles = self._candles(symbol, "1m", limit=30)
@@ -692,7 +692,9 @@ class Bot:
                     sq_data = squeeze_momentum(sq_candles)
                     t3_val = tillson_t3([float(c["c"]) for c in sq_candles], length=8, v_factor=0.7)
                     if sq_data["squeeze_fire"] and price > t3_val and sq_data["momentum"] > 0:
-                        parts.append(("SQUEEZE_T3", 0.35, f"SQUEEZE FIRE! (Mom {sq_data['momentum']:+.2f} · Price > T3 ${t3_val:,.2f})"))
+                        parts.append(("SQUEEZE_T3", 0.35, f"BULLISH SQUEEZE FIRE! (Mom {sq_data['momentum']:+.2f} · Price > T3 ${t3_val:,.2f})"))
+                    elif sq_data["squeeze_fire"] and price < t3_val and sq_data["momentum"] < 0:
+                        parts.append(("SQUEEZE_T3", -0.38, f"BEARISH SQUEEZE FIRE! (Mom {sq_data['momentum']:+.2f} · Price < T3 ${t3_val:,.2f})"))
                     elif sq_data["squeeze_on"]:
                         parts.append(("SQUEEZE_T3", 0.05, f"Squeeze Coiling (Energy Build · Mom {sq_data['momentum']:+.2f})"))
             except Exception:
@@ -758,7 +760,19 @@ class Bot:
                 parts.insert(0, ("RANGE_SCAN", 0.16, f"RANGE EXPANSION ({range_pos*100:.0f}% · RSI {r14:.0f})"))
 
         if side == "SHORT":
-            score = sum((abs(p[1]) if p[1] < 0 else p[1]) for p in parts)
+            directional_tags = {"TREND", "RANGE", "24H", "1m CANDLES", "ORDER BLOCK"}
+            score = 0.0
+            for p_name, p_val, _ in parts:
+                if p_name in directional_tags or (p_name == "SQUEEZE_T3" and abs(p_val) >= 0.10):
+                    # Bearish negative factors boost SHORT conviction; counter-trend bullish factors penalize it.
+                    score += -p_val
+                elif p_name == "RSI" and r14 <= 22:
+                    score += -0.06  # Avoid shorting extreme oversold bottom exhaustion
+                else:
+                    score += p_val
+            if cat == "CRYPTO" and slope_z < -0.35 and change <= -1.0:
+                score += 0.08
+                parts.append(("BEAR_IMPULSE", 0.08, f"Breakdown Velocity ({change:+.2f}%)"))
         else:
             score = sum(p[1] for p in parts)
         if score <= -0.20:
@@ -936,6 +950,89 @@ class Bot:
         roi_pct = round((pnl / margin) * 100.0, 2) if margin > 0 else 0.0
         return pnl, move_pct, roi_pct, cur_qty
 
+    def _evaluate_bot_exit_signal(self, p, price, raw_pnl, move_pct, peak_cash, peak_pct, time_held):
+        """Evaluate profit-maximizing trailing, target-profit, and stop exits for a bot position."""
+        pos_margin = max(0.0001, float(p.get("margin") or 1.0))
+        pos_lev = max(1.0, float(p.get("leverage") or 100.0))
+        pnl = max(-pos_margin, float(raw_pnl))
+        is_live = bool(p.get("is_live"))
+        est_fee = round(pos_margin * pos_lev * 0.0011, 4) if is_live else 0.0
+        roi_pct = (pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
+        peak_roi = (peak_cash / pos_margin * 100.0) if pos_margin > 0 else 0.0
+        min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
+        min_net_profit = round(est_fee + max(0.04, pos_margin * 0.06), 4)
+        tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
+        tp_roi = tp_pct * pos_lev
+
+        # RULE 0: Extension & Target-Profit Execution (works cleanly across all margin sizes & both LONG/SHORT)
+        if move_pct >= tp_pct * 1.25 and pnl > (min_net_profit if is_live else est_fee + 0.01):
+            return f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+        if move_pct >= tp_pct:
+            if (not is_live) and pnl > est_fee + 0.01:
+                return f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+            if is_live and pnl >= min_net_profit and (time_held >= 120.0 or pnl <= round(peak_cash * 0.90, 3)):
+                return f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # RULE 0B: Progressive ROI & Fee-Aware Trailing Stop Ladder (lets breakdowns/rallies run)
+        trail_floor = None
+        if (peak_pct >= tp_pct or move_pct >= tp_pct) and peak_cash >= min_net_profit:
+            trail_floor = max(min_net_profit, round(peak_cash * 0.90, 3))
+        elif peak_roi >= max(85.0, tp_roi * 1.05) and peak_cash >= est_fee + 0.20:
+            trail_floor = max(min_net_profit, round(peak_cash * 0.88, 3))
+        elif peak_roi >= max(50.0, tp_roi * 0.75) and peak_cash >= est_fee + 0.12:
+            trail_floor = max(min_net_profit, round(peak_cash * 0.80, 3))
+        elif peak_roi >= 30.0 and peak_cash >= max(0.20, est_fee * 2.5):
+            trail_floor = max(min_net_profit, round(peak_cash * 0.70, 3))
+
+        if trail_floor is not None and pnl <= trail_floor and pnl > est_fee and time_held >= 5.0:
+            return f"TRAILING_PROFIT_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # Breakeven + Fee Shield after +20% ROI peak so winning trends aren't choked at small wicks
+        if (peak_roi >= 20.0 and peak_cash >= max(0.18, est_fee * 2.5)
+                and pnl <= (est_fee + max(0.03, pos_margin * 0.04)) and pnl > est_fee and time_held >= 15.0):
+            return f"BREAKEVEN_FEE_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f})"
+
+        # Stop-Loss Guards apply to Paper mode only (Profit-Only Real Mode never auto-closes red positions)
+        if not is_live:
+            sl = float(p.get("stop_pct") or 0.85)
+            if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
+                return f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)"
+            if roi_pct <= -25.0 or pnl <= -250.0:
+                return f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(pnl):.2f})"
+            if move_pct <= -sl:
+                return f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)"
+
+        # Parabolic flash spike harvest
+        if pnl >= 250.0 or roi_pct >= 120.0:
+            return f"INSTANT_PROFIT_CAPTURE (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # Quantum Adaptive Trailing & Market Regime Lock
+        try:
+            from quantum_engine import AdaptiveTrailingEngine, MarketRegimeEngine
+            sym_ticks = self.feed.ticks(p["symbol"], 30) if hasattr(self, "feed") else []
+            r_info = MarketRegimeEngine.classify_regime(p["symbol"], {"price": price, "change_pct": move_pct}, sym_ticks)
+            trail_exit = AdaptiveTrailingEngine.evaluate_trailing_exit(p, price, r_info)
+            if trail_exit and trail_exit.get("should_close"):
+                if (not is_live) or pnl > est_fee + 0.02:
+                    return trail_exit.get("reason")
+        except Exception:
+            pass
+
+        # Dynamic Big-Spike Lock for large cash peaks ($50+)
+        if peak_cash >= 50.0:
+            pullback_floor = round(peak_cash * 0.90, 2)
+            if pnl <= pullback_floor and pnl >= min_take_profit and pnl > est_fee:
+                return f"PEAK_PROFIT_TRAIL_LOCK (Peaked +${peak_cash:.2f} -> Locked +${pnl:.2f})"
+
+        # Preserve quick micro-scalp exits strictly for low-leverage paper trades (do not choke leveraged Futures)
+        if (not is_live) and pos_lev <= 5.0:
+            if (move_pct >= tp_pct or roi_pct >= 15.0) and pnl > 0:
+                return f"TARGET_PROFIT_HIT (+${pnl:.2f} | +{move_pct:.2f}% | +{roi_pct:.1f}% ROI)"
+            if time_held >= 10.0 and pnl >= min_take_profit and roi_pct >= 8.0:
+                return f"SCALP_QUICK_WIN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+
+        return None
+
     def mark_to_market(self):
         opens = query("SELECT * FROM positions WHERE status='OPEN'")
         if not opens:
@@ -983,135 +1080,9 @@ class Bot:
 
             now_ts = time.time()
             time_held = now_ts - p["opened_at"]
-            
-            # Margin protection: Capped to isolated margin
-            if pnl < -p["margin"]:
-                pnl = -p["margin"]
-
-            pos_margin = float(p.get("margin") or 1.0)
-            pos_lev = float(p.get("leverage") or 100.0)
-            est_fee = round(pos_margin * pos_lev * 0.0011, 4) if p.get("is_live") else 0.0
-            roi_pct = (pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
-            # Dynamic min take profit: 5% of isolated margin, minimum $0.005 for micro-wallets
-            min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
-
-            # =========================================================================
-            # RULE 0: BIG-PROFIT TRAILING ENGINE (FEE-AWARE + PEAK LOCK!)
-            # Only locks profit once gross P&L exceeds estimated CoinDCX round-trip fee,
-            # guaranteeing every closed green trade increases your real wallet balance!
-            # =========================================================================
-            tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
-            if p.get("is_live") and pnl >= max(1.00, est_fee + 1.00) and move_pct >= tp_pct:
-                self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-            elif (not p.get("is_live")) and move_pct >= tp_pct and pnl > (est_fee + 0.01):
-                self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            if roi_pct >= 40.0 and pnl >= (1.00 if p.get("is_live") else (est_fee + 0.02)):
-                self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            peak_pct_val = max(float(p.get("peak_pnl_pct") or 0.0), move_pct)
-            if peak_cash >= (0.60 if p.get("is_live") else 0.25) and peak_pct_val >= max(0.40, tp_pct * 0.45) and pnl <= (est_fee + 0.05) and pnl > est_fee and time_held >= 10.0:
-                self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f})")
-                continue
-
-            trail_floor = None
-            if p.get("is_live"):
-                if peak_cash >= 3.55:
-                    trail_floor = max(3.00, round(peak_cash * 0.85, 3))
-                elif peak_cash >= 1.25:
-                    trail_floor = max(1.00, round(peak_cash * 0.80, 3))
-            else:
-                min_net_peak = est_fee + 0.10
-                if peak_cash >= max(3.00, min_net_peak):
-                    trail_floor = max(round(est_fee + 0.25, 3), round(peak_cash * 0.85, 3))
-                elif peak_cash >= max(1.00, min_net_peak):
-                    trail_floor = max(round(est_fee + 0.10, 3), round(peak_cash * 0.80, 3))
-                elif peak_cash >= max(0.50, min_net_peak, est_fee * 4.0):
-                    trail_floor = max(round(est_fee + 0.05, 3), round(peak_cash * 0.72, 3))
-
-            if trail_floor is not None and pnl <= trail_floor and pnl > est_fee and time_held >= 5.0:
-                self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 0B / 1A / 1B: STOP-LOSS GUARDS (SKIPPED IN PROFIT-ONLY REAL MODE)
-            # In Real Mode (is_live=True), never auto-close CoinDCX positions at a loss;
-            # only close on profit targets, trailing profit locks, or manual user close.
-            # =========================================================================
-            if not p.get("is_live"):
-                sl = float(p.get("stop_pct") or 0.85)
-                if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
-                    self.close(p, price, f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)")
-                    continue
-
-                if roi_pct <= -25.0 or pnl <= -250.0:
-                    self.close(p, price, f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(pnl):.2f})")
-                    continue
-
-                if move_pct <= -sl:
-                    self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
-                    continue
-
-            # =========================================================================
-            # RULE 2: INSTANT FLASH PROFIT SPIKE CAPTURE (+$250 / +$500 / +$1,000+ SPIKES)
-            # Captures true sudden flash profit spikes immediately
-            # =========================================================================
-            if pnl >= 250.0 or roi_pct >= 25.0:
-                self.close(p, price, f"INSTANT_PROFIT_CAPTURE (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 2.5: QUANTUM ADAPTIVE TRAILING STOP & LIQUIDITY LOCK (FEATURE 3)
-            # =========================================================================
-            try:
-                from quantum_engine import AdaptiveTrailingEngine, MarketRegimeEngine
-                sym_ticks = self.feed.ticks(p["symbol"], 30) if hasattr(self, "feed") else []
-                r_info = MarketRegimeEngine.classify_regime(p["symbol"], {"price": price, "change_pct": move_pct}, sym_ticks)
-                trail_exit = AdaptiveTrailingEngine.evaluate_trailing_exit(p, price, r_info)
-                if trail_exit and trail_exit.get("should_close"):
-                    self.close(p, price, trail_exit.get("reason"))
-                    continue
-            except Exception:
-                pass
-
-            # =========================================================================
-            # RULE 3: DYNAMIC PEAK PROFIT PROTECTION (LOCKS IN SUDDEN SPIKES)
-            # =========================================================================
-            min_lock_peak = max(0.02, round(pos_margin * 0.10, 3))
-            if peak_cash >= 50.0:
-                pullback_floor = round(peak_cash * 0.90, 2)
-                if pnl <= pullback_floor and pnl >= min_take_profit:
-                    self.close(p, price, f"PEAK_PROFIT_TRAIL_LOCK (Peaked +${peak_cash:.2f} -> Locked +${pnl:.2f})")
-                    continue
-            elif peak_cash >= min_lock_peak and time_held >= 5.0:
-                lock_floor = round(peak_cash * 0.85, 2)
-                if pnl <= lock_floor and pnl >= min_take_profit:
-                    self.close(p, price, f"PROFIT_TRAIL_LOCK (Peaked +${peak_cash:.2f} -> Locked +${pnl:.2f})")
-                    continue
-
-            # Breakeven safety: If trade peaked in profit (>= 15% ROI), NEVER let it turn into a loss!
-            breakeven_peak = max(0.03, round(pos_margin * 0.15, 3))
-            breakeven_floor = max(0.005, round(pos_margin * 0.03, 3))
-            if peak_cash >= breakeven_peak and pnl <= breakeven_floor and time_held >= 5.0:
-                self.close(p, price, f"BREAKEVEN_PROFIT_LOCK (Peaked +${peak_cash:.2f} -> Saved +${pnl:.2f})")
-                continue
-
-            # =========================================================================
-            # RULE 4: TARGET PROFIT REACHED (or ROI >= 15% on high leverage)
-            # =========================================================================
-            target_pct = float(p.get("target_pct") or 0.50)
-            if (move_pct >= target_pct or roi_pct >= 15.0) and pnl > 0:
-                self.close(p, price, f"TARGET_PROFIT_HIT (+${pnl:.2f} | +{move_pct:.2f}% | +{roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 5: QUICK SCALP PROFIT CAPTURE (Allows position at least 10s breathing room)
-            # =========================================================================
-            if time_held >= 10.0 and pnl >= min_take_profit and roi_pct >= 8.0:
-                self.close(p, price, f"SCALP_QUICK_WIN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)")
+            exit_reason = self._evaluate_bot_exit_signal(p, price, pnl, move_pct, peak_cash, peak, time_held)
+            if exit_reason:
+                self.close(p, price, exit_reason)
                 continue
             by_user.setdefault(p["user_id"], []).append(p)
         return by_user
@@ -1293,139 +1264,32 @@ class Bot:
             peak_cash = max(float(p.get("peak_cash_pnl") or 0.0), current_pnl)
             p["peak_cash_pnl"] = peak_cash
 
-            # Margin protection: Capped to isolated margin
-            if current_pnl < -p["margin"]:
-                current_pnl = -p["margin"]
-
-            pos_margin = float(p.get("margin") or 1.0)
-            pos_lev = float(p.get("leverage") or 100.0)
-            est_fee = round(pos_margin * pos_lev * 0.0011, 4) if p.get("is_live") else 0.0
-            roi_pct = (current_pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
-            # Dynamic min take profit: 5% of isolated margin, minimum $0.005 for micro-wallets
+            pos_margin = max(0.0001, float(p.get("margin") or 1.0))
+            pos_lev = max(1.0, float(p.get("leverage") or 100.0))
+            is_live = bool(p.get("is_live"))
+            est_fee = round(pos_margin * pos_lev * 0.0011, 4) if is_live else 0.0
             min_take_profit = max(0.005, round(pos_margin * 0.05, 3))
-
-            # =========================================================================
-            # RULE 0: BIG-PROFIT TRAILING ENGINE (FEE-AWARE + PEAK LOCK!)
-            # =========================================================================
-            tp_pct = max(0.50, float(p.get("target_pct") or 1.0))
-            if p.get("is_live") and current_pnl >= max(1.00, est_fee + 1.00) and move_pct >= tp_pct:
-                self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-            elif (not p.get("is_live")) and move_pct >= tp_pct and current_pnl > (est_fee + 0.01):
-                self.close(p, price, f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            if roi_pct >= 40.0 and current_pnl >= (1.00 if p.get("is_live") else (est_fee + 0.02)):
-                self.close(p, price, f"BIG_PROFIT_TARGET_BANKED (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            if peak_cash >= (0.60 if p.get("is_live") else 0.25) and peak_pct >= max(0.40, tp_pct * 0.45) and current_pnl <= (est_fee + 0.05) and current_pnl > est_fee and time_held >= 10.0:
-                self.close(p, price, f"BREAKEVEN_FEE_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f})")
-                continue
-
-            trail_floor = None
-            if p.get("is_live"):
-                if peak_cash >= 3.55:
-                    trail_floor = max(3.00, round(peak_cash * 0.85, 3))
-                elif peak_cash >= 1.25:
-                    trail_floor = max(1.00, round(peak_cash * 0.80, 3))
-            else:
-                min_net_peak = est_fee + 0.10
-                if peak_cash >= max(3.00, min_net_peak):
-                    trail_floor = max(round(est_fee + 0.25, 3), round(peak_cash * 0.85, 3))
-                elif peak_cash >= max(1.00, min_net_peak):
-                    trail_floor = max(round(est_fee + 0.10, 3), round(peak_cash * 0.80, 3))
-                elif peak_cash >= max(0.50, min_net_peak, est_fee * 4.0):
-                    trail_floor = max(round(est_fee + 0.05, 3), round(peak_cash * 0.72, 3))
-
-            if trail_floor is not None and current_pnl <= trail_floor and current_pnl > est_fee and time_held >= 5.0:
-                self.close(p, price, f"TRAILING_PROFIT_LOCKED (+${current_pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 0B / 1A / 1B: STOP-LOSS GUARDS (SKIPPED IN PROFIT-ONLY REAL MODE)
-            # In Real Mode (is_live=True), never auto-close CoinDCX positions at a loss;
-            # only close on profit targets, trailing profit locks, or manual user close.
-            # =========================================================================
-            if not p.get("is_live"):
-                sl = float(p.get("stop_pct") or 0.85)
-                if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
-                    self.close(p, price, f"SMART_STOP_PROTECT (${current_pnl:.2f} | {roi_pct:.1f}% ROI)")
-                    continue
-
-                if roi_pct <= -25.0 or current_pnl <= -250.0:
-                    self.close(p, price, f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(current_pnl):.2f})")
-                    continue
-
-                if move_pct <= -sl:
-                    self.close(p, price, f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)")
-                    continue
-
-            # =========================================================================
-            # RULE 2: INSTANT FLASH PROFIT SPIKE CAPTURE (+$250 / +$500 / +$1,000+ SPIKES)
-            # Captures true sudden flash profit spikes immediately
-            # =========================================================================
-            if current_pnl >= 250.0 or roi_pct >= 25.0:
-                self.close(p, price, f"INSTANT_PROFIT_CAPTURE (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            # =========================================================================
-            # RULE 2.5: QUANTUM ADAPTIVE TRAILING STOP & LIQUIDITY LOCK (FEATURE 3)
-            # =========================================================================
-            try:
-                from quantum_engine import AdaptiveTrailingEngine, MarketRegimeEngine
-                sym_ticks = self.feed.ticks(p["symbol"], 30) if hasattr(self, "feed") else []
-                r_info = MarketRegimeEngine.classify_regime(p["symbol"], {"price": price, "change_pct": move_pct}, sym_ticks)
-                trail_exit = AdaptiveTrailingEngine.evaluate_trailing_exit(p, price, r_info)
-                if trail_exit and trail_exit.get("should_close"):
-                    self.close(p, price, trail_exit.get("reason"))
-                    continue
-            except Exception:
-                pass
-
-            # =========================================================================
-            # RULE 3: DYNAMIC PEAK PROFIT PROTECTION (LOCKS IN SUDDEN SPIKES)
-            # =========================================================================
-            min_lock_peak = max(0.02, round(pos_margin * 0.10, 3))
-            if peak_cash >= 50.0:
-                pullback_floor = round(peak_cash * 0.90, 2)
-                if current_pnl <= pullback_floor and current_pnl >= min_take_profit:
-                    self.close(p, price, f"PEAK_PROFIT_TRAIL_LOCK (Peaked +${peak_cash:.2f} -> Locked +${current_pnl:.2f})")
-                    continue
-            elif peak_cash >= min_lock_peak and time_held >= 5.0:
-                lock_floor = round(peak_cash * 0.85, 2)
-                if current_pnl <= lock_floor and current_pnl >= min_take_profit:
-                    self.close(p, price, f"PROFIT_TRAIL_LOCK (Peaked +${peak_cash:.2f} -> Locked +${current_pnl:.2f})")
-                    continue
-
-            # Breakeven safety: If trade peaked in profit (>= 15% ROI), never let it turn into a loss!
-            breakeven_peak = max(0.03, round(pos_margin * 0.15, 3))
-            breakeven_floor = max(0.005, round(pos_margin * 0.03, 3))
-            if peak_cash >= breakeven_peak and current_pnl <= breakeven_floor and time_held >= 5.0:
-                self.close(p, price, f"BREAKEVEN_PROFIT_LOCK (Peaked +${peak_cash:.2f} -> Saved +${current_pnl:.2f})")
-                continue
-
-            # =========================================================================
-            # RULE 4: TARGET PROFIT REACHED (or ROI >= 15% on high leverage)
-            # =========================================================================
             target_pct = float(p.get("target_pct") or 0.50)
-            if (move_pct >= target_pct or roi_pct >= 15.0) and current_pnl > 0:
-                self.close(p, price, f"TARGET_PROFIT_HIT (+${current_pnl:.2f} | +{move_pct:.2f}% | +{roi_pct:.1f}% ROI)")
+            sl = float(p.get("stop_pct") or 0.85)
+
+            exit_reason = self._evaluate_bot_exit_signal(p, price, current_pnl, move_pct, peak_cash, peak_pct, time_held)
+            if exit_reason:
+                self.close(p, price, exit_reason)
                 continue
 
-            # Quick scalp win capture: Active whenever profit reaches >= min_take_profit and ROI >= 8% after breathing window
-            if time_held >= 10.0 and current_pnl >= min_take_profit and roi_pct >= 8.0:
-                self.close(p, price, f"SCALP_QUICK_WIN (+${current_pnl:.2f} | +{roi_pct:.1f}% ROI)")
-                continue
-
-            # Dynamic line exit check
+            # Dynamic line exit check (Real Mode never closes red on STOP_LOSS)
             line, why = self._exit_line(p)
-            if move_pct <= line and (why == "STOP_LOSS" or current_pnl >= min_take_profit):
-                self.close(p, price, why)
-                continue
+            if move_pct <= line:
+                if why == "STOP_LOSS" and not is_live:
+                    self.close(p, price, why)
+                    continue
+                if why != "STOP_LOSS" and current_pnl >= max(min_take_profit, est_fee + 0.03):
+                    self.close(p, price, why)
+                    continue
 
-            # Stall cut: Only cut if the majority of 30-min window elapsed with confirmed adverse drift
-            if (now - p["opened_at"] > 0.80 * window and move_pct < -0.75 * sl
+            # Stall cut (Paper Mode or already in net profit)
+            if ((not is_live) or current_pnl > est_fee + 0.02) and (
+                    now - p["opened_at"] > 0.80 * window and move_pct < -0.75 * sl
                     and float(p["peak_pnl_pct"] or 0.0) < 0.10 * target_pct):
                 self.close(p, price, "STALL_EXIT")
                 continue
@@ -1445,13 +1309,13 @@ class Bot:
                 write("UPDATE ai_predictions SET post_entry_status=?, post_entry_notes=? WHERE position_id=?",
                       (reassess["action"], reassess["notes"], p["id"]))
 
-                if reassess["action"] == "EXIT":
+                if reassess["action"] == "EXIT" and ((not is_live) or current_pnl > est_fee + 0.02):
                     self.close(p, price, f"AI_DYNAMIC_EXIT ({reassess['notes'][:50]})")
                     continue
             except Exception:
                 pass
 
-            if now - p["opened_at"] > window:
+            if ((not is_live) or current_pnl > est_fee + 0.02) and now - p["opened_at"] > window:
                 self.close(p, price, "TIME_EXIT")
 
     def close_all_for(self, user_id, reason="BOT_STOPPED", include_manual=False):
@@ -1693,20 +1557,23 @@ class Bot:
                 else:
                     if not cdx_active_tickers or s in cdx_active_tickers:
                         target_mt4_symbols.add(s)
-            # Guarantee all primary CoinDCX USDT Futures pairs are present
+            # Guarantee all primary CoinDCX USDT Futures pairs (prioritizing 15x-25x liquidity contracts)
             target_mt4_symbols.update({
-                "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "NEARUSDT", "BNBUSDT",
+                "BTCUSDT", "ETHUSDT", "BNBUSDT", "LTCUSDT", "TRXUSDT", "ATOMUSDT", "FILUSDT",
+                "NEARUSDT", "XRPUSDT", "DOGEUSDT", "BCHUSDT", "DOTUSDT", "LINKUSDT", "ADAUSDT", "AVAXUSDT",
+                "FETUSDT", "SOLUSDT", "HBARUSDT", "INJUSDT", "SUIUSDT", "ARBUSDT", "PYTHUSDT",
                 "1000PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "WAXPUSDT", "BANANAUSDT",
                 "SPELLUSDT", "SAPIENUSDT", "USTCUSDT", "MOCAUSDT", "SONICUSDT", "DOLOUSDT",
                 "MTLUSDT", "GASUSDT", "BELUSDT", "ASTRUSDT", "ASRUSDT", "SANTOSUSDT",
                 "BNTUSDT", "1000000MOGUSDT", "JOEUSDT", "FRAXUSDT", "XVSUSDT",
-                "B-BTC_USDT", "B-ETH_USDT", "B-SOL_USDT", "B-DOGE_USDT", "B-XRP_USDT",
-                "B-CARV_USDT", "B-WAXP_USDT", "B-BANANA_USDT", "B-YB_USDT", "B-1000PEPE_USDT"
+                "B-BTC_USDT", "B-ETH_USDT", "B-BNB_USDT", "B-LTC_USDT", "B-ATOM_USDT",
+                "B-SOL_USDT", "B-DOGE_USDT", "B-XRP_USDT", "B-CARV_USDT", "B-WAXP_USDT",
+                "B-BANANA_USDT", "B-YB_USDT", "B-1000PEPE_USDT"
             })
             if not target_mt4_symbols:
                 target_mt4_symbols = {
-                    "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "NEARUSDT", "BNBUSDT",
-                    "1000PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "WAXPUSDT", "BANANAUSDT"
+                    "BTCUSDT", "ETHUSDT", "BNBUSDT", "LTCUSDT", "ATOMUSDT", "FILUSDT", "TRXUSDT",
+                    "NEARUSDT", "XRPUSDT", "DOGEUSDT", "SOLUSDT", "1000PEPEUSDT", "ZECUSDT"
                 }
         elif market_focus == "FOREX":
             target_mt4_symbols = EXNESS_FOREX
@@ -1759,22 +1626,33 @@ class Bot:
                     continue
                 pool = by_cat.get(cat) or []
                 bot_dir = str(user.get("bot_trade_direction") or "BOTH").upper()
-                high_lev_pairs = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "NEARUSDT")
+                # Rank by CoinDCX real leverage tier first (20x-25x > 10x-15x > 5x) so capital generates max profit per move
+                tier1_lev_pairs = {"BNBUSDT", "LTCUSDT", "BTCUSDT", "ETHUSDT", "ATOMUSDT", "FILUSDT", "TRXUSDT"}
+                tier2_lev_pairs = {"NEARUSDT", "XRPUSDT", "DOGEUSDT", "BCHUSDT", "DOTUSDT", "LINKUSDT", "ADAUSDT", "AVAXUSDT", "FETUSDT", "POPCATUSDT"}
+
+                def _lev_tier(sym_name):
+                    s_up = str(sym_name or "").upper()
+                    if s_up in tier1_lev_pairs:
+                        return 0
+                    if s_up in tier2_lev_pairs:
+                        return 1
+                    return 2
+
                 if bot_dir == "SHORT":
                     pool.sort(key=lambda x: (
-                        0 if x.get("symbol") in high_lev_pairs else 1,
                         0 if x.get("side") in ("SHORT", "SELL") else 1,
+                        _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0)
                     ))
                 elif bot_dir == "LONG":
                     pool.sort(key=lambda x: (
-                        0 if x.get("symbol") in high_lev_pairs else 1,
                         0 if x.get("side") in ("LONG", "BUY") else 1,
+                        _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0)
                     ))
                 else:
                     pool.sort(key=lambda x: (
-                        0 if x.get("symbol") in high_lev_pairs else 1,
+                        _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0)
                     ))
                 while pool:
@@ -2053,6 +1931,9 @@ class Bot:
                                 picked["symbol"], lev, "buy" if picked["side"] in ("BUY", "LONG") else "sell")
                     except Exception as lev_err:
                         pass
+                if effective_lev < 1.0:
+                    self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: CoinDCX contract disallows this direction (0x leverage).")
+                    continue
                 margin = round(min(free, base_margin), 4)
                 qty = round((margin * effective_lev) / picked["price"], 8)
             else:
@@ -2096,6 +1977,13 @@ class Bot:
                     risk_pct = max(0.2, min(30.0, float(strat.get("risk_per_trade_pct") or 2.0)))
                     min_cdx_margin = 1.5 if free >= 1.5 else min_pos_margin
                     risk_margin = round(min(free, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
+                    # Scale high-conviction A+ signals and lower-leverage (5x-10x) futures contracts meaningfully within safe per-slot bounds
+                    if win_p >= 84 or effective_lev <= 10.0:
+                        conf_cap_pct = 0.14 if effective_lev <= 5.0 else (0.11 if effective_lev <= 10.0 else 0.09)
+                        max_slot_margin = max(min_cdx_margin, round(capital * conf_cap_pct, 2))
+                        max_ord_cap = float(strat.get("max_order_size_usd") or 25000.0)
+                        target_margin = min(max_ord_cap, max(risk_margin, min(base_margin, max_slot_margin)))
+                        risk_margin = round(min(free * 0.45 if free > 3.5 else free, target_margin), 4)
                     if risk_margin >= min_pos_margin:
                         margin = risk_margin
                         qty = round((margin * effective_lev) / picked["price"], 8)

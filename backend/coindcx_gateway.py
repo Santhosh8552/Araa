@@ -1352,20 +1352,28 @@ class CoinDCXFuturesAdapter:
     def resolve_leverage(self, symbol: str, requested: float, side: str = "buy") -> float:
         """Requested leverage (e.g. 500) clamped to what CoinDCX really allows for this contract.
 
-        The exchange rejects any order above the contract's max, so we ask for as much as
-        the user wants and trade at the highest value the exchange will actually accept.
+        Returns 0.0 if the exchange instrument explicitly sets max leverage to 0 for that side
+        (e.g. non-shortable contracts), or falls back to FUTURES_FALLBACK_MAX_LEVERAGE if metadata
+        is temporarily unavailable.
         """
         req = max(1.0, min(500.0, float(requested or 1.0)))
         if self.is_offline:
             return min(req, 500.0)
         inst = self.get_instrument(symbol)
         is_long = (side or "").lower() in ("buy", "long")
-        raw = inst.get("max_leverage_long" if is_long else "max_leverage_short") or inst.get("max_leverage")
-        try:
-            exch_max = float(raw)
-        except (TypeError, ValueError):
-            exch_max = 0.0
-        if exch_max <= 0:
+        side_key = "max_leverage_long" if is_long else "max_leverage_short"
+        raw = inst.get(side_key) if side_key in inst else inst.get("max_leverage")
+        if raw is None and "max_leverage" in inst:
+            raw = inst.get("max_leverage")
+        if raw is not None:
+            try:
+                exch_max = float(raw)
+            except (TypeError, ValueError):
+                exch_max = 0.0
+            if exch_max <= 0:
+                logger.info(f"Contract {self.to_futures_pair(symbol)} explicitly disallows {side} (max leverage=0x)")
+                return 0.0
+        else:
             exch_max = FUTURES_FALLBACK_MAX_LEVERAGE
         eff = float(int(min(req, exch_max)))
         if eff < req:
