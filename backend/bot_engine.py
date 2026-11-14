@@ -1301,17 +1301,18 @@ class Bot:
             if pnl <= round(peak_cash * 0.96, 4) or pnl >= 0.90:
                 return f"SCALP_AUTO_CLOSE_+0.90 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0.5: +$0.10 Profit Lock Ladder (Locks green profits once trade reaches +$0.10)
-        if peak_cash >= 0.10 and time_held >= 1.5:
+        # RULE 0.5: +$0.10 Profit Lock Ladder (Locks net green profits after fees in Real Mode)
+        min_lock_peak = max(0.10, round(est_fee * 1.35, 4)) if is_live else 0.10
+        if peak_cash >= min_lock_peak and time_held >= 1.5:
             if peak_cash >= 0.50:
                 lock_floor = 0.35
             elif peak_cash >= 0.25:
                 lock_floor = 0.15
             else:
                 lock_floor = 0.04
-            if is_live and est_fee > 0 and (est_fee * 1.15) < (peak_cash * 0.80):
+            if is_live and est_fee > 0:
                 lock_floor = max(lock_floor, round(est_fee * 1.15, 4))
-            if pnl <= lock_floor and pnl > 0:
+            if pnl <= lock_floor and pnl > (est_fee if is_live else 0.0):
                 return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
         # RULE 1: Immediate Target-Profit Execution when percentage target hit
@@ -2082,20 +2083,25 @@ class Bot:
                     return 2
 
                 def _tv_verified_tier(cand_obj):
-                    # Prioritize candidates backed by aligned 1s + 1m + 5m TradingView BUY/SELL + Qualified SMC/DNA
+                    # Prioritize tight-spread, high-liquidity pairs backed by aligned 1s + 1m + 5m + Qualified SMC/DNA
                     tv_r = cand_obj.get("tv_recommend")
                     tv_ok = tv_r is not None and abs(float(tv_r)) >= 0.15
                     smc_ok = str(cand_obj.get("smc_dna_status") or "") in ("QUALIFIED_BULLISH", "QUALIFIED_BEARISH")
                     s_up = str(cand_obj.get("side") or "").upper()
                     d1s = str(cand_obj.get("tv_1s_dir") or "NEUTRAL").upper()
                     t1s_ok = (s_up in ("LONG", "BUY") and d1s == "BUY") or (s_up in ("SHORT", "SELL") and d1s == "SELL")
-                    if tv_ok and smc_ok and t1s_ok:
+                    liq_ok = float(cand_obj.get("volume") or 0.0) >= 5_000_000.0
+                    if tv_ok and smc_ok and t1s_ok and liq_ok:
                         return 0
-                    if tv_ok and t1s_ok:
+                    if tv_ok and smc_ok and t1s_ok:
                         return 1
-                    if tv_ok:
+                    if tv_ok and t1s_ok and liq_ok:
                         return 2
-                    return 3
+                    if tv_ok and t1s_ok:
+                        return 3
+                    if tv_ok:
+                        return 4
+                    return 5
 
                 if bot_dir == "SHORT":
                     pool = [x for x in pool if x.get("side") in ("SHORT", "SELL")]
