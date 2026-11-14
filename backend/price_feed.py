@@ -246,11 +246,13 @@ def tv_symbol(symbol):
         if ":" in symbol:
             code = symbol
         else:
-            if symbol.endswith("USDT"):
-                code = "BINANCE:" + symbol
+            if symbol.startswith("B-") and symbol.endswith("_USDT"):
+                code = "COINBASE:" + symbol[2:-5] + "USD"
+            elif symbol.endswith("USDT"):
+                code = "COINBASE:" + symbol[:-4] + "USD"
             elif symbol.endswith("INR"):
                 base_c = symbol[:-3]
-                code = "BINANCE:" + base_c + "USDT"
+                code = "COINBASE:" + base_c + "USD"
             else:
                 code = None
         if not code:
@@ -264,8 +266,10 @@ def tv_chart_code(symbol):
     code = CHART_ONLY.get(symbol) or TV_SYMBOL.get(symbol) or DYNAMIC.get(symbol, {}).get("code")
     if code:
         return code
+    if symbol.startswith("B-") and symbol.endswith("_USDT"):
+        return "COINBASE:" + symbol[2:-5] + "USD"
     if symbol.endswith("USDT"):
-        return "BINANCE:" + symbol
+        return "COINBASE:" + symbol[:-4] + "USD"
     if symbol.endswith("INR"):
         return "COINDCX:" + symbol
     return None
@@ -753,41 +757,24 @@ class PriceFeed:
         req_limit = max(int(limit), 60 if interval == "1m" else 30)
         parsed = []
         try:
-            raw = _get(f"/api/v3/klines?symbol={clean_sym}&interval={interval}&limit={req_limit}", timeout=1.5)
-            if isinstance(raw, list) and len(raw) >= 10:
-                for k in raw:
-                    if isinstance(k, (list, tuple)) and len(k) >= 6:
-                        parsed.append({
-                            "t": int(k[0]),
-                            "o": float(k[1]),
-                            "h": float(k[2]),
-                            "l": float(k[3]),
-                            "c": float(k[4]),
-                            "v": float(k[5]),
-                        })
+            base_coin = clean_sym[:-4]
+            cdx_url = f"https://public.coindcx.com/market_data/candles?pair=B-{base_coin}_USDT&interval={interval}&limit={req_limit}"
+            req = urllib.request.Request(cdx_url, headers=BROWSER_HEADERS)
+            with urllib.request.urlopen(req, timeout=2.0) as r:
+                cdx_raw = json.loads(r.read().decode())
+            if isinstance(cdx_raw, list) and len(cdx_raw) >= 10:
+                # CoinDCX returns newest-first; sort oldest-first
+                cdx_sorted = sorted(cdx_raw, key=lambda x: int(x.get("time") or 0))
+                parsed = [{
+                    "t": int(c["time"]),
+                    "o": float(c["open"]),
+                    "h": float(c["high"]),
+                    "l": float(c["low"]),
+                    "c": float(c["close"]),
+                    "v": float(c.get("volume") or 0.0),
+                } for c in cdx_sorted if float(c.get("close") or 0) > 0]
         except Exception:
             parsed = []
-
-        if len(parsed) < 10:
-            try:
-                base_coin = clean_sym[:-4]
-                cdx_url = f"https://public.coindcx.com/market_data/candles?pair=B-{base_coin}_USDT&interval={interval}&limit={req_limit}"
-                req = urllib.request.Request(cdx_url, headers=BROWSER_HEADERS)
-                with urllib.request.urlopen(req, timeout=1.8) as r:
-                    cdx_raw = json.loads(r.read().decode())
-                if isinstance(cdx_raw, list) and len(cdx_raw) >= 10:
-                    # CoinDCX returns newest-first; sort oldest-first
-                    cdx_sorted = sorted(cdx_raw, key=lambda x: int(x.get("time") or 0))
-                    parsed = [{
-                        "t": int(c["time"]),
-                        "o": float(c["open"]),
-                        "h": float(c["high"]),
-                        "l": float(c["low"]),
-                        "c": float(c["close"]),
-                        "v": float(c.get("volume") or 0.0),
-                    } for c in cdx_sorted if float(c.get("close") or 0) > 0]
-            except Exception:
-                pass
 
         if len(parsed) >= 10:
             live_p = self.price(symbol)
@@ -857,67 +844,64 @@ class PriceFeed:
             pass
 
         try:
-            rows = _get("/api/v3/ticker/24hr", timeout=3.5)
-            if not rows:
-                raise RuntimeError("Empty ticker/24hr response")
+            cdx_req = urllib.request.Request(
+                "https://public.coindcx.com/market_data/v3/current_prices/futures/rt",
+                headers=BROWSER_HEADERS,
+            )
+            with urllib.request.urlopen(cdx_req, timeout=4.0) as r:
+                fut_raw = json.loads(r.read().decode())
+            fut_prices = fut_raw.get("prices", fut_raw) if isinstance(fut_raw, dict) else {}
+            if not fut_prices:
+                raise RuntimeError("Empty CoinDCX futures response")
             with self.lock:
-                for t in rows:
-                    sym = t["symbol"]
-                    if not sym.endswith("USDT"):
+                for fut_sym, t in fut_prices.items():
+                    if not isinstance(t, dict) or not (fut_sym.startswith("B-") and fut_sym.endswith("_USDT")):
                         continue
-                    row = self.prices.get(sym)
-                    if row is None:
+                    base_coin = fut_sym[2:-5]
+                    sym = f"{base_coin}USDT"
+                    price = float(t.get("ls") or t.get("mp") or 0.0)
+                    if price <= 0:
                         continue
-                    first_quote = not row.get("live")
-                    price = float(t["lastPrice"])
-                    hi_p = float(t["highPrice"])
-                    lo_p = float(t["lowPrice"])
-                    vwap_p = float(t.get("weightedAvgPrice") or ((hi_p + lo_p + price) / 3.0))
-                    row.update({"price": price, "target": price, "open24h": float(t["openPrice"]),
-                                "change_pct": float(t["priceChangePercent"]),
-                                "high": hi_p, "low": lo_p, "vwap": vwap_p,
-                                "volume": float(t["quoteVolume"]),
-                                "live": True, "source": "TRADINGVIEW"})
-                    hist = self.history[sym]
-                    decimals = 8 if price < 0.01 else (6 if price < 1 else (4 if price < 10 else 2))
-                    if first_quote or not row.get("seeded_real") or len(hist) < 15:
-                        row["seeded_real"] = True
-                        hist.clear()
-                        ema50_1m = row.get("tv_ema50_1m")
-                        chg_5m = row.get("tv_chg_5m")
-                        tv_rec = row.get("tv_rec_1m") if row.get("tv_rec_1m") is not None else row.get("tv_recommend")
-                        if ema50_1m and float(ema50_1m) > 0 and abs(price - float(ema50_1m)) / price <= 0.04:
-                            start_p = float(ema50_1m)
-                        elif chg_5m is not None and abs(float(chg_5m)) <= 5.0 and abs(float(chg_5m)) > 0.005:
-                            start_p = price / (1.0 + float(chg_5m) / 100.0)
-                        elif tv_rec is not None and abs(float(tv_rec)) >= 0.05:
-                            start_p = price / (1.0 + float(tv_rec) * 0.003)
-                        else:
-                            start_p = price
-                        for k_i in range(20):
-                            frac = (k_i + 1) / 20.0
-                            hist.append(round(start_p + (price - start_p) * frac, decimals))
-                    elif not hist or abs(hist[-1] - price) > price * 1e-7:
-                        hist.append(price)
-                    self._compute_live_tv_ratings(sym, row, hist)
-                    b_alias = f"B-{sym[:-4]}_USDT"
-                    if b_alias in self.prices:
-                        self.prices[b_alias].update({
-                            "open24h": float(t["openPrice"]),
-                            "change_pct": float(t["priceChangePercent"]),
-                            "high": hi_p,
-                            "low": lo_p,
-                            "vwap": vwap_p,
-                            **{k: row.get(k) for k in (
-                                "tv_rsi", "tv_rsi_1m", "tv_rsi_5m", "tv_rsi_1d",
-                                "tv_recommend", "tv_rec_1m", "tv_rec_5m", "tv_rec_1d",
-                                "tv_ma", "tv_ma_1m", "tv_ma_5m",
-                                "tv_other", "tv_other_1m", "tv_other_5m",
-                                "tv_macd_1m", "tv_macd_sig_1m", "tv_macd_5m", "tv_macd_sig_5m",
-                                "tv_ema20_1m", "tv_ema50_1m", "tv_ema20_5m", "tv_ema50_5m",
-                                "tv_chg_1m", "tv_chg_5m", "tv_signal"
-                            ) if row.get(k) is not None}
+                    for target_k in (sym, fut_sym):
+                        row = self.prices.get(target_k)
+                        if row is None:
+                            continue
+                        first_quote = not row.get("live")
+                        hi_p = float(t.get("h") or row.get("high") or price)
+                        lo_p = float(t.get("l") or row.get("low") or price)
+                        chg_p = float(t.get("pc") if t.get("pc") is not None else row.get("change_pct", 0.0))
+                        vol_p = float(t.get("v") or row.get("volume") or 0.0)
+                        vwap_p = (hi_p + lo_p + price) / 3.0
+                        row.update({
+                            "price": price, "target": price,
+                            "open24h": row.get("open24h") or price,
+                            "change_pct": chg_p,
+                            "high": max(hi_p, price), "low": min(lo_p, price) if lo_p > 0 else price,
+                            "vwap": vwap_p, "volume": vol_p,
+                            "live": True, "source": "COINDCX FUTURES"
                         })
+                        hist = self.history[target_k]
+                        decimals = 8 if price < 0.01 else (6 if price < 1 else (4 if price < 10 else 2))
+                        if first_quote or not row.get("seeded_real") or len(hist) < 15:
+                            row["seeded_real"] = True
+                            hist.clear()
+                            ema50_1m = row.get("tv_ema50_1m")
+                            chg_5m = row.get("tv_chg_5m")
+                            tv_rec = row.get("tv_rec_1m") if row.get("tv_rec_1m") is not None else row.get("tv_recommend")
+                            if ema50_1m and float(ema50_1m) > 0 and abs(price - float(ema50_1m)) / price <= 0.04:
+                                start_p = float(ema50_1m)
+                            elif chg_5m is not None and abs(float(chg_5m)) <= 5.0 and abs(float(chg_5m)) > 0.005:
+                                start_p = price / (1.0 + float(chg_5m) / 100.0)
+                            elif tv_rec is not None and abs(float(tv_rec)) >= 0.05:
+                                start_p = price / (1.0 + float(tv_rec) * 0.003)
+                            else:
+                                start_p = price
+                            for k_i in range(20):
+                                frac = (k_i + 1) / 20.0
+                                hist.append(round(start_p + (price - start_p) * frac, decimals))
+                        elif not hist or abs(hist[-1] - price) > price * 1e-7:
+                            hist.append(price)
+                        self._compute_live_tv_ratings(target_k, row, hist)
                 self.updated_at = time.time()
 
             # Dynamic CoinDCX INR & USDT markets feed sync:
@@ -1025,7 +1009,7 @@ class PriceFeed:
                 raw_cryptos = [s for s, r in self.prices.items() if r.get("category", "CRYPTO") == "CRYPTO" and (s.endswith("USDT") or s.startswith("B-"))]
             if not raw_cryptos:
                 return False
-            # Normalize B-BTC_USDT -> BTCUSDT so TradingView BINANCE:<SYM> resolves every CoinDCX contract too
+            # Normalize B-BTC_USDT -> BTCUSDT so TradingView COINBASE:<BASE>USD resolves every CoinDCX contract
             norm_to_keys = defaultdict(list)
             for s in raw_cryptos:
                 clean = s[2:].replace("_", "") if s.startswith("B-") else s.replace("_", "")
@@ -1034,7 +1018,7 @@ class PriceFeed:
             clean_syms = sorted(norm_to_keys.keys())
             if not clean_syms:
                 return False
-            tv_tickers = [f"BINANCE:{s}" for s in clean_syms]
+            tv_tickers = [f"COINBASE:{s[:-4]}USD" for s in clean_syms]
             chunk = 150
             cols = [
                 "close", "change", "high", "low", "volume", "open", "24h_vol|5",
@@ -1074,9 +1058,9 @@ class PriceFeed:
                     for item in tv_data.get("data") or []:
                         try:
                             s_code = item.get("s", "")
-                            if not s_code.startswith("BINANCE:"):
+                            if not (s_code.startswith("COINBASE:") and s_code.endswith("USD")):
                                 continue
-                            sym = s_code.replace("BINANCE:", "")
+                            sym = s_code.replace("COINBASE:", "")[:-3] + "USDT"
                             vals = item.get("d") or []
                             if not vals or vals[0] in (None, "", 0):
                                 continue

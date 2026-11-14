@@ -1186,7 +1186,7 @@ def market(symbol):
                     "name": symbol.replace("INR", "/INR") if "INR" in symbol else symbol.replace("USDT", "/USDT"),
                     "category": "CRYPTO",
                     "currency": "INR" if "INR" in symbol else "USDT",
-                    "tv_symbol": f"BINANCE:{symbol}" if "USDT" in symbol else None,
+                    "tv_symbol": f"COINBASE:{symbol[2:-5]}USD" if (symbol.startswith("B-") and symbol.endswith("_USDT")) else (f"COINBASE:{symbol[:-4]}USD" if symbol.endswith("USDT") else None),
                     "tv_chart": tv_chart_url(symbol, interval),
                     "quote": quote_data,
                     "spark": [c["c"] for c in formatted_candles[-30:]],
