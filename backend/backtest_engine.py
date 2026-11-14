@@ -58,6 +58,7 @@ class BacktestEngine:
 
         tf_seconds = {
             "1m": 60,
+            "3m": 180,
             "5m": 300,
             "15m": 900,
             "1h": 3600,

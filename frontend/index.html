@@ -2329,6 +2329,7 @@
           <button data-tab="history">History <span id="badge_hist_count" class="tab_count_pill">0</span></button>
           <button data-tab="analytics">Analytics</button>
           <button data-tab="az_analysis" class="az_analysis_tab">A–Z Market Analysis</button>
+          <button data-tab="auto_scalping" class="auto_scalping_tab" style="background:linear-gradient(135deg, rgba(234,179,8,0.15), rgba(249,115,22,0.15)); border:1px solid rgba(234,179,8,0.4); color:#eab308; font-weight:700;">⚡ Auto Scalping V2.1</button>
           <button data-tab="eod" class="eod_tab">EOD Report</button>
           <button data-tab="ai_oracle" class="ai_oracle_tab">Araa AI Decisions</button>
         </div>
@@ -2532,6 +2533,234 @@
               <span class="table_count_badge">Continuous Neural Stream</span>
             </div>
             <div id="oracle_decision_logs" class="oracle_logs_container"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================ TAB: AUTO SCALPING V2.1 ============================ -->
+      <div id="tab_auto_scalping" class="tbody hide" style="padding:16px;">
+        <!-- Hero Header & Global Scalp Engine Controller -->
+        <div class="card" style="background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,41,59,0.9)); border:1px solid rgba(234,179,8,0.35); border-radius:12px; padding:18px; margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:14px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <span style="font-size:26px;">⚡</span>
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <b style="font-size:15px; color:#eab308; letter-spacing:0.5px;">ARAABOT V2.1 ADVANCED AUTO SCALPING ENGINE</b>
+                  <span id="scalp_engine_badge" style="background:rgba(234,179,8,0.15); border:1px solid rgba(234,179,8,0.4); color:#eab308; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">100% PYTHON RULES ENFORCED</span>
+                  <span id="scalp_coindcx_badge" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); color:#10b981; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">COINDCX FUTURES ACTIVE</span>
+                </div>
+                <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+                  Araa AI Analyzes · Scalping Engine Identifies Opportunities · Python Rules Approve · Risk Engine Validates · CoinDCX Executes
+                </div>
+              </div>
+            </div>
+            <!-- Engine Action Controls -->
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button id="btn_scalp_enable" class="btn sm primary" style="background:#10b981; color:#fff; font-weight:700; padding:6px 14px; border:none; border-radius:6px; cursor:pointer;">▶ Enable Auto Scalping</button>
+              <button id="btn_scalp_pause" class="btn sm" style="background:rgba(234,179,8,0.2); border:1px solid #eab308; color:#eab308; font-weight:600; padding:6px 12px; border-radius:6px; cursor:pointer;">⏸ Pause</button>
+              <button id="btn_scalp_resume" class="btn sm" style="background:rgba(59,130,246,0.2); border:1px solid #3b82f6; color:#3b82f6; font-weight:600; padding:6px 12px; border-radius:6px; cursor:pointer;">▶ Resume</button>
+              <button id="btn_scalp_stop" class="btn sm" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; font-weight:600; padding:6px 12px; border-radius:6px; cursor:pointer;">⏹ Stop</button>
+              <button id="btn_scalp_emergency" class="btn sm" style="background:#ef4444; color:#fff; font-weight:700; padding:6px 14px; border:none; border-radius:6px; cursor:pointer;">🚨 EMERGENCY STOP</button>
+              <button id="btn_scalp_trigger_cycle" class="btn sm ghost" style="border:1px solid rgba(255,255,255,0.2); padding:6px 10px; font-size:11px; border-radius:6px; cursor:pointer;">🔄 Run Cycle</button>
+            </div>
+          </div>
+
+          <!-- Configuration Strip -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; background:rgba(0,0,0,0.2); padding:12px; border-radius:8px;">
+            <div>
+              <span class="tiny" style="color:var(--muted); display:block;">SELECTED INSTRUMENT</span>
+              <select id="scalp_symbol_select" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
+                <option value="BTCUSDT" selected>BTCUSDT (Bitcoin Futures)</option>
+                <option value="ETHUSDT">ETHUSDT (Ethereum Futures)</option>
+                <option value="SOLUSDT">SOLUSDT (Solana Futures)</option>
+                <option value="XRPUSDT">XRPUSDT (Ripple Futures)</option>
+                <option value="DOGEUSDT">DOGEUSDT (Dogecoin Futures)</option>
+              </select>
+            </div>
+            <div>
+              <span class="tiny" style="color:var(--muted); display:block;">SCALPING STRATEGY</span>
+              <select id="scalp_strategy_select" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
+                <option value="ARAA_AI_SCALPING" selected>E. Araa AI Confluence Scalping</option>
+                <option value="EMA_MOMENTUM_SCALPING">A. EMA Momentum Scalping (9/21/50)</option>
+                <option value="RSI_MOMENTUM_SCALPING">B. RSI Momentum Scalping (RSI 14)</option>
+                <option value="MACD_SCALPING">C. MACD Crossover Scalping</option>
+                <option value="BREAKOUT_SCALPING">D. Breakout & Retest Scalping</option>
+              </select>
+            </div>
+            <div>
+              <span class="tiny" style="color:var(--muted); display:block;">ENTRY TIMEFRAME (TRIGGER)</span>
+              <select id="scalp_entry_tf" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
+                <option value="1m" selected>1-Minute (1M Entry Trigger)</option>
+                <option value="3m">3-Minute (3M Entry Trigger)</option>
+                <option value="5m">5-Minute (5M Entry Trigger)</option>
+              </select>
+            </div>
+            <div>
+              <span class="tiny" style="color:var(--muted); display:block;">SETUP TIMEFRAME (CONFIRMATION)</span>
+              <select id="scalp_setup_tf" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
+                <option value="3m">3-Minute Setup</option>
+                <option value="5m" selected>5-Minute Setup (Recommended)</option>
+                <option value="15m">15-Minute Setup</option>
+              </select>
+            </div>
+            <div>
+              <span class="tiny" style="color:var(--muted); display:block;">TREND TIMEFRAME (FILTER)</span>
+              <select id="scalp_trend_tf" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
+                <option value="15m" selected>15-Minute Trend Filter</option>
+                <option value="1h">1-Hour Trend Filter</option>
+                <option value="4h">4-Hour Trend Filter</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Market Analysis & Signal Confluence Strip -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:16px;">
+          <!-- Technical Indicators Box -->
+          <div class="card" style="padding:14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <b style="font-size:12.5px; color:var(--text);">📊 TECHNICAL INDICATORS</b>
+              <span id="scalp_trend_pill" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10b981;">BULLISH</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11.5px;">
+              <div><span class="tiny" style="color:var(--muted);">RSI 14:</span> <b id="scalp_val_rsi" style="color:#eab308;">54.20</b></div>
+              <div><span class="tiny" style="color:var(--muted);">EMA 9:</span> <b id="scalp_val_ema9">$0.00</b></div>
+              <div><span class="tiny" style="color:var(--muted);">EMA 21:</span> <b id="scalp_val_ema21">$0.00</b></div>
+              <div><span class="tiny" style="color:var(--muted);">EMA 50:</span> <b id="scalp_val_ema50">$0.00</b></div>
+              <div><span class="tiny" style="color:var(--muted);">MACD Hist:</span> <b id="scalp_val_macd" style="color:#10b981;">+0.0000</b></div>
+              <div><span class="tiny" style="color:var(--muted);">Relative Vol:</span> <b id="scalp_val_vol">1.25x</b></div>
+              <div><span class="tiny" style="color:var(--muted);">Volatility:</span> <b id="scalp_val_volatility">NORMAL</b></div>
+              <div><span class="tiny" style="color:var(--muted);">Regime:</span> <b id="scalp_val_regime">TRENDING_UP</b></div>
+            </div>
+          </div>
+
+          <!-- Signal & Rule Validation Box -->
+          <div class="card" style="padding:14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <b style="font-size:12.5px; color:var(--text);">🛡️ PYTHON RULE VALIDATION</b>
+              <span id="scalp_approval_badge" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10b981;">RULE APPROVED</span>
+            </div>
+            <div id="scalp_rules_panel_list" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px;">
+              <div>EMA Ribbon: <b id="rule_chk_ema" style="color:#10b981;">PASS</b></div>
+              <div>RSI Filter: <b id="rule_chk_rsi" style="color:#10b981;">PASS</b></div>
+              <div>MACD Cross: <b id="rule_chk_macd" style="color:#10b981;">PASS</b></div>
+              <div>Volume Conf: <b id="rule_chk_vol" style="color:#10b981;">PASS</b></div>
+              <div>Higher TF: <b id="rule_chk_htf" style="color:#10b981;">PASS</b></div>
+              <div>Risk Approval: <b id="rule_chk_risk" style="color:#10b981;">APPROVED</b></div>
+            </div>
+            <div style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06); font-size:11px;">
+              <span class="tiny" style="color:var(--muted);">Active Signal:</span>
+              <b id="scalp_active_signal_txt" style="color:#eab308; margin-left:4px;">Scanning 1M trigger...</b>
+            </div>
+          </div>
+
+          <!-- Scalping Risk Engine Box -->
+          <div class="card" style="padding:14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <b style="font-size:12.5px; color:var(--text);">⚙️ SCALPING RISK ENGINE</b>
+              <span style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(59,130,246,0.15); color:#3b82f6;">PROTECTIVE GUARDS ON</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px;">
+              <div>Risk Per Trade: <b style="color:var(--text);">0.25% Equity</b></div>
+              <div>Max Leverage: <b style="color:var(--text);">20x Futures</b></div>
+              <div>Daily Loss Limit: <b style="color:#ef4444;">1.5% Equity</b></div>
+              <div>Max Scalp Pos: <b style="color:var(--text);">1 Position</b></div>
+              <div>Max Consec Loss: <b style="color:var(--text);">3 Trades</b></div>
+              <div>Loss Cooldown: <b style="color:var(--text);">300s Active</b></div>
+            </div>
+            <div style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06); font-size:11px;">
+              <span class="tiny" style="color:var(--muted);">Smart TP Plan:</span>
+              <b style="color:#10b981;">TP1 1R (30%) · TP2 1.5R (30%) · Trail 40%</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Scalping Positions Table -->
+        <div class="card" style="margin-bottom:16px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+          <div style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line);">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:14px;">🎯</span>
+              <b style="font-size:13px; color:var(--text);">LIVE SCALPING POSITIONS</b>
+              <span id="scalp_pos_count_badge" style="background:rgba(234,179,8,0.15); color:#eab308; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px;">0 OPEN</span>
+            </div>
+            <span class="tiny" style="color:var(--muted);">Real-Time Net P&L (Deducts Fees & Funding)</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="table" style="width:100%; border-collapse:collapse; font-size:11.5px;">
+              <thead>
+                <tr style="background:rgba(0,0,0,0.2); text-align:left; color:var(--muted);">
+                  <th style="padding:8px 12px;">Symbol</th>
+                  <th style="padding:8px 12px;">Direction</th>
+                  <th style="padding:8px 12px;">Entry Price</th>
+                  <th style="padding:8px 12px;">Mark Price</th>
+                  <th style="padding:8px 12px;">Quantity</th>
+                  <th style="padding:8px 12px;">Stop-Loss</th>
+                  <th style="padding:8px 12px;">Take-Profit</th>
+                  <th style="padding:8px 12px;">Trading Fees</th>
+                  <th style="padding:8px 12px;">Net P&amp;L</th>
+                  <th style="padding:8px 12px;">Partial Booking</th>
+                  <th style="padding:8px 12px;">Trailing Stop</th>
+                  <th style="padding:8px 12px; text-align:right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="scalp_positions_tbody">
+                <tr><td colspan="12" style="text-align:center; padding:20px; color:var(--muted);">No active scalping positions. Auto Scalper is actively monitoring triggers.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Scalping Performance Dashboard Strip -->
+        <div class="card" style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:14px;">📈</span>
+              <b style="font-size:13px; color:var(--text);">SCALPING PERFORMANCE DASHBOARD</b>
+            </div>
+            <span class="tiny" style="color:var(--muted);">Historical Trade Records &amp; Net Verified Metrics</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">TOTAL TRADES</span>
+              <b id="perf_scalp_total" style="font-size:15px; color:var(--text);">0</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">WIN RATE</span>
+              <b id="perf_scalp_winrate" style="font-size:15px; color:#10b981;">0.00%</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">WINS / LOSSES</span>
+              <b id="perf_scalp_wl" style="font-size:15px; color:var(--text);">0 / 0</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">GROSS PROFIT</span>
+              <b id="perf_scalp_gross_win" style="font-size:15px; color:#10b981;">$0.00</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">GROSS LOSS</span>
+              <b id="perf_scalp_gross_loss" style="font-size:15px; color:#ef4444;">$0.00</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">NET PROFIT</span>
+              <b id="perf_scalp_net_profit" style="font-size:15px; color:#10b981;">$0.00</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">TOTAL FEES</span>
+              <b id="perf_scalp_fees" style="font-size:15px; color:#eab308;">$0.00</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">PROFIT FACTOR</span>
+              <b id="perf_scalp_pf" style="font-size:15px; color:var(--text);">0.00</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">MAX DRAWDOWN</span>
+              <b id="perf_scalp_max_dd" style="font-size:15px; color:#ef4444;">$0.00</b>
+            </div>
+            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
+              <span class="tiny" style="color:var(--muted); display:block;">TODAY'S P&amp;L</span>
+              <b id="perf_scalp_today" style="font-size:15px; color:#10b981;">+$0.00</b>
+            </div>
           </div>
         </div>
       </div>

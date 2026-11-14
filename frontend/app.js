@@ -7884,13 +7884,14 @@ function showTab(t) {
   S.tab = t;
   document.querySelectorAll("#tabnav button").forEach(x => x.classList.toggle("active", x.dataset.tab === t));
   document.querySelectorAll("#tp_subnav .tp-subnav-list button").forEach(x => x.classList.toggle("active", x.dataset.page === t));
-  ["positions", "orders", "history", "analytics", "az_analysis", "eod", "ai_oracle"].forEach(x => {
+  ["positions", "orders", "history", "analytics", "az_analysis", "auto_scalping", "eod", "ai_oracle"].forEach(x => {
     const el = $("tab_" + x);
     if (el) el.classList.toggle("hide", x !== t);
   });
   if (t === "history") renderHistoryTab(true);
   if (t === "ai_oracle") renderOracleTab();
   if (t === "az_analysis") renderTabAZ();
+  if (t === "auto_scalping") renderAutoScalpingTab();
   if (t === "eod") renderEOD(S.acct);
   if (window.tpSyncPageTitle && document.getElementById("app")?.classList.contains("page-mode")) tpSyncPageTitle(t);
 }
@@ -10322,3 +10323,274 @@ setInterval(() => {
     window.pollRobotAgentThoughts();
   }
 }, 4000);
+
+/* =====================================================================
+   ARAABOT V2.1 — ADVANCED AUTO SCALPING ENGINE FRONTEND CONTROLLER
+===================================================================== */
+
+let autoScalpPollTimer = null;
+
+async function renderAutoScalpingTab() {
+  const symEl = $("scalp_symbol_select");
+  const stratEl = $("scalp_strategy_select");
+  const entryTfEl = $("scalp_entry_tf");
+  const setupTfEl = $("scalp_setup_tf");
+  const trendTfEl = $("scalp_trend_tf");
+
+  const sym = symEl ? symEl.value : "BTCUSDT";
+  const strat = stratEl ? stratEl.value : "ARAA_AI_SCALPING";
+  const entryTf = entryTfEl ? entryTfEl.value : "1m";
+  const setupTf = setupTfEl ? setupTfEl.value : "5m";
+  const trendTf = trendTfEl ? trendTfEl.value : "15m";
+
+  try {
+    const url = `/api/v2/scalping/dashboard?symbol=${encodeURIComponent(sym)}&strategy=${encodeURIComponent(strat)}&entry_timeframe=${encodeURIComponent(entryTf)}&setup_timeframe=${encodeURIComponent(setupTf)}&trend_timeframe=${encodeURIComponent(trendTf)}`;
+    const data = await call(url);
+    if (!data) return;
+
+    // 1. Auto Scalping Status & Controls
+    const asp = data.auto_scalping_panel || {};
+    const badgeEl = $("scalp_engine_badge");
+    if (badgeEl) {
+      if (asp.status === "RUNNING") {
+        badgeEl.textContent = "⚡ SCALPING ACTIVE · RUNNING";
+        badgeEl.style.color = "#10b981";
+        badgeEl.style.borderColor = "rgba(16,185,129,0.4)";
+        badgeEl.style.background = "rgba(16,185,129,0.15)";
+      } else if (asp.status === "PAUSED") {
+        badgeEl.textContent = "⏸ SCALPING PAUSED";
+        badgeEl.style.color = "#eab308";
+        badgeEl.style.borderColor = "rgba(234,179,8,0.4)";
+        badgeEl.style.background = "rgba(234,179,8,0.15)";
+      } else if (asp.status === "EMERGENCY_STOP") {
+        badgeEl.textContent = "🚨 EMERGENCY STOPPED";
+        badgeEl.style.color = "#ef4444";
+        badgeEl.style.borderColor = "rgba(239,68,68,0.4)";
+        badgeEl.style.background = "rgba(239,68,68,0.15)";
+      } else {
+        badgeEl.textContent = "⏹ SCALPING STOPPED";
+        badgeEl.style.color = "var(--muted)";
+        badgeEl.style.borderColor = "var(--line)";
+        badgeEl.style.background = "rgba(255,255,255,0.05)";
+      }
+    }
+
+    const cdxBadge = $("scalp_coindcx_badge");
+    if (cdxBadge) {
+      cdxBadge.textContent = asp.coindcx_connection === "CONNECTED" ? "COINDCX FUTURES CONNECTED" : "COINDCX FUTURES STANDBY";
+      cdxBadge.style.color = asp.coindcx_connection === "CONNECTED" ? "#10b981" : "#eab308";
+    }
+
+    // 2. Technical Indicators
+    const inds = asp.indicators || {};
+    if ($("scalp_val_rsi")) $("scalp_val_rsi").textContent = Number(inds.rsi14 || 50).toFixed(2);
+    if ($("scalp_val_ema9")) $("scalp_val_ema9").textContent = "$" + Number(inds.ema9 || 0).toFixed(2);
+    if ($("scalp_val_ema21")) $("scalp_val_ema21").textContent = "$" + Number(inds.ema21 || 0).toFixed(2);
+    if ($("scalp_val_ema50")) $("scalp_val_ema50").textContent = "$" + Number(inds.ema50 || 0).toFixed(2);
+    if ($("scalp_val_macd")) $("scalp_val_macd").textContent = (Number(inds.macd_hist || 0) >= 0 ? "+" : "") + Number(inds.macd_hist || 0).toFixed(4);
+    if ($("scalp_val_vol")) $("scalp_val_vol").textContent = Number(inds.relative_volume || 1.0).toFixed(2) + "x";
+    if ($("scalp_val_volatility")) $("scalp_val_volatility").textContent = inds.volatility || "NORMAL";
+    if ($("scalp_val_regime")) $("scalp_val_regime").textContent = asp.market_regime || "UNKNOWN";
+
+    const trendPill = $("scalp_trend_pill");
+    if (trendPill) {
+      trendPill.textContent = asp.current_market_trend || "NEUTRAL";
+      trendPill.style.color = asp.current_market_trend === "BULLISH" ? "#10b981" : (asp.current_market_trend === "BEARISH" ? "#ef4444" : "var(--muted)");
+    }
+
+    // 3. Signal & Rule Validation
+    const sig = asp.current_signal;
+    const sigTxt = $("scalp_active_signal_txt");
+    if (sigTxt) {
+      if (sig && sig.side) {
+        sigTxt.textContent = `🎯 ${sig.side} ${sig.symbol} @ $${Number(sig.entry_price || 0).toFixed(2)} [SL: $${Number(sig.suggested_sl || 0).toFixed(2)} | TP: $${Number(sig.suggested_tp || 0).toFixed(2)}]`;
+        sigTxt.style.color = sig.side === "LONG" ? "#10b981" : "#ef4444";
+      } else {
+        sigTxt.textContent = `Scanning ${sym} (${entryTf}/${setupTf}/${trendTf}) — awaiting strategy setup trigger.`;
+        sigTxt.style.color = "#eab308";
+      }
+    }
+
+    const appBadge = $("scalp_approval_badge");
+    if (appBadge) {
+      appBadge.textContent = asp.risk_approval === "APPROVED" ? "10 PYTHON RULES PASSED" : "RULES GUARDING";
+      appBadge.style.color = asp.risk_approval === "APPROVED" ? "#10b981" : "#eab308";
+    }
+
+    // 4. Live Scalping Positions Table
+    const posTbody = $("scalp_positions_tbody");
+    const openPositions = data.live_scalping_positions || [];
+    const posCountBadge = $("scalp_pos_count_badge");
+    if (posCountBadge) posCountBadge.textContent = `${openPositions.length} OPEN`;
+
+    if (posTbody) {
+      if (openPositions.length === 0) {
+        posTbody.innerHTML = `<tr><td colspan="12" style="text-align:center; padding:20px; color:var(--muted);">No active scalping positions. Auto Scalper is actively monitoring triggers.</td></tr>`;
+      } else {
+        posTbody.innerHTML = openPositions.map(p => {
+          const pnlColor = p.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
+          const pnlSign = p.unrealized_pnl >= 0 ? "+" : "";
+          const dirColor = p.direction === "LONG" ? "#10b981" : "#ef4444";
+          return `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+              <td style="padding:10px 12px; font-weight:700;"><b>${p.symbol}</b> ${p.is_live ? '<span style="font-size:9px; color:#10b981; border:1px solid #10b981; padding:0 3px; border-radius:3px;">LIVE</span>' : '<span style="font-size:9px; color:var(--muted); border:1px solid var(--line); padding:0 3px; border-radius:3px;">PAPER</span>'}</td>
+              <td style="padding:10px 12px; font-weight:700; color:${dirColor};">${p.direction}</td>
+              <td style="padding:10px 12px;">$${Number(p.entry_price).toFixed(2)}</td>
+              <td style="padding:10px 12px;">$${Number(p.mark_price).toFixed(2)}</td>
+              <td style="padding:10px 12px;">${Number(p.quantity).toFixed(4)}</td>
+              <td style="padding:10px 12px; color:#ef4444;">$${Number(p.stop_loss).toFixed(2)}</td>
+              <td style="padding:10px 12px; color:#10b981;">$${Number(p.take_profit).toFixed(2)}</td>
+              <td style="padding:10px 12px; color:#eab308;">$${Number(p.trading_fees).toFixed(4)}</td>
+              <td style="padding:10px 12px; font-weight:700; color:${pnlColor};">${pnlSign}$${Number(p.unrealized_pnl).toFixed(2)}</td>
+              <td style="padding:10px 12px;"><span style="background:rgba(16,185,129,0.15); color:#10b981; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600;">${p.partial_booking_status}</span></td>
+              <td style="padding:10px 12px;"><span style="background:rgba(59,130,246,0.15); color:#3b82f6; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600;">${p.trailing_stop_status}</span></td>
+              <td style="padding:10px 12px; text-align:right;">
+                <button class="btn sm" onclick="window.scalpClosePosition(${p.id})" style="background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#ef4444; font-size:10.5px; padding:3px 8px; border-radius:4px; cursor:pointer;">Close</button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      }
+    }
+
+    // 5. Scalping Performance Metrics
+    const perf = data.scalping_performance || {};
+    if ($("perf_scalp_total")) $("perf_scalp_total").textContent = perf.total_scalping_trades || 0;
+    if ($("perf_scalp_winrate")) $("perf_scalp_winrate").textContent = Number(perf.win_rate_pct || 0).toFixed(2) + "%";
+    if ($("perf_scalp_wl")) $("perf_scalp_wl").textContent = `${perf.winning_trades || 0} / ${perf.losing_trades || 0}`;
+    if ($("perf_scalp_gross_win")) $("perf_scalp_gross_win").textContent = "$" + Number(perf.gross_profit_usdt || 0).toFixed(2);
+    if ($("perf_scalp_gross_loss")) $("perf_scalp_gross_loss").textContent = "$" + Number(perf.gross_loss_usdt || 0).toFixed(2);
+    if ($("perf_scalp_net_profit")) {
+      const net = Number(perf.net_profit_usdt || 0);
+      $("perf_scalp_net_profit").textContent = (net >= 0 ? "+" : "") + "$" + net.toFixed(2);
+      $("perf_scalp_net_profit").style.color = net >= 0 ? "#10b981" : "#ef4444";
+    }
+    if ($("perf_scalp_fees")) $("perf_scalp_fees").textContent = "$" + Number(perf.trading_fees_usdt || 0).toFixed(2);
+    if ($("perf_scalp_pf")) $("perf_scalp_pf").textContent = Number(perf.profit_factor || 0).toFixed(2);
+    if ($("perf_scalp_max_dd")) $("perf_scalp_max_dd").textContent = "$" + Number(perf.max_drawdown_usdt || 0).toFixed(2);
+    if ($("perf_scalp_today")) {
+      const td = Number(perf.daily_scalping_pnl_usdt || 0);
+      $("perf_scalp_today").textContent = (td >= 0 ? "+" : "") + "$" + td.toFixed(2);
+      $("perf_scalp_today").style.color = td >= 0 ? "#10b981" : "#ef4444";
+    }
+
+  } catch (e) {
+    console.error("renderAutoScalpingTab error:", e);
+  }
+}
+
+// Action Handlers
+window.scalpSendControl = async function(action) {
+  try {
+    const sym = $("scalp_symbol_select") ? $("scalp_symbol_select").value : "BTCUSDT";
+    const strat = $("scalp_strategy_select") ? $("scalp_strategy_select").value : "ARAA_AI_SCALPING";
+    const entryTf = $("scalp_entry_tf") ? $("scalp_entry_tf").value : "1m";
+    const setupTf = $("scalp_setup_tf") ? $("scalp_setup_tf").value : "5m";
+    const trendTf = $("scalp_trend_tf") ? $("scalp_trend_tf").value : "15m";
+
+    const res = await call("/api/v2/scalping/control", {
+      method: "POST",
+      body: JSON.stringify({
+        action: action,
+        symbol: sym,
+        strategy: strat,
+        entry_timeframe: entryTf,
+        setup_timeframe: setupTf,
+        trend_timeframe: trendTf,
+      }),
+    });
+    if (res && res.ok) {
+      toast(`⚡ Auto Scalper: ${action} successfully executed`, "green");
+      renderAutoScalpingTab();
+    } else {
+      toast(`❌ Control error: ${res ? res.error : "Failed"}`, "red");
+    }
+  } catch (err) {
+    toast(`❌ Request failed: ${err.message}`, "red");
+  }
+};
+
+window.scalpTriggerCycle = async function() {
+  try {
+    const sym = $("scalp_symbol_select") ? $("scalp_symbol_select").value : "BTCUSDT";
+    const strat = $("scalp_strategy_select") ? $("scalp_strategy_select").value : "ARAA_AI_SCALPING";
+    const entryTf = $("scalp_entry_tf") ? $("scalp_entry_tf").value : "1m";
+    const setupTf = $("scalp_setup_tf") ? $("scalp_setup_tf").value : "5m";
+    const trendTf = $("scalp_trend_tf") ? $("scalp_trend_tf").value : "15m";
+
+    const res = await call("/api/v2/scalping/cycle", {
+      method: "POST",
+      body: JSON.stringify({
+        symbol: sym,
+        strategy: strat,
+        timeframes: { entry: entryTf, setup: setupTf, trend: trendTf }
+      }),
+    });
+    if (res && res.ok) {
+      toast(`⚡ Auto Scalp Cycle Run: ${res.status || res.step || "OK"}`, "green");
+      renderAutoScalpingTab();
+    } else {
+      toast(`❌ Cycle failed: ${res ? res.error : "Unknown"}`, "red");
+    }
+  } catch (err) {
+    toast(`❌ Request failed: ${err.message}`, "red");
+  }
+};
+
+window.scalpClosePosition = async function(posId) {
+  if (!confirm("Are you sure you want to close this scalping position now?")) return;
+  try {
+    const res = await call("/api/v2/positions/manage", {
+      method: "POST",
+      body: JSON.stringify({ action: "CLOSE_POSITION", position_id: posId })
+    });
+    if (res && res.ok) {
+      toast("Position closed successfully", "green");
+      renderAutoScalpingTab();
+    } else {
+      toast(`Close failed: ${res ? res.error : "Error"}`, "red");
+    }
+  } catch (err) {
+    toast(`Error: ${err.message}`, "red");
+  }
+};
+
+// Wire Auto Scalping UI Event Listeners
+document.addEventListener("DOMContentLoaded", () => {
+  const btnEnable = $("btn_scalp_enable");
+  if (btnEnable) btnEnable.addEventListener("click", () => window.scalpSendControl("ENABLE"));
+
+  const btnPause = $("btn_scalp_pause");
+  if (btnPause) btnPause.addEventListener("click", () => window.scalpSendControl("PAUSE"));
+
+  const btnResume = $("btn_scalp_resume");
+  if (btnResume) btnResume.addEventListener("click", () => window.scalpSendControl("RESUME"));
+
+  const btnStop = $("btn_scalp_stop");
+  if (btnStop) btnStop.addEventListener("click", () => window.scalpSendControl("STOP"));
+
+  const btnEmergency = $("btn_scalp_emergency");
+  if (btnEmergency) btnEmergency.addEventListener("click", () => {
+    if (confirm("🚨 EMERGENCY STOP: Are you sure you want to shut down Auto Scalping and immediately close all open positions?")) {
+      window.scalpSendControl("EMERGENCY_STOP");
+    }
+  });
+
+  const btnCycle = $("btn_scalp_trigger_cycle");
+  if (btnCycle) btnCycle.addEventListener("click", () => window.scalpTriggerCycle());
+
+  const symSelect = $("scalp_symbol_select");
+  if (symSelect) symSelect.addEventListener("change", () => renderAutoScalpingTab());
+
+  const stratSelect = $("scalp_strategy_select");
+  if (stratSelect) stratSelect.addEventListener("change", () => renderAutoScalpingTab());
+
+  // Background refresh interval when tab is active
+  if (autoScalpPollTimer) clearInterval(autoScalpPollTimer);
+  autoScalpPollTimer = setInterval(() => {
+    if (S.tab === "auto_scalping" && document.visibilityState === "visible") {
+      renderAutoScalpingTab().catch(() => {});
+    }
+  }, 5000);
+});
+

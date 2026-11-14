@@ -4608,6 +4608,245 @@ def api_v2_live_trading_panel():
     )
 
 
+# =====================================================================
+# ARAABOT V2.1 — ADVANCED AUTO SCALPING ENGINE & COINDCX FUTURES API
+# =====================================================================
+
+@api.route("/api/v2/scalping/status", methods=["GET"])
+def api_v2_scalping_status():
+    """Returns current real-time Auto Scalping status, strategy, timeframes, and indicators."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    uid = u["id"]
+    from strategy_engine import StrategyEngine
+    st = StrategyEngine.get_auto_scalping_status(uid)
+    ctrl = StrategyEngine.get_real_bot_controller_state(uid)
+    return ok(scalping_status=st, controller=ctrl)
+
+
+@api.route("/api/v2/scalping/control", methods=["POST"])
+def api_v2_scalping_control():
+    """Controls Auto Scalping: ENABLE, PAUSE, RESUME, STOP, EMERGENCY_STOP."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    uid = u["id"]
+    body = request.get_json(silent=True) or {}
+    action = str(body.get("action") or "").upper().strip()
+    if not action:
+        return fail("Action required (ENABLE, PAUSE, RESUME, STOP, EMERGENCY_STOP)", 400)
+    from strategy_engine import StrategyEngine
+    res = StrategyEngine.set_auto_scalping_control(uid, action, config=body)
+    if not res.get("success"):
+        return fail(res.get("error") or "Control action failed", 400)
+    return ok(result=res, **res)
+
+
+@api.route("/api/v2/scalping/cycle", methods=["POST"])
+def api_v2_scalping_cycle():
+    """
+    Executes a single end-to-end 16-step Auto Scalping cycle:
+    Live data -> indicators -> opportunity -> 10 Python rules -> risk limits -> sizing -> margin -> CoinDCX execution -> verify fill -> register.
+    """
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    uid = u["id"]
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol") or "BTCUSDT").upper().strip()
+    strategy = str(body.get("strategy") or "ARAA_AI_SCALPING").upper().strip()
+    timeframes = body.get("timeframes") or {"entry": "1m", "setup": "5m", "trend": "15m"}
+
+    from strategy_engine import StrategyEngine
+    res = StrategyEngine.execute_auto_scalp_cycle(
+        user_id=uid,
+        symbol=symbol,
+        strategy_code=strategy,
+        timeframes=timeframes,
+        feed=feed,
+    )
+    return ok(result=res, **res)
+
+
+@api.route("/api/v2/scalping/dashboard", methods=["GET"])
+def api_v2_scalping_dashboard():
+    """
+    Complete AraaBot V2.1 Auto Scalping Dashboard Payload:
+    - Auto Scalping ON/OFF & Connection
+    - Selected Instrument & Strategy (EMA, RSI, MACD, Breakout, Araa AI)
+    - Timeframes (1m, 3m, 5m, 15m)
+    - Current Market Trend, RSI, EMA, MACD, Volume, Volatility
+    - Current Signal, Rule Validation, Risk Approval, Execution Status
+    - Live Scalping Positions (Symbol, Direction, Entry, Mark, Qty, SL, TP, Net P&L, Status, Fees, Trailing/BE)
+    - Scalping Performance Metrics (Total, Wins, Losses, Win Rate, Gross/Net Profit, Fees, Drawdown, Daily P&L)
+    """
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    uid = u["id"]
+    symbol = str(request.args.get("symbol") or "BTCUSDT").upper().strip()
+    strategy_code = str(request.args.get("strategy") or "ARAA_AI_SCALPING").upper().strip()
+    entry_tf = str(request.args.get("entry_timeframe") or "1m").lower().strip()
+    setup_tf = str(request.args.get("setup_timeframe") or "5m").lower().strip()
+    trend_tf = str(request.args.get("trend_timeframe") or "15m").lower().strip()
+
+    from analysis_engine import analyze_technical_v2, analyze_multi_timeframe, analyze_scalping_strategies
+    from backtest_engine import BacktestEngine
+    from coindcx_adapter import CoinDCXExecutionAdapter
+    from strategy_engine import StrategyEngine
+
+    # Fetch multi-timeframe candles
+    candles_by_tf = {}
+    for tf in [entry_tf, setup_tf, trend_tf]:
+        c_list, _, _, _ = BacktestEngine.generate_historical_candles(symbol=symbol, timeframe=tf, count=65)
+        live_px = float(feed.live_price(symbol) or feed.price(symbol) or 0.0)
+        if live_px > 0 and c_list:
+            c_list[-1]["c"] = live_px
+            c_list[-1]["h"] = max(float(c_list[-1]["h"]), live_px)
+            c_list[-1]["l"] = min(float(c_list[-1]["l"]), live_px)
+        candles_by_tf[tf] = c_list
+
+    primary_candles = candles_by_tf.get(entry_tf) or candles_by_tf[trend_tf]
+    primary_ta = analyze_technical_v2(symbol, primary_candles, timeframe=entry_tf, use_closed_candles_only=True)
+    mtf_res = analyze_multi_timeframe(
+        symbol,
+        candles_by_tf,
+        tf_config={"major_tf": trend_tf, "confirm_tf": setup_tf, "setup_tf": setup_tf, "entry_tf": entry_tf},
+        use_closed_candles_only=True,
+    )
+    scalp_analysis = analyze_scalping_strategies(
+        symbol,
+        primary_ta,
+        mtf_result=mtf_res,
+        custom_scalp_cfg={"active_scalping_strategy": strategy_code},
+    )
+
+    strat_status = StrategyEngine.get_auto_scalping_status(uid)
+    ctrl = StrategyEngine.get_real_bot_controller_state(uid)
+    dash = CoinDCXExecutionAdapter.compute_usd_profit_dashboard(uid)
+
+    # Live scalping positions
+    open_pos_rows = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' ORDER BY opened_at DESC", (uid,))
+    live_scalping_positions = []
+    for p in open_pos_rows or []:
+        sym_p = p.get("symbol") or "BTCUSDT"
+        mark_px = float(feed.live_price(sym_p) or feed.price(sym_p) or p.get("current_price") or p.get("entry_price") or 0.0)
+        ent_px = float(p.get("entry_price") or 0.0)
+        p_qty = float(p.get("qty") or 0.0)
+        side_p = str(p.get("side") or "LONG").upper()
+        dir_mult = 1.0 if side_p in ("BUY", "LONG") else -1.0
+        gross_pnl = (mark_px - ent_px) * p_qty * dir_mult if (mark_px > 0 and ent_px > 0) else 0.0
+        fees = (mark_px * p_qty) * 0.0005 * 2.0
+        funding = float(p.get("funding_fee_usd") or 0.0)
+        net_unrealized = round(gross_pnl - fees - funding, 4)
+
+        sl_pct = float(p.get("stop_pct") or 0.35)
+        tp_pct = float(p.get("target_pct") or 0.70)
+        sl_price = round(ent_px * (1.0 - sl_pct / 100.0) if dir_mult > 0 else ent_px * (1.0 + sl_pct / 100.0), 6)
+        tp_price = round(ent_px * (1.0 + tp_pct / 100.0) if dir_mult > 0 else ent_px * (1.0 - tp_pct / 100.0), 6)
+
+        live_scalping_positions.append({
+            "id": p["id"],
+            "symbol": sym_p,
+            "direction": side_p,
+            "entry_price": ent_px,
+            "mark_price": mark_px,
+            "quantity": p_qty,
+            "stop_loss": sl_price,
+            "take_profit": tp_price,
+            "unrealized_pnl": net_unrealized,
+            "realized_pnl": float(p.get("realized_pnl") or 0.0),
+            "trading_fees": round(fees, 4),
+            "funding_fees": funding,
+            "partial_booking_status": f"TP booked x{p.get('partial_tp_booked', 0)}" if int(p.get("partial_tp_booked") or 0) > 0 else "Pending TP1",
+            "trailing_stop_status": "Active" if float(p.get("trailing_stop_pct") or 0.0) > 0 else "Off",
+            "status": "OPEN",
+            "is_live": bool(p.get("is_live")),
+        })
+
+    # Closed trades & performance
+    closed_pos = query("SELECT * FROM positions WHERE user_id=? AND status='CLOSED' ORDER BY closed_at ASC", (uid,))
+    total_trades = len(closed_pos)
+    wins = [float(p.get("realized_pnl") or 0.0) for p in closed_pos if float(p.get("realized_pnl") or 0.0) > 0]
+    losses = [float(p.get("realized_pnl") or 0.0) for p in closed_pos if float(p.get("realized_pnl") or 0.0) < 0]
+    gross_profit = round(sum(wins), 4)
+    gross_loss = round(abs(sum(losses)), 4)
+    net_profit = round(gross_profit - gross_loss, 4)
+    win_rate = round((len(wins) / total_trades * 100.0), 2) if total_trades > 0 else 0.0
+    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 0.0)
+    avg_win = round(gross_profit / len(wins), 4) if wins else 0.0
+    avg_loss = round(gross_loss / len(losses), 4) if losses else 0.0
+
+    # Consecutive losses & max drawdown
+    consec_losses = 0
+    max_consec_losses = 0
+    for p in closed_pos:
+        if float(p.get("realized_pnl") or 0.0) < 0:
+            consec_losses += 1
+            if consec_losses > max_consec_losses:
+                max_consec_losses = consec_losses
+        else:
+            consec_losses = 0
+
+    return ok(
+        auto_scalping_panel={
+            "auto_scalping_enabled": bool(strat_status.get("enabled")),
+            "auto_scalping_paused": bool(strat_status.get("paused")),
+            "status": strat_status.get("status"),
+            "coindcx_connection": "CONNECTED" if ctrl.get("real_mode") else "STANDBY",
+            "selected_instrument": symbol,
+            "scalping_strategy": strategy_code,
+            "entry_timeframe": entry_tf,
+            "setup_timeframe": setup_tf,
+            "trend_timeframe": trend_tf,
+            "current_market_trend": primary_ta.get("trend"),
+            "market_regime": primary_ta.get("market_regime"),
+            "indicators": {
+                "rsi14": (primary_ta.get("indicators") or {}).get("rsi14"),
+                "ema9": (primary_ta.get("indicators") or {}).get("ema9"),
+                "ema21": (primary_ta.get("indicators") or {}).get("ema21"),
+                "ema50": (primary_ta.get("indicators") or {}).get("ema50"),
+                "macd": (primary_ta.get("indicators") or {}).get("macd"),
+                "macd_hist": (primary_ta.get("indicators") or {}).get("macd_hist"),
+                "volume": (primary_ta.get("indicators") or {}).get("volume"),
+                "relative_volume": (primary_ta.get("indicators") or {}).get("relative_volume"),
+                "volatility": primary_ta.get("volatility"),
+                "atr": (primary_ta.get("indicators") or {}).get("atr"),
+            },
+            "current_signal": scalp_analysis.get("opportunity"),
+            "rule_validation": strat_status.get("rule_validation") or {"status": "AWAITING_TRIGGER"},
+            "risk_approval": strat_status.get("risk_approval") or "GUARDING",
+            "execution_status": strat_status.get("execution_status"),
+            "active_strategy_details": scalp_analysis.get("active_strategy"),
+            "all_strategies": scalp_analysis.get("strategies"),
+        },
+        live_scalping_positions=live_scalping_positions,
+        scalping_performance={
+            "total_scalping_trades": total_trades,
+            "winning_trades": len(wins),
+            "losing_trades": len(losses),
+            "win_rate_pct": win_rate,
+            "gross_profit_usdt": gross_profit,
+            "gross_loss_usdt": gross_loss,
+            "net_profit_usdt": net_profit,
+            "trading_fees_usdt": dash.get("total_trading_fees_usdt", 0.0),
+            "funding_fees_usdt": dash.get("funding_fees_usdt", 0.0),
+            "profit_factor": profit_factor,
+            "avg_winning_trade_usdt": avg_win,
+            "avg_losing_trade_usdt": avg_loss,
+            "max_drawdown_usdt": dash.get("max_drawdown_usdt", 0.0),
+            "max_consecutive_losses": max_consec_losses,
+            "daily_scalping_pnl_usdt": dash.get("today_pnl_usdt", 0.0),
+        },
+        account_overview={
+            "total_account_equity_usdt": dash.get("total_account_equity_usdt"),
+            "available_balance_usdt": dash.get("available_balance_usdt"),
+            "locked_margin_usdt": dash.get("locked_margin_usdt"),
+        },
+        bot_activity_log=StrategyEngine.get_bot_activity_log(uid, limit=30),
+    )
+
 
 @api.route("/api/coindcx/real-bot/confirm", methods=["GET"])
 def api_coindcx_real_bot_confirm():

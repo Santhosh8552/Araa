@@ -1150,8 +1150,239 @@ def generate_araa_ai_analysis(symbol, primary_ta, mtf_result=None):
         "risk_reward": rr,
         "confidence": confidence,
         "technical_confluence": confluence,
+        "entry_proposal": {
+            "side": "LONG" if long_setup else ("SHORT" if short_setup else "WAIT"),
+            "entry_price": price,
+            "suggested_sl": sl_sug,
+            "suggested_tp": tp_sug,
+            "risk_reward": rr,
+            "confidence": confidence,
+            "entry_reason": entry_reason,
+            "requires_python_rule_approval": True,
+        },
+        "exit_proposal": {
+            "take_profit": tp_sug,
+            "stop_loss": sl_sug,
+            "invalidation": inv_reason,
+            "trailing_trigger_r": 1.0,
+            "breakeven_trigger_r": 0.8,
+            "requires_python_rule_approval": True,
+        },
         "analysis_timestamp": primary_ta["analysis_timestamp"],
         "market_data_timestamp": primary_ta["market_data_timestamp"],
         "proposal_only": True,
     }
+
+
+def analyze_scalping_strategies(symbol, primary_ta, mtf_result=None, custom_scalp_cfg=None):
+    """
+    AraaBot V2.1 Modular Scalping Strategies Analyzer.
+    Evaluates:
+      A. EMA MOMENTUM SCALPING (EMA 9, EMA 21, EMA 50, trend, momentum, pullback, volume)
+      B. RSI MOMENTUM SCALPING (RSI 14, overbought/oversold thresholds, momentum confirmation, trend filter)
+      C. MACD SCALPING (MACD crossover, signal confirmation, momentum validation, trend confirmation)
+      D. BREAKOUT SCALPING (Support & Resistance, volume confirmation, breakout detection, retest confirmation, volatility filter)
+      E. ARAA AI SCALPING (Trend, momentum, market regime, volatility, technical confluence, entry & exit proposals)
+    
+    IMPORTANT: All outputs are candidate proposals. OUR PYTHON RULES MUST APPROVE EVERY ENTRY AND EXIT.
+    """
+    sym = str(symbol or "BTCUSDT").upper().replace("B-", "").replace("_", "")
+    cfg = custom_scalp_cfg or {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if not primary_ta or not primary_ta.get("valid"):
+        return {
+            "symbol": sym,
+            "valid": False,
+            "timestamp": now_iso,
+            "strategies": {},
+            "active_strategy": "NONE",
+            "opportunity": None,
+        }
+
+    ind = primary_ta.get("indicators") or {}
+    price = float(primary_ta.get("current_price") or 0.0)
+    trend = primary_ta.get("trend") or "NEUTRAL"
+    regime = primary_ta.get("market_regime") or "UNKNOWN"
+    momentum = primary_ta.get("momentum") or "NEUTRAL"
+    volatility = primary_ta.get("volatility") or "NORMAL"
+    bp = primary_ta.get("breakout_pullback") or {}
+    rel_vol = float(ind.get("relative_volume") or 1.0)
+    atr = max(float(ind.get("atr") or (price * 0.004)), price * 0.002)
+
+    ema9 = float(ind.get("ema9") or price)
+    ema21 = float(ind.get("ema21") or price)
+    ema50 = float(ind.get("ema50") or price)
+    rsi14 = float(ind.get("rsi14") or 50.0)
+    macd = float(ind.get("macd") or 0.0)
+    macd_signal = float(ind.get("macd_signal") or 0.0)
+    macd_hist = float(ind.get("macd_hist") or 0.0)
+
+    # Strategy A: EMA MOMENTUM SCALPING
+    # Requires EMA 9 > 21 > 50 for LONG (or 9 < 21 < 50 for SHORT), trend confirmation, pullback to EMA9/21, and volume
+    ema_bull_ribbon = ema9 > ema21 > ema50
+    ema_bear_ribbon = ema9 < ema21 < ema50
+    pullback_long = bp.get("pullback_long", False) or (price >= ema21 * 0.998 and price <= ema9 * 1.002 and ema_bull_ribbon)
+    pullback_short = bp.get("pullback_short", False) or (price <= ema21 * 1.002 and price >= ema9 * 0.998 and ema_bear_ribbon)
+    ema_vol_confirmed = rel_vol >= float(cfg.get("ema_min_volume_ratio") or 0.85)
+
+    strat_a_signal = "HOLD"
+    strat_a_reason = "EMA ribbon neutral or awaiting pullback confirmation"
+    if ema_bull_ribbon and (trend in ("BULLISH", "NEUTRAL")) and pullback_long and ema_vol_confirmed:
+        strat_a_signal = "LONG"
+        strat_a_reason = f"Bullish EMA Ribbon (EMA9 {ema9:.2f} > 21 > 50) + pullback to support + vol ({rel_vol:.2f}x)"
+    elif ema_bear_ribbon and (trend in ("BEARISH", "NEUTRAL")) and pullback_short and ema_vol_confirmed:
+        strat_a_signal = "SHORT"
+        strat_a_reason = f"Bearish EMA Ribbon (EMA9 {ema9:.2f} < 21 < 50) + pullback to resistance + vol ({rel_vol:.2f}x)"
+
+    strat_a = {
+        "strategy_name": "EMA Momentum Scalping",
+        "strategy_code": "EMA_MOMENTUM_SCALPING",
+        "signal": strat_a_signal,
+        "trend_confirmed": (trend == "BULLISH") if strat_a_signal == "LONG" else ((trend == "BEARISH") if strat_a_signal == "SHORT" else False),
+        "momentum_confirmed": bool(momentum in ("BULLISH", "HIGH") if strat_a_signal == "LONG" else (momentum in ("BEARISH", "HIGH"))),
+        "pullback_confirmed": pullback_long if strat_a_signal == "LONG" else (pullback_short if strat_a_signal == "SHORT" else False),
+        "volume_confirmed": ema_vol_confirmed,
+        "ema9": ema9, "ema21": ema21, "ema50": ema50,
+        "reason": strat_a_reason,
+    }
+
+    # Strategy B: RSI MOMENTUM SCALPING
+    # Configurable overbought/oversold thresholds. Never enters solely because RSI is overbought/oversold!
+    # Requires trend filter + momentum confirmation + entry validation
+    rsi_ob = float(cfg.get("rsi_overbought_threshold") or 70.0)
+    rsi_os = float(cfg.get("rsi_oversold_threshold") or 30.0)
+    # Long setup: Pullback/bounce from near oversold or bullish momentum zone (e.g. 42-62) with bullish trend & rising RSI
+    # Short setup: Rejection from near overbought or bearish momentum zone (e.g. 38-58) with bearish trend & falling RSI
+    strat_b_signal = "HOLD"
+    strat_b_reason = "RSI within non-trigger zone or trend opposing"
+    if trend == "BULLISH" and 40.0 <= rsi14 <= 66.0 and macd_hist >= 0 and price >= ema21:
+        strat_b_signal = "LONG"
+        strat_b_reason = f"Bullish RSI momentum confirmation (RSI14={rsi14:.1f} bouncing above 40 with positive trend)"
+    elif trend == "BEARISH" and 34.0 <= rsi14 <= 60.0 and macd_hist <= 0 and price <= ema21:
+        strat_b_signal = "SHORT"
+        strat_b_reason = f"Bearish RSI momentum confirmation (RSI14={rsi14:.1f} rejected below 60 with negative trend)"
+
+    strat_b = {
+        "strategy_name": "RSI Momentum Scalping",
+        "strategy_code": "RSI_MOMENTUM_SCALPING",
+        "signal": strat_b_signal,
+        "rsi14": rsi14,
+        "thresholds": {"overbought": rsi_ob, "oversold": rsi_os},
+        "trend_filter_passed": (trend == "BULLISH") if strat_b_signal == "LONG" else ((trend == "BEARISH") if strat_b_signal == "SHORT" else False),
+        "momentum_confirmed": bool(macd_hist >= 0) if strat_b_signal == "LONG" else bool(macd_hist <= 0),
+        "reason": strat_b_reason,
+    }
+
+    # Strategy C: MACD SCALPING
+    # MACD crossover, signal confirmation, momentum validation, trend confirmation
+    macd_bullish_cross = (macd > macd_signal) and (macd_hist >= 0)
+    macd_bearish_cross = (macd < macd_signal) and (macd_hist <= 0)
+    strat_c_signal = "HOLD"
+    strat_c_reason = "MACD awaiting confirmed crossover and trend alignment"
+    if macd_bullish_cross and trend in ("BULLISH", "NEUTRAL") and price >= ema50 * 0.995:
+        strat_c_signal = "LONG"
+        strat_c_reason = f"MACD Bullish crossover confirmed (MACD {macd:.4f} > Signal {macd_signal:.4f}, Hist {macd_hist:+.4f})"
+    elif macd_bearish_cross and trend in ("BEARISH", "NEUTRAL") and price <= ema50 * 1.005:
+        strat_c_signal = "SHORT"
+        strat_c_reason = f"MACD Bearish crossover confirmed (MACD {macd:.4f} < Signal {macd_signal:.4f}, Hist {macd_hist:+.4f})"
+
+    strat_c = {
+        "strategy_name": "MACD Scalping",
+        "strategy_code": "MACD_SCALPING",
+        "signal": strat_c_signal,
+        "macd": macd,
+        "signal_line": macd_signal,
+        "histogram": macd_hist,
+        "crossover_confirmed": bool(macd_bullish_cross if strat_c_signal == "LONG" else (macd_bearish_cross if strat_c_signal == "SHORT" else False)),
+        "trend_confirmed": (trend == "BULLISH") if strat_c_signal == "LONG" else ((trend == "BEARISH") if strat_c_signal == "SHORT" else False),
+        "reason": strat_c_reason,
+    }
+
+    # Strategy D: BREAKOUT SCALPING
+    # Support and resistance, volume confirmation, breakout detection, retest confirmation, volatility filter
+    sr = bp.get("levels") or {}
+    resistances = ind.get("resistances") or []
+    supports = ind.get("supports") or []
+    breakout_type = bp.get("setup_type", "NONE")
+    volatility_ok = volatility in ("NORMAL", "HIGH")
+    strat_d_signal = "HOLD"
+    strat_d_reason = "No confirmed S/R breakout with retest and volume"
+    if bp.get("breakout_long") and rel_vol >= 1.05 and volatility_ok:
+        strat_d_signal = "LONG"
+        strat_d_reason = f"Bullish resistance breakout + retest confirmed with {rel_vol:.2f}x volume"
+    elif bp.get("breakout_short") and rel_vol >= 1.05 and volatility_ok:
+        strat_d_signal = "SHORT"
+        strat_d_reason = f"Bearish support breakdown + retest confirmed with {rel_vol:.2f}x volume"
+
+    strat_d = {
+        "strategy_name": "Breakout Scalping",
+        "strategy_code": "BREAKOUT_SCALPING",
+        "signal": strat_d_signal,
+        "supports": supports[:3],
+        "resistances": resistances[:3],
+        "breakout_setup": breakout_type,
+        "volume_confirmed": rel_vol >= 1.05,
+        "volatility_filter_passed": volatility_ok,
+        "retest_confirmed": bp.get("retest_confirmed", False),
+        "reason": strat_d_reason,
+    }
+
+    # Strategy E: ARAA AI SCALPING
+    ai_ana = generate_araa_ai_analysis(sym, primary_ta, mtf_result)
+    strat_e_signal = "LONG" if ai_ana.get("long_setup") else ("SHORT" if ai_ana.get("short_setup") else "HOLD")
+    strat_e = {
+        "strategy_name": "Araa AI Scalping",
+        "strategy_code": "ARAA_AI_SCALPING",
+        "signal": strat_e_signal,
+        "trend": ai_ana.get("trend"),
+        "momentum": ai_ana.get("momentum"),
+        "market_regime": ai_ana.get("market_regime"),
+        "volatility": ai_ana.get("volatility"),
+        "confluence": ai_ana.get("technical_confluence") or [],
+        "confidence": ai_ana.get("confidence") or 0,
+        "entry_proposal": ai_ana.get("entry_proposal"),
+        "exit_proposal": ai_ana.get("exit_proposal"),
+        "reason": ai_ana.get("entry_reason"),
+    }
+
+    all_strats = {
+        "EMA_MOMENTUM_SCALPING": strat_a,
+        "RSI_MOMENTUM_SCALPING": strat_b,
+        "MACD_SCALPING": strat_c,
+        "BREAKOUT_SCALPING": strat_d,
+        "ARAA_AI_SCALPING": strat_e,
+    }
+
+    selected_strat_name = str(cfg.get("active_scalping_strategy") or "ARAA_AI_SCALPING").upper()
+    active_strat = all_strats.get(selected_strat_name) or strat_e
+
+    # Build opportunity proposal
+    opp_signal = active_strat.get("signal")
+    opp = None
+    if opp_signal in ("LONG", "SHORT"):
+        sl_dist = atr * 1.5
+        tp_dist = sl_dist * 2.0
+        opp = {
+            "symbol": sym,
+            "strategy": active_strat.get("strategy_code"),
+            "side": opp_signal,
+            "entry_price": price,
+            "suggested_sl": round(price - sl_dist if opp_signal == "LONG" else price + sl_dist, 6),
+            "suggested_tp": round(price + tp_dist if opp_signal == "LONG" else price - tp_dist, 6),
+            "risk_reward": 2.0,
+            "reason": active_strat.get("reason"),
+            "requires_python_rule_approval": True,
+        }
+
+    return {
+        "symbol": sym,
+        "valid": True,
+        "timestamp": now_iso,
+        "active_strategy_code": selected_strat_name,
+        "active_strategy": active_strat,
+        "strategies": all_strats,
+        "opportunity": opp,
+    }
+
 
