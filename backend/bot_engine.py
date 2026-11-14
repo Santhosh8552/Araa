@@ -549,13 +549,8 @@ class Bot:
                                     for h_v in src_hist[-20:]:
                                         hist.append(h_v)
                                 else:
-                                    for k_i in range(20):
-                                        frac = (k_i + 1) / 20.0
-                                        drift = max(-0.003, min(0.003, chg / 100.0 * 0.04))
-                                        start_p = p / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else p
-                                        wobble = math.sin(k_i * 1.35) * (p * 0.00035)
-                                        hist.append(round(start_p + (p - start_p) * frac + wobble, 6 if p < 1 else (4 if p < 10 else 2)))
-                                    hist[-1] = p
+                                    for _ in range(20):
+                                        hist.append(p)
                             if hasattr(self.feed, "_compute_live_tv_ratings"):
                                 self.feed._compute_live_tv_ratings(sym, merged_row, hist)
                             if sym not in self.feed.prices:
@@ -593,13 +588,8 @@ class Bot:
                             hist = self.feed.history[sym]
                             if len(hist) < 20:
                                 hist.clear()
-                                for k_i in range(20):
-                                    frac = (k_i + 1) / 20.0
-                                    drift = max(-0.003, min(0.003, chg / 100.0 * 0.04))
-                                    start_p = p / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else p
-                                    wobble = math.sin(k_i * 1.35) * (p * 0.00035)
-                                    hist.append(round(start_p + (p - start_p) * frac + wobble, 6 if p < 1 else (4 if p < 10 else 2)))
-                                hist[-1] = p
+                                for _ in range(20):
+                                    hist.append(p)
                             if hasattr(self.feed, "_compute_live_tv_ratings"):
                                 self.feed._compute_live_tv_ratings(sym, merged_row, hist)
                             if sym not in self.feed.prices:
@@ -738,6 +728,22 @@ class Bot:
         day_range_pct = (hi - lo) / price * 100.0
         if not (tune["vol_band"][0] <= day_range_pct <= tune["vol_band"][1]):
             return None
+        candles_1m = []
+        if cat == "CRYPTO":
+            candles_1m = self._candles(symbol, "1m", limit=35, ttl=12.0)
+            if hasattr(self.feed, "prices") and hasattr(self.feed, "lock"):
+                with self.feed.lock:
+                    live_row = self.feed.prices.get(symbol) or {}
+                    for k in (
+                        "tv_rsi", "tv_rsi_1m", "tv_rsi_5m", "tv_rsi_1d",
+                        "tv_recommend", "tv_rec_1m", "tv_rec_5m", "tv_rec_1d",
+                        "tv_ma", "tv_ma_1m", "tv_ma_5m", "tv_other", "tv_other_1m", "tv_other_5m",
+                        "tv_macd_1m", "tv_macd_sig_1m", "tv_macd_5m", "tv_macd_sig_5m",
+                        "tv_ema20_1m", "tv_ema50_1m", "tv_ema20_5m", "tv_ema50_5m",
+                        "tv_chg_1m", "tv_chg_5m", "tv_signal"
+                    ):
+                        if live_row.get(k) is not None and (row.get(k) is None or row.get("tv_signal") == "NEUTRAL"):
+                            row[k] = live_row[k]
         ticks = self.feed.ticks(symbol, 90)
         if len(ticks) < MIN_TICKS:
             return None            # no measured history yet - refuse to guess a direction
@@ -794,11 +800,11 @@ class Bot:
         rsi_s_max = float(tr_rules.get("rsi_short_max") or 62.0)
 
         parts = []
-        trend = _tanh(slope_z / 2.0) * max(0.28, w_ema)
+        trend = _tanh(slope_z / 2.0) * max(0.32, w_ema)
         parts.append(("TREND", trend, f"{slope_z:+.2f}sd"))
-        pos = (range_pos - 0.5) * 2.0 * 0.20
+        pos = (range_pos - 0.5) * 2.0 * 0.06
         parts.append(("RANGE", pos, f"{range_pos * 100:.0f}% of day range"))
-        imp = _tanh(change / 3.0) * max(0.16, w_macd * 0.8)
+        imp = _tanh(change / 4.0) * 0.06
         parts.append(("24H", imp, f"{change:+.2f}%"))
         if r14 >= 78:
             mom = -0.05            # stretched: fade risk outweighs the move
@@ -815,12 +821,10 @@ class Bot:
         parts.append(("RSI", mom, f"RSI {r14:.0f}"))
         liq = min(0.12, (math.log10(max(row.get("volume") or 1.0, 10.0)) - 4.0) / 38.0)
         parts.append(("LIQ", liq, f"vol {short_num(row.get('volume') or 0)}"))
-        candles_1m = []
         if cat == "CRYPTO":
-            candles_1m = self._candles(symbol, "1m", limit=30)
             if len(candles_1m) >= 8:
                 ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                parts.append(("1m CANDLES", (ups - 0.5) * 2 * max(0.12, w_vol * 0.75), f"{ups * 100:.0f}% up"))
+                parts.append(("1m CANDLES", (ups - 0.5) * 2 * max(0.18, w_vol), f"{ups * 100:.0f}% up"))
 
         # 2. Apply Self-Learning Walk-Forward Winner Boost if symbol is a verified winner
         trainer_boost_info = None
@@ -926,49 +930,29 @@ class Bot:
                 tv_label = "STRONG_SELL" if tv_rec <= -0.45 else "SELL" if tv_rec <= -0.08 else "BEARISH_SCAN"
                 parts.insert(0, ("TRADINGVIEW", round(max(0.14, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
             else:
-                # Neutral / Inconclusive TradingView consensus - Momentum or 24h Trend confirmation
-                if slope_z > 0.05 and r14 >= 38 and r14 <= 75 and change >= -1.0:
+                # Neutral TradingView consensus: ONLY allow trade if 1m slope_z is decisively trending (never guess from 24h change!)
+                if slope_z > 0.12 and r14 >= 42 and r14 <= 74:
                     side = "LONG"
                     tv_label = "BULLISH_CONTINUATION"
                     parts.insert(0, ("MOMENTUM_SCAN", 0.20, f"BULLISH CONTINUATION (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-                elif slope_z < -0.05 and r14 <= 62 and r14 >= 25 and change <= 1.0:
+                elif slope_z < -0.12 and r14 <= 58 and r14 >= 26:
                     side = "SHORT"
                     tv_label = "BEARISH_BREAKDOWN"
                     parts.insert(0, ("MOMENTUM_SCAN", 0.20, f"BEARISH BREAKDOWN (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-                elif change >= 0.0 and r14 >= 35:
-                    side = "LONG"
-                    tv_label = "BULLISH_TREND"
-                    parts.insert(0, ("TREND_SCAN", 0.18, f"BULLISH TREND (+{change:.2f}% · RSI {r14:.0f})"))
-                elif change < 0.0 and r14 <= 65:
-                    side = "SHORT"
-                    tv_label = "BEARISH_TREND"
-                    parts.insert(0, ("TREND_SCAN", 0.18, f"BEARISH TREND ({change:.2f}% · RSI {r14:.0f})"))
                 else:
-                    side = "LONG" if range_pos >= 0.5 else "SHORT"
-                    tv_label = "RANGE_EXPANSION"
-                    parts.insert(0, ("RANGE_SCAN", 0.15, f"RANGE EXPANSION ({range_pos*100:.0f}% · RSI {r14:.0f})"))
+                    return None
         else:
-            # TREND-FOLLOWING MOMENTUM & 24H LIQUIDITY SCAN:
-            if slope_z > 0.05 and r14 >= 38 and r14 <= 75 and change >= -1.0:
+            # No TradingView rating yet: require decisive 1m slope_z momentum (never guess from 24h change!)
+            if slope_z > 0.12 and r14 >= 42 and r14 <= 74:
                 side = "LONG"
                 tv_label = "BULLISH_MOMENTUM"
                 parts.insert(0, ("MOMENTUM_SCAN", 0.22, f"BULLISH MOMENTUM (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-            elif slope_z < -0.05 and r14 <= 62 and r14 >= 25 and change <= 1.0:
+            elif slope_z < -0.12 and r14 <= 58 and r14 >= 26:
                 side = "SHORT"
                 tv_label = "BEARISH_MOMENTUM"
                 parts.insert(0, ("MOMENTUM_SCAN", 0.22, f"BEARISH BREAKDOWN (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-            elif change >= 0.0 and r14 >= 35:
-                side = "LONG"
-                tv_label = "BULLISH_TREND"
-                parts.insert(0, ("TREND_SCAN", 0.20, f"BULLISH TREND (+{change:.2f}% · RSI {r14:.0f})"))
-            elif change < 0.0 and r14 <= 65:
-                side = "SHORT"
-                tv_label = "BEARISH_TREND"
-                parts.insert(0, ("TREND_SCAN", 0.20, f"BEARISH TREND ({change:.2f}% · RSI {r14:.0f})"))
             else:
-                side = "LONG" if range_pos >= 0.5 else "SHORT"
-                tv_label = "RANGE_EXPANSION"
-                parts.insert(0, ("RANGE_SCAN", 0.16, f"RANGE EXPANSION ({range_pos*100:.0f}% · RSI {r14:.0f})"))
+                return None
 
         micro = self._micro_momentum_state(ticks, candles_1m if cat == "CRYPTO" else None)
         leader = getattr(self, "_leader_impulse", None) or {}
@@ -977,34 +961,35 @@ class Bot:
 
         if side == "SHORT":
             # TradingView 1m/5m Chart Protection: Never open SHORT if 1m or 5m TradingView chart is bullish (BUY)
-            if tv_rec_1m is not None and float(tv_rec_1m) > 0.05:
+            if tv_rec_1m is not None and float(tv_rec_1m) > 0.02:
                 return None
-            if tv_rec_5m is not None and float(tv_rec_5m) > 0.08:
+            if tv_rec_5m is not None and float(tv_rec_5m) > 0.05:
                 return None
-            if tv_ma_1m is not None and float(tv_ma_1m) > 0.15:
+            if tv_ma_1m is not None and float(tv_ma_1m) > 0.05:
                 return None
             if tv_ema20_1m and tv_ema50_1m and price > float(tv_ema20_1m) > float(tv_ema50_1m):
                 return None
+            # Strict 1m Chart & Tick Direction Gate: Never open SHORT if 1m slope or recent ticks are rising (▲)
+            if slope_z >= -0.02:
+                return None
+            if micro["above_fast"] or micro["recent_tick_pct"] > 0.01:
+                return None
+            if micro["last_body_pct"] > 0.02:
+                return None
             # Anti-green-bounce veto: block SHORT entries when live 1m candles or micro-ticks are bouncing upward
-            if micro["last_3_green"]:
-                return None
-            if micro["last_2_green"] and micro["above_fast"] and (micro["last_body_pct"] >= 0.04 or micro["recent_tick_pct"] >= 0.03):
-                return None
-            if micro["above_fast"] and micro["micro_step_ups"] >= 2 and micro["recent_tick_pct"] >= 0.05:
+            if micro["last_3_green"] or micro["last_2_green"]:
                 return None
             if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_bouncing_up") and not (slope_z < -0.25 and micro["below_fast"] and micro["recent_tick_pct"] < -0.05):
                 return None
             if change <= -4.0 and range_pos <= 0.25 and (micro["above_fast"] or micro["recent_tick_pct"] > -0.01 or slope_z > -0.10):
                 return None
-            if cat == "CRYPTO" and slope_z > 0.25:
-                return None
             if cat == "CRYPTO" and r14 >= 68.0 and slope_z > -0.15:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
                 recent_ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                if recent_ups >= 0.625 and not ob_bearish and slope_z > -0.35:
+                if recent_ups >= 0.50 and not ob_bearish and slope_z > -0.35:
                     return None
-            if cat == "CRYPTO" and not (slope_z < -0.02 or micro["recent_tick_pct"] < -0.02 or micro["last_body_pct"] < -0.02 or sq_mom < 0 or ob_bearish):
+            if cat == "CRYPTO" and not (slope_z < -0.05 or micro["recent_tick_pct"] < -0.02 or micro["last_body_pct"] < -0.02 or sq_mom < 0 or ob_bearish):
                 return None
 
             directional_tags = {"TREND", "24H", "1m CANDLES", "ORDER BLOCK", "TV_EMA_1m", "TV_MACD_1m"}
@@ -1027,34 +1012,35 @@ class Bot:
                 parts.append(("BEAR_IMPULSE", 0.08, f"Breakdown Velocity ({change:+.2f}%)"))
         else:
             # TradingView 1m/5m Chart Protection: Never open LONG if 1m or 5m TradingView chart is bearish (SELL)
-            if tv_rec_1m is not None and float(tv_rec_1m) < -0.05:
+            if tv_rec_1m is not None and float(tv_rec_1m) < -0.02:
                 return None
-            if tv_rec_5m is not None and float(tv_rec_5m) < -0.08:
+            if tv_rec_5m is not None and float(tv_rec_5m) < -0.05:
                 return None
-            if tv_ma_1m is not None and float(tv_ma_1m) < -0.15:
+            if tv_ma_1m is not None and float(tv_ma_1m) < -0.05:
                 return None
             if tv_ema20_1m and tv_ema50_1m and price < float(tv_ema20_1m) < float(tv_ema50_1m):
                 return None
+            # Strict 1m Chart & Tick Direction Gate: Never open LONG if 1m slope or recent ticks are falling (▼)
+            if slope_z <= 0.02:
+                return None
+            if micro["below_fast"] or micro["recent_tick_pct"] < -0.01:
+                return None
+            if micro["last_body_pct"] < -0.02:
+                return None
             # Anti-red-waterfall veto: block LONG entries when live 1m candles or micro-ticks are dropping sharply
-            if micro["last_3_red"]:
-                return None
-            if micro["last_2_red"] and micro["below_fast"] and (micro["last_body_pct"] <= -0.04 or micro["recent_tick_pct"] <= -0.03):
-                return None
-            if micro["below_fast"] and micro["micro_step_downs"] >= 2 and micro["recent_tick_pct"] <= -0.05:
+            if micro["last_3_red"] or micro["last_2_red"]:
                 return None
             if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_dumping_down") and not (slope_z > 0.25 and micro["above_fast"] and micro["recent_tick_pct"] > 0.05):
                 return None
             if change >= 6.0 and range_pos >= 0.85 and (micro["below_fast"] or micro["recent_tick_pct"] < 0.01 or slope_z < 0.10):
                 return None
-            if cat == "CRYPTO" and slope_z < -0.25:
-                return None
             if cat == "CRYPTO" and r14 >= 78.0:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
                 recent_ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                if recent_ups <= 0.375 and not ob_bullish and slope_z < 0.35:
+                if recent_ups <= 0.50 and not ob_bullish and slope_z < 0.35:
                     return None
-            if cat == "CRYPTO" and not (slope_z > 0.02 or micro["recent_tick_pct"] > 0.02 or micro["last_body_pct"] > 0.02 or sq_mom > 0 or ob_bullish):
+            if cat == "CRYPTO" and not (slope_z > 0.05 or micro["recent_tick_pct"] > 0.02 or micro["last_body_pct"] > 0.02 or sq_mom > 0 or ob_bullish):
                 return None
             score = sum(p[1] for p in parts)
         if score <= -0.20:

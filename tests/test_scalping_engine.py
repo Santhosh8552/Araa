@@ -231,6 +231,50 @@ class TestScalpingEngine(unittest.TestCase):
         conflict_row = dict(sol_row, tv_rec_1m=0.40, tv_rec_5m=-0.35)
         self.assertIsNone(bot.analyse("SOLUSDT", conflict_row, mode="SCALP"))
 
+    def test_no_opposite_trade_from_24h_vwap_when_1m_chart_rises_or_falls(self):
+        from price_feed import PriceFeed
+        pf = PriceFeed()
+        # Case 1: XRPUSDT is -2.94% on 24h (below 24h VWAP), but rising on 1m klines -> must be BUY/LONG, NEVER SHORT
+        rising_1m = [
+            {"t": 1794000000 + i * 60, "o": 0.9850 + i * 0.0002, "h": 0.9854 + i * 0.0002, "l": 0.9849 + i * 0.0002, "c": 0.9853 + i * 0.0002, "v": 50000}
+            for i in range(35)
+        ]
+        xrp_row = {
+            "category": "CRYPTO",
+            "live": True,
+            "price": rising_1m[-1]["c"],
+            "high": 1.0250,
+            "low": 0.9810,
+            "vwap": 1.0080,
+            "change_pct": -2.94,
+            "volume": 85_000_000,
+        }
+        ticks_up = [c["c"] for c in rising_1m]
+        pf._compute_live_tv_ratings("XRPUSDT", xrp_row, ticks_up, candles_1m=rising_1m)
+        self.assertGreater(xrp_row["tv_rec_1m"], 0.0)
+        self.assertGreater(xrp_row["tv_recommend"], 0.0)
+        self.assertIn(xrp_row["tv_signal"], ("BUY", "STRONG_BUY"))
+
+        # Case 2: USUALUSDT is +2.70% on 24h (above 24h VWAP), but falling on 1m klines -> must be SELL/SHORT, NEVER LONG
+        falling_1m = [
+            {"t": 1794000000 + i * 60, "o": 0.01150 - i * 0.000006, "h": 0.01151 - i * 0.000006, "l": 0.01144 - i * 0.000006, "c": 0.01145 - i * 0.000006, "v": 50000}
+            for i in range(35)
+        ]
+        usual_row = {
+            "category": "CRYPTO",
+            "live": True,
+            "price": falling_1m[-1]["c"],
+            "high": 0.01180,
+            "low": 0.01080,
+            "vwap": 0.01105,
+            "change_pct": 2.70,
+            "volume": 25_000_000,
+        }
+        ticks_down = [c["c"] for c in falling_1m]
+        pf._compute_live_tv_ratings("USUALUSDT", usual_row, ticks_down, candles_1m=falling_1m)
+        self.assertLess(usual_row["tv_rec_1m"], 0.0)
+        self.assertLess(usual_row["tv_recommend"], 0.0)
+        self.assertIn(usual_row["tv_signal"], ("SELL", "STRONG_SELL"))
 
 
 if __name__ == "__main__":

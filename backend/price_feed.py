@@ -411,6 +411,7 @@ class PriceFeed:
         self._extra_thread = None
         self._ticks = 0
         self._fx_rates = {}
+        self._kline_cache = {}
         # Once a symbol has been quoted by its own market feed, another provider's number for the
         # same instrument is not comparable: an Indian bank trades on the NSE in INR, so the
         # fallback that fills a scanner miss must never overwrite it.
@@ -489,10 +490,22 @@ class PriceFeed:
                         var = 1.0 + math.sin(k * 0.7) * (j * 0.5)
                         hist.append(round(price * var, 5 if price < 10 else 2))
 
-    def _compute_live_tv_ratings(self, sym, row, hist):
+    @staticmethod
+    def _clean_crypto_symbol(symbol):
+        s = str(symbol or "").upper().strip()
+        if s.startswith("B-"):
+            s = s[2:]
+        s = s.replace("_", "").replace("-", "")
+        if s.endswith("INR"):
+            s = s[:-3] + "USDT"
+        elif s.endswith("USD") and not s.endswith("USDT"):
+            s = s + "T"
+        return s
+
+    def _compute_live_tv_ratings(self, sym, row, hist, candles_1m=None):
         """Compute multi-timeframe (1m + 5m + 1D) TradingView Technical Ratings (Recommend.All, Recommend.MA,
-        Recommend.Other, RSI, EMA20, EMA50, MACD) from live exchange ticks & VWAP whenever the cloud IP is
-        rate-limited by scanner.tradingview.com or for CoinDCX contracts not indexed under BINANCE:."""
+        Recommend.Other, RSI, EMA20, EMA50, MACD) strictly from real 1m klines or real observed price ticks
+        (NEVER from 24-hour VWAP/range_pos which point opposite to 1m bounces/pullbacks)."""
         now = time.time()
         if row.get("_tv_scanner_ts", 0) > now - 60.0 and row.get("tv_recommend") is not None and row.get("tv_rec_1m") is not None:
             return
@@ -501,15 +514,66 @@ class PriceFeed:
             return
         hi = float(row.get("high") or price)
         lo = float(row.get("low") or price)
-        open24 = float(row.get("open24h") or price)
         chg = float(row.get("change_pct") or 0.0)
-        vwap = float(row.get("vwap") or ((hi + lo + price) / 3.0))
         rng = max(price * 0.0005, hi - lo)
         range_pos = max(0.0, min(1.0, (price - lo) / rng))
 
-        ticks = [float(x) for x in hist if x and float(x) > 0]
-        if len(ticks) < 12:
-            ticks = [price] * 12
+        clean_sym = self._clean_crypto_symbol(sym)
+        if candles_1m is None and hasattr(self, "_kline_cache"):
+            cached_1m = self._kline_cache.get((clean_sym, "1m"))
+            if cached_1m and (now - cached_1m[0]) < 60.0 and len(cached_1m[1]) >= 12:
+                candles_1m = cached_1m[1]
+
+        if candles_1m and len(candles_1m) >= 12:
+            c1 = [float(c["c"]) for c in candles_1m if float(c.get("c") or 0) > 0]
+            if c1:
+                c1[-1] = price
+            c5 = [c1[i] for i in range(4, len(c1), 5)] if len(c1) >= 10 else list(c1)
+            if not c5 or c5[-1] != price:
+                c5.append(price)
+            has_real_intraday = len(c1) >= 12
+        else:
+            ticks = [float(x) for x in hist if x and float(x) > 0]
+            distinct_recent = len(set(round(x, 8) for x in ticks[-15:]))
+            has_real_intraday = len(ticks) >= 6 and distinct_recent >= 3
+            c1 = ticks if len(ticks) >= 12 else ([price] * 12)
+            c5 = [c1[i] for i in range(0, len(c1), 3)]
+            if not c5 or c5[-1] != price:
+                c5.append(price)
+
+        tv_rsi_1d = round(max(15.0, min(82.0, 50.0 + max(-25.0, min(25.0, chg * 2.2)) + (range_pos - 0.5) * 16.0)), 2)
+        tv_rec_1d = round(max(-1.0, min(1.0, (chg / 6.0) * 0.55 + (range_pos - 0.5) * 0.90)), 4)
+
+        if not has_real_intraday:
+            # Before real 1m klines or >=3 distinct live ticks arrive, keep 1m/5m strictly NEUTRAL (never guess from 24h!)
+            row.update({
+                "tv_rsi": 50.0,
+                "tv_rsi_1m": 50.0,
+                "tv_rsi_5m": 50.0,
+                "tv_rsi_1d": tv_rsi_1d,
+                "tv_recommend": 0.0,
+                "tv_rec_1m": 0.0,
+                "tv_rec_5m": 0.0,
+                "tv_rec_1d": tv_rec_1d,
+                "tv_ma": 0.0,
+                "tv_ma_1m": 0.0,
+                "tv_ma_5m": 0.0,
+                "tv_other": 0.0,
+                "tv_other_1m": 0.0,
+                "tv_other_5m": 0.0,
+                "tv_macd_1m": 0.0,
+                "tv_macd_sig_1m": 0.0,
+                "tv_macd_5m": 0.0,
+                "tv_macd_sig_5m": 0.0,
+                "tv_ema20_1m": round(price, 6),
+                "tv_ema50_1m": round(price, 6),
+                "tv_ema20_5m": round(price, 6),
+                "tv_ema50_5m": round(price, 6),
+                "tv_chg_1m": 0.0,
+                "tv_chg_5m": 0.0,
+                "tv_signal": "NEUTRAL",
+            })
+            return
 
         def _ema(series, span):
             k = 2.0 / (span + 1.0)
@@ -522,28 +586,58 @@ class PriceFeed:
             sub = series[-n:] if len(series) >= n else series
             return sum(sub) / len(sub)
 
-        ema10_1m = _ema(ticks, 6)
-        ema20_1m = _ema(ticks, 12)
-        ema50_1m = _ema(ticks, 20)
-        sma10_1m = _sma(ticks, 6)
-        sma20_1m = _sma(ticks, 12)
-        sma50_1m = _sma(ticks, 20)
-        macd_1m = _ema(ticks, 8) - _ema(ticks, 17)
-        macd_sig_1m = macd_1m * 0.82
+        def _wilder_rsi(series, period=14):
+            if len(series) < 3:
+                return 50.0
+            p = min(period, len(series) - 1)
+            gains, losses = [], []
+            for idx in range(1, p + 1):
+                d = series[idx] - series[idx - 1]
+                gains.append(max(0.0, d))
+                losses.append(max(0.0, -d))
+            avg_g = sum(gains) / max(1, p)
+            avg_l = sum(losses) / max(1, p)
+            for idx in range(p + 1, len(series)):
+                d = series[idx] - series[idx - 1]
+                avg_g = (avg_g * (p - 1) + max(0.0, d)) / p
+                avg_l = (avg_l * (p - 1) + max(0.0, -d)) / p
+            if avg_g == 0 and avg_l == 0:
+                return 50.0
+            if avg_l == 0:
+                return 72.0
+            rs = avg_g / avg_l
+            return round(max(12.0, min(88.0, 100.0 - (100.0 / (1.0 + rs)))), 2)
 
-        # 5m structure blends the full tick buffer with intraday VWAP & range midpoint
-        mid_day = (hi + lo) * 0.5
-        ema20_5m = 0.65 * ema50_1m + 0.35 * vwap
-        ema50_5m = 0.50 * ema50_1m + 0.30 * vwap + 0.20 * mid_day
-        macd_5m = price - ema20_5m
-        macd_sig_5m = macd_5m * 0.80
+        ema10_1m = _ema(c1, 10)
+        ema20_1m = _ema(c1, 20)
+        ema50_1m = _ema(c1, min(50, len(c1)))
+        sma10_1m = _sma(c1, 10)
+        sma20_1m = _sma(c1, 20)
+        sma50_1m = _sma(c1, min(50, len(c1)))
+        macd_line_series_1m = []
+        e12, e26 = c1[0], c1[0]
+        k12, k26 = 2.0 / 13.0, 2.0 / 27.0
+        for x in c1:
+            e12 = x * k12 + e12 * (1.0 - k12)
+            e26 = x * k26 + e26 * (1.0 - k26)
+            macd_line_series_1m.append(e12 - e26)
+        macd_1m = macd_line_series_1m[-1]
+        macd_sig_1m = _ema(macd_line_series_1m, min(9, len(macd_line_series_1m)))
+
+        ema10_5m = _ema(c5, min(6, len(c5)))
+        ema20_5m = _ema(c5, min(12, len(c5)))
+        ema50_5m = _ema(c5, min(20, len(c5)))
+        sma10_5m = _sma(c5, min(6, len(c5)))
+        sma20_5m = _sma(c5, min(12, len(c5)))
+        macd_5m = _ema(c5, min(6, len(c5))) - _ema(c5, min(13, len(c5)))
+        macd_sig_5m = macd_5m * 0.82
 
         def _ma_score(p_val, mas):
             votes = []
             for m in mas:
-                if p_val > m * 1.00003:
+                if p_val > m * 1.00002:
                     votes.append(1.0)
-                elif p_val < m * 0.99997:
+                elif p_val < m * 0.99998:
                     votes.append(-1.0)
                 else:
                     votes.append(0.0)
@@ -556,50 +650,51 @@ class PriceFeed:
             tv_ma_1m = max(-1.0, tv_ma_1m * 0.75 - 0.25)
         tv_ma_1m = round(tv_ma_1m, 4)
 
-        tv_ma_5m = _ma_score(price, [ema20_1m, ema50_1m, ema20_5m, ema50_5m, vwap, mid_day])
+        tv_ma_5m = _ma_score(price, [ema10_5m, ema20_5m, ema50_5m, sma10_5m, sma20_5m])
+        if ema10_5m > ema20_5m > ema50_5m:
+            tv_ma_5m = min(1.0, tv_ma_5m * 0.75 + 0.25)
+        elif ema10_5m < ema20_5m < ema50_5m:
+            tv_ma_5m = max(-1.0, tv_ma_5m * 0.75 - 0.25)
         tv_ma_5m = round(max(-1.0, min(1.0, tv_ma_5m)), 4)
 
-        # Wilder RSI on ticks blended with intraday range/VWAP so seeded buffers stay in realistic 28..72 bounds
-        gains, losses = [], []
-        for idx in range(1, len(ticks)):
-            d = ticks[idx] - ticks[idx - 1]
-            gains.append(max(0.0, d))
-            losses.append(max(0.0, -d))
-        avg_g = sum(gains[-14:]) / max(1, len(gains[-14:]))
-        avg_l = sum(losses[-14:]) / max(1, len(losses[-14:]))
-        if avg_g == 0 and avg_l == 0:
-            raw_rsi = 50.0
-        elif avg_l == 0:
-            raw_rsi = 68.0
-        else:
-            rs = avg_g / avg_l
-            raw_rsi = 100.0 - (100.0 / (1.0 + rs))
-        vwap_diff_pct = (price - vwap) / price * 100.0
-        struct_rsi = 50.0 + (range_pos - 0.5) * 26.0 + max(-12.0, min(12.0, vwap_diff_pct * 3.5)) + max(-8.0, min(8.0, chg * 0.6))
-        tv_rsi_1m = round(max(18.0, min(76.0, 0.45 * raw_rsi + 0.55 * struct_rsi)), 2)
-        tv_rsi_5m = round(max(20.0, min(75.0, 0.30 * raw_rsi + 0.70 * struct_rsi)), 2)
-        tv_rsi_1d = round(max(15.0, min(82.0, 50.0 + max(-25.0, min(25.0, chg * 2.2)) + (range_pos - 0.5) * 16.0)), 2)
+        tv_rsi_1m = _wilder_rsi(c1, 14)
+        tv_rsi_5m = _wilder_rsi(c5, min(14, max(4, len(c5) - 1)))
 
-        # Oscillator consensus (RSI, MACD, Momentum, Stoch/Range, VWAP impulse)
-        mom_1m = price - ticks[max(0, len(ticks) - 8)]
+        short_chg_1m = round((price - c1[-2]) / c1[-2] * 100.0, 4) if len(c1) >= 2 and c1[-2] > 0 else 0.0
+        idx_5m = max(0, len(c1) - 6)
+        short_chg_5m = round((price - c1[idx_5m]) / c1[idx_5m] * 100.0, 4) if c1[idx_5m] > 0 else 0.0
+
+        mom_1m = price - c1[max(0, len(c1) - 4)]
         osc_1m = 0.0
         osc_1m += 0.35 if macd_1m > macd_sig_1m else (-0.35 if macd_1m < macd_sig_1m else 0.0)
         osc_1m += 0.35 if mom_1m > 0 else (-0.35 if mom_1m < 0 else 0.0)
         osc_1m += 0.30 if tv_rsi_1m >= 52.0 else (-0.30 if tv_rsi_1m <= 48.0 else 0.0)
         tv_other_1m = round(max(-1.0, min(1.0, osc_1m)), 4)
 
+        mom_5m = price - c5[max(0, len(c5) - 3)]
         osc_5m = 0.0
-        osc_5m += 0.35 if price > vwap else (-0.35 if price < vwap else 0.0)
-        osc_5m += 0.35 if range_pos >= 0.52 else (-0.35 if range_pos <= 0.48 else 0.0)
-        osc_5m += 0.30 if tv_rsi_5m >= 51.5 else (-0.30 if tv_rsi_5m <= 48.5 else 0.0)
+        osc_5m += 0.35 if macd_5m > macd_sig_5m else (-0.35 if macd_5m < macd_sig_5m else 0.0)
+        osc_5m += 0.35 if mom_5m > 0 else (-0.35 if mom_5m < 0 else 0.0)
+        osc_5m += 0.30 if tv_rsi_5m >= 52.0 else (-0.30 if tv_rsi_5m <= 48.0 else 0.0)
         tv_other_5m = round(max(-1.0, min(1.0, osc_5m)), 4)
 
         tv_rec_1m = round(0.56 * tv_ma_1m + 0.44 * tv_other_1m, 4)
         tv_rec_5m = round(0.56 * tv_ma_5m + 0.44 * tv_other_5m, 4)
-        tv_rec_1d = round(max(-1.0, min(1.0, (chg / 6.0) * 0.55 + (range_pos - 0.5) * 0.90)), 4)
-        tv_recommend = round(0.52 * tv_rec_1m + 0.38 * tv_rec_5m + 0.10 * tv_rec_1d, 4)
-        tv_ma = round(0.55 * tv_ma_1m + 0.45 * tv_ma_5m, 4)
-        tv_other = round(0.55 * tv_other_1m + 0.45 * tv_other_5m, 4)
+
+        # Anti-lag guard: if the immediate 1m candle / recent move is green (+), never report a negative 1m SELL rating;
+        # if the immediate 1m candle / recent move is red (-), never report a positive 1m BUY rating.
+        if short_chg_1m > 0.015 and mom_1m > 0 and tv_rec_1m < 0:
+            tv_rec_1m = round(max(0.0, tv_other_1m * 0.5), 4)
+        elif short_chg_1m < -0.015 and mom_1m < 0 and tv_rec_1m > 0:
+            tv_rec_1m = round(min(0.0, tv_other_1m * 0.5), 4)
+
+        # Pure 1m + 5m TradingView chart consensus (never polluted by 24h tv_rec_1d)
+        if (tv_rec_1m > 0.05 and tv_rec_5m < -0.05) or (tv_rec_1m < -0.05 and tv_rec_5m > 0.05):
+            tv_recommend = 0.0
+        else:
+            tv_recommend = round(0.58 * tv_rec_1m + 0.42 * tv_rec_5m, 4)
+        tv_ma = round(0.58 * tv_ma_1m + 0.42 * tv_ma_5m, 4)
+        tv_other = round(0.58 * tv_other_1m + 0.42 * tv_other_5m, 4)
 
         tv_signal = "NEUTRAL"
         if tv_recommend >= 0.45:
@@ -610,9 +705,6 @@ class PriceFeed:
             tv_signal = "STRONG_SELL"
         elif tv_recommend <= -0.08:
             tv_signal = "SELL"
-
-        short_chg_1m = round((price - ticks[-2]) / ticks[-2] * 100.0, 4) if len(ticks) >= 2 and ticks[-2] > 0 else 0.0
-        short_chg_5m = round((price - ticks[0]) / ticks[0] * 100.0, 4) if ticks[0] > 0 else 0.0
 
         row.update({
             "tv_rsi": tv_rsi_1m,
@@ -641,6 +733,120 @@ class PriceFeed:
             "tv_chg_5m": short_chg_5m,
             "tv_signal": tv_signal,
         })
+
+    def _fetch_real_klines(self, symbol, interval="1m", limit=60):
+        """Fetch real OHLCV klines from Binance vision CDN (or CoinDCX public candles) and sync 1m/5m TV ratings."""
+        clean_sym = self._clean_crypto_symbol(symbol)
+        if not clean_sym.endswith("USDT"):
+            return []
+        now = time.time()
+        if not hasattr(self, "_kline_cache"):
+            self._kline_cache = {}
+        ttl = 8.0 if interval == "1m" else 20.0
+        cached = self._kline_cache.get((clean_sym, interval))
+        if cached and (now - cached[0]) < ttl and len(cached[1]) >= min(int(limit), 15):
+            out = [dict(c) for c in cached[1][-int(limit):]]
+            live_p = self.price(symbol)
+            if out and live_p and float(live_p) > 0:
+                lp = float(live_p)
+                out[-1]["c"] = lp
+                out[-1]["h"] = max(float(out[-1]["h"]), lp)
+                out[-1]["l"] = min(float(out[-1]["l"]), lp)
+            return out
+
+        req_limit = max(int(limit), 60 if interval == "1m" else 30)
+        parsed = []
+        try:
+            raw = _get(f"/api/v3/klines?symbol={clean_sym}&interval={interval}&limit={req_limit}", timeout=2.2)
+            if isinstance(raw, list) and len(raw) >= 10:
+                for k in raw:
+                    if isinstance(k, (list, tuple)) and len(k) >= 6:
+                        parsed.append({
+                            "t": int(k[0]),
+                            "o": float(k[1]),
+                            "h": float(k[2]),
+                            "l": float(k[3]),
+                            "c": float(k[4]),
+                            "v": float(k[5]),
+                        })
+        except Exception:
+            parsed = []
+
+        if len(parsed) < 10:
+            try:
+                base_coin = clean_sym[:-4]
+                cdx_url = f"https://public.coindcx.com/market_data/candles?pair=B-{base_coin}_USDT&interval={interval}&limit={req_limit}"
+                req = urllib.request.Request(cdx_url, headers=BROWSER_HEADERS)
+                with urllib.request.urlopen(req, timeout=2.5) as r:
+                    cdx_raw = json.loads(r.read().decode())
+                if isinstance(cdx_raw, list) and len(cdx_raw) >= 10:
+                    # CoinDCX returns newest-first; sort oldest-first
+                    cdx_sorted = sorted(cdx_raw, key=lambda x: int(x.get("time") or 0))
+                    parsed = [{
+                        "t": int(c["time"]),
+                        "o": float(c["open"]),
+                        "h": float(c["high"]),
+                        "l": float(c["low"]),
+                        "c": float(c["close"]),
+                        "v": float(c.get("volume") or 0.0),
+                    } for c in cdx_sorted if float(c.get("close") or 0) > 0]
+            except Exception:
+                pass
+
+        if len(parsed) >= 10:
+            live_p = self.price(symbol)
+            if live_p and float(live_p) > 0:
+                lp = float(live_p)
+                parsed[-1]["c"] = lp
+                parsed[-1]["h"] = max(float(parsed[-1]["h"]), lp)
+                parsed[-1]["l"] = min(float(parsed[-1]["l"]), lp)
+            self._kline_cache[(clean_sym, interval)] = (now, parsed)
+            if len(self._kline_cache) > 600:
+                self._kline_cache.clear()
+            if interval == "1m":
+                with self.lock:
+                    for key in (symbol, clean_sym, f"B-{clean_sym[:-4]}_USDT"):
+                        r_obj = self.prices.get(key)
+                        if r_obj is not None:
+                            h_buf = self.history[key]
+                            if not r_obj.get("_kline_1m_seeded") or len(h_buf) < 20:
+                                h_buf.clear()
+                                for c_item in parsed[-35:]:
+                                    h_buf.append(float(c_item["c"]))
+                                r_obj["_kline_1m_seeded"] = True
+                            self._compute_live_tv_ratings(key, r_obj, h_buf, candles_1m=parsed)
+            return [dict(c) for c in parsed[-int(limit):]]
+        return []
+
+    def refresh_active_crypto_klines(self, max_symbols=36):
+        """Continuously warm 1m real klines and 1m/5m TV ratings for top liquid & volatile crypto pairs."""
+        try:
+            priority = [
+                "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "NEARUSDT", "BNBUSDT",
+                "TRXUSDT", "TIAUSDT", "ORCAUSDT", "USUALUSDT", "ZECUSDT", "SUIUSDT", "AVAXUSDT",
+                "LINKUSDT", "ADAUSDT", "DOTUSDT", "APTUSDT", "ARBUSDT", "OPUSDT"
+            ]
+            with self.lock:
+                live_cryptos = [
+                    (s, float(r.get("volume") or 0.0))
+                    for s, r in self.prices.items()
+                    if r.get("category", "CRYPTO") == "CRYPTO" and s.endswith("USDT") and r.get("live")
+                ]
+            live_cryptos.sort(key=lambda x: -x[1])
+            ordered = []
+            seen = set()
+            for s in priority + [x[0] for x in live_cryptos]:
+                if s not in seen and s in self.prices:
+                    seen.add(s)
+                    ordered.append(s)
+                if len(ordered) >= max_symbols:
+                    break
+            for sym in ordered:
+                if self._stop.is_set():
+                    break
+                self._fetch_real_klines(sym, interval="1m", limit=60)
+        except Exception:
+            pass
 
     # ---------- live crypto ----------
     def refresh_crypto(self):
@@ -676,21 +882,9 @@ class PriceFeed:
                     if first_quote or not row.get("seeded_real") or len(hist) < 15:
                         row["seeded_real"] = True
                         hist.clear()
-                        tv_r = row.get("tv_rec_1m") if row.get("tv_rec_1m") is not None else row.get("tv_recommend")
-                        if tv_r is not None:
-                            drift = max(-0.004, min(0.004, float(tv_r) * 0.003))
-                        else:
-                            # Use intraday VWAP + range position so recovering coins have positive 1m/5m slope
-                            rng_span = max(price * 0.0005, hi_p - lo_p)
-                            r_pos = (price - lo_p) / rng_span
-                            vwap_rel = (price - vwap_p) / price if price > 0 else 0.0
-                            drift = max(-0.0035, min(0.0035, vwap_rel * 0.18 + (r_pos - 0.5) * 0.003))
-                        start_p = price / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else price
-                        for k_i in range(20):
-                            frac = (k_i + 1) / 20.0
-                            wobble = math.sin(k_i * 1.35) * (price * 0.00035)
-                            hist.append(round(start_p + (price - start_p) * frac + wobble, 6 if price < 1 else (4 if price < 10 else 2)))
-                        hist[-1] = price
+                        # Seed flat at current live price (NEVER seed fake 24h-drifted ticks that invert 1m signals!)
+                        for _ in range(20):
+                            hist.append(price)
                     else:
                         hist.append(price)
                     self._compute_live_tv_ratings(sym, row, hist)
@@ -850,7 +1044,8 @@ class PriceFeed:
                 sub_tickers = tv_tickers[i:i + chunk]
                 body = {
                     "symbols": {"tickers": sub_tickers, "query": {"types": []}},
-                    "columns": cols
+                    "columns": cols,
+                    "range": [0, len(sub_tickers)],
                 }
                 try:
                     req = urllib.request.Request(
@@ -865,143 +1060,148 @@ class PriceFeed:
 
                 with self.lock:
                     for item in tv_data.get("data") or []:
-                        s_code = item.get("s", "")
-                        if not s_code.startswith("BINANCE:"):
-                            continue
-                        sym = s_code.replace("BINANCE:", "")
-                        vals = item.get("d") or []
-                        if not vals or vals[0] in (None, "", 0):
-                            continue
-                        price = float(vals[0])
-                        chg = float(vals[1]) if len(vals) > 1 and vals[1] is not None else 0.0
-                        high = float(vals[2]) if len(vals) > 2 and vals[2] is not None else price
-                        low = float(vals[3]) if len(vals) > 3 and vals[3] is not None else price
-                        vol = float(vals[6]) if len(vals) > 6 and vals[6] is not None else (float(vals[4]) * price if len(vals) > 4 and vals[4] is not None else 0.0)
-                        open_p = float(vals[5]) if len(vals) > 5 and vals[5] is not None else price
-                        tv_rsi_1d = float(vals[7]) if len(vals) > 7 and vals[7] is not None else None
-                        tv_rec_1d = float(vals[8]) if len(vals) > 8 and vals[8] is not None else None
-                        tv_ma_1d = float(vals[9]) if len(vals) > 9 and vals[9] is not None else None
-                        tv_other_1d = float(vals[10]) if len(vals) > 10 and vals[10] is not None else None
-
-                        tv_rsi_1m = float(vals[11]) if len(vals) > 11 and vals[11] is not None else None
-                        tv_rec_1m = float(vals[12]) if len(vals) > 12 and vals[12] is not None else None
-                        tv_ma_1m = float(vals[13]) if len(vals) > 13 and vals[13] is not None else None
-                        tv_other_1m = float(vals[14]) if len(vals) > 14 and vals[14] is not None else None
-
-                        tv_rsi_5m = float(vals[15]) if len(vals) > 15 and vals[15] is not None else None
-                        tv_rec_5m = float(vals[16]) if len(vals) > 16 and vals[16] is not None else None
-                        tv_ma_5m = float(vals[17]) if len(vals) > 17 and vals[17] is not None else None
-                        tv_other_5m = float(vals[18]) if len(vals) > 18 and vals[18] is not None else None
-
-                        macd_1m = float(vals[19]) if len(vals) > 19 and vals[19] is not None else None
-                        macd_sig_1m = float(vals[20]) if len(vals) > 20 and vals[20] is not None else None
-                        macd_5m = float(vals[21]) if len(vals) > 21 and vals[21] is not None else None
-                        macd_sig_5m = float(vals[22]) if len(vals) > 22 and vals[22] is not None else None
-
-                        ema20_1m = float(vals[23]) if len(vals) > 23 and vals[23] is not None else None
-                        ema50_1m = float(vals[24]) if len(vals) > 24 and vals[24] is not None else None
-                        ema20_5m = float(vals[25]) if len(vals) > 25 and vals[25] is not None else None
-                        ema50_5m = float(vals[26]) if len(vals) > 26 and vals[26] is not None else None
-
-                        chg_1m = float(vals[27]) if len(vals) > 27 and vals[27] is not None else None
-                        chg_5m = float(vals[28]) if len(vals) > 28 and vals[28] is not None else None
-
-                        # Multi-timeframe TradingView Scalp Consensus (1m + 5m primary, 1D context)
-                        if tv_rec_1m is not None and tv_rec_5m is not None:
-                            tv_recommend = round(0.52 * tv_rec_1m + 0.38 * tv_rec_5m + 0.10 * (tv_rec_1d or 0.0), 4)
-                        elif tv_rec_1m is not None:
-                            tv_recommend = round(0.75 * tv_rec_1m + 0.25 * (tv_rec_1d or 0.0), 4)
-                        elif tv_rec_5m is not None:
-                            tv_recommend = round(0.75 * tv_rec_5m + 0.25 * (tv_rec_1d or 0.0), 4)
-                        else:
-                            tv_recommend = tv_rec_1d
-
-                        if tv_ma_1m is not None and tv_ma_5m is not None:
-                            tv_ma = round(0.55 * tv_ma_1m + 0.45 * tv_ma_5m, 4)
-                        else:
-                            tv_ma = tv_ma_1m if tv_ma_1m is not None else tv_ma_1d
-
-                        if tv_other_1m is not None and tv_other_5m is not None:
-                            tv_other = round(0.55 * tv_other_1m + 0.45 * tv_other_5m, 4)
-                        else:
-                            tv_other = tv_other_1m if tv_other_1m is not None else tv_other_1d
-
-                        tv_rsi = tv_rsi_1m if tv_rsi_1m is not None else (tv_rsi_5m if tv_rsi_5m is not None else tv_rsi_1d)
-
-                        tv_signal = "NEUTRAL"
-                        if tv_recommend is not None:
-                            if tv_recommend >= 0.45: tv_signal = "STRONG_BUY"
-                            elif tv_recommend >= 0.08: tv_signal = "BUY"
-                            elif tv_recommend <= -0.45: tv_signal = "STRONG_SELL"
-                            elif tv_recommend <= -0.08: tv_signal = "SELL"
-
-                        tv_payload = {
-                            "tv_rsi": tv_rsi,
-                            "tv_rsi_1m": tv_rsi_1m,
-                            "tv_rsi_5m": tv_rsi_5m,
-                            "tv_rsi_1d": tv_rsi_1d,
-                            "tv_recommend": tv_recommend,
-                            "tv_rec_1m": tv_rec_1m,
-                            "tv_rec_5m": tv_rec_5m,
-                            "tv_rec_1d": tv_rec_1d,
-                            "tv_ma": tv_ma,
-                            "tv_ma_1m": tv_ma_1m,
-                            "tv_ma_5m": tv_ma_5m,
-                            "tv_other": tv_other,
-                            "tv_other_1m": tv_other_1m,
-                            "tv_other_5m": tv_other_5m,
-                            "tv_macd_1m": macd_1m,
-                            "tv_macd_sig_1m": macd_sig_1m,
-                            "tv_macd_5m": macd_5m,
-                            "tv_macd_sig_5m": macd_sig_5m,
-                            "tv_ema20_1m": ema20_1m,
-                            "tv_ema50_1m": ema50_1m,
-                            "tv_ema20_5m": ema20_5m,
-                            "tv_ema50_5m": ema50_5m,
-                            "tv_chg_1m": chg_1m,
-                            "tv_chg_5m": chg_5m,
-                            "tv_signal": tv_signal,
-                        }
-
-                        for target_key in norm_to_keys.get(sym, [sym]):
-                            row = self.prices.get(target_key)
-                            if not row:
+                        try:
+                            s_code = item.get("s", "")
+                            if not s_code.startswith("BINANCE:"):
                                 continue
-                            first_quote = not row.get("live") or not row.get("seeded_real")
-                            updates = {
-                                **tv_payload,
-                                "high": high,
-                                "low": low,
-                                "volume": vol or row.get("volume", 0),
-                                "target": price,
-                                "live": True,
-                                "seeded_real": True,
-                                "_tv_scanner_ts": time.time(),
-                            }
-                            if first_quote or row.get("source") == "TRADINGVIEW" or not row.get("price"):
-                                updates["price"] = price
-                                updates["open24h"] = open_p
-                                updates["change_pct"] = chg
-                                updates["source"] = "TRADINGVIEW"
-                            row.update(updates)
-                            hist = self.history[target_key]
-                            if first_quote or len(hist) < 15:
-                                hist.clear()
-                                if ema50_1m and ema50_1m > 0 and abs(price - ema50_1m) / price <= 0.04:
-                                    start_p = float(ema50_1m)
-                                elif chg_5m is not None and abs(float(chg_5m)) <= 5.0:
-                                    start_p = price / (1.0 + float(chg_5m) / 100.0)
-                                elif tv_recommend is not None:
-                                    start_p = price / (1.0 + float(tv_recommend) * 0.003)
+                            sym = s_code.replace("BINANCE:", "")
+                            vals = item.get("d") or []
+                            if not vals or vals[0] in (None, "", 0):
+                                continue
+                            price = float(vals[0])
+                            chg = float(vals[1]) if len(vals) > 1 and vals[1] is not None else 0.0
+                            high = float(vals[2]) if len(vals) > 2 and vals[2] is not None else price
+                            low = float(vals[3]) if len(vals) > 3 and vals[3] is not None else price
+                            vol = float(vals[6]) if len(vals) > 6 and vals[6] is not None else (float(vals[4]) * price if len(vals) > 4 and vals[4] is not None else 0.0)
+                            open_p = float(vals[5]) if len(vals) > 5 and vals[5] is not None else price
+                            tv_rsi_1d = float(vals[7]) if len(vals) > 7 and vals[7] is not None else None
+                            tv_rec_1d = float(vals[8]) if len(vals) > 8 and vals[8] is not None else None
+                            tv_ma_1d = float(vals[9]) if len(vals) > 9 and vals[9] is not None else None
+                            tv_other_1d = float(vals[10]) if len(vals) > 10 and vals[10] is not None else None
+
+                            tv_rsi_1m = float(vals[11]) if len(vals) > 11 and vals[11] is not None else None
+                            tv_rec_1m = float(vals[12]) if len(vals) > 12 and vals[12] is not None else None
+                            tv_ma_1m = float(vals[13]) if len(vals) > 13 and vals[13] is not None else None
+                            tv_other_1m = float(vals[14]) if len(vals) > 14 and vals[14] is not None else None
+
+                            tv_rsi_5m = float(vals[15]) if len(vals) > 15 and vals[15] is not None else None
+                            tv_rec_5m = float(vals[16]) if len(vals) > 16 and vals[16] is not None else None
+                            tv_ma_5m = float(vals[17]) if len(vals) > 17 and vals[17] is not None else None
+                            tv_other_5m = float(vals[18]) if len(vals) > 18 and vals[18] is not None else None
+
+                            macd_1m = float(vals[19]) if len(vals) > 19 and vals[19] is not None else None
+                            macd_sig_1m = float(vals[20]) if len(vals) > 20 and vals[20] is not None else None
+                            macd_5m = float(vals[21]) if len(vals) > 21 and vals[21] is not None else None
+                            macd_sig_5m = float(vals[22]) if len(vals) > 22 and vals[22] is not None else None
+
+                            ema20_1m = float(vals[23]) if len(vals) > 23 and vals[23] is not None else None
+                            ema50_1m = float(vals[24]) if len(vals) > 24 and vals[24] is not None else None
+                            ema20_5m = float(vals[25]) if len(vals) > 25 and vals[25] is not None else None
+                            ema50_5m = float(vals[26]) if len(vals) > 26 and vals[26] is not None else None
+
+                            chg_1m = float(vals[27]) if len(vals) > 27 and vals[27] is not None else None
+                            chg_5m = float(vals[28]) if len(vals) > 28 and vals[28] is not None else None
+
+                            # Multi-timeframe TradingView Scalp Consensus (pure 1m + 5m primary, never inverted by 1D)
+                            if tv_rec_1m is not None and tv_rec_5m is not None:
+                                if (tv_rec_1m > 0.05 and tv_rec_5m < -0.05) or (tv_rec_1m < -0.05 and tv_rec_5m > 0.05):
+                                    tv_recommend = 0.0
                                 else:
-                                    start_p = price
-                                for k_i in range(20):
-                                    frac = (k_i + 1) / 20.0
-                                    wobble = math.sin(k_i * 0.8) * (price * 0.00015)
-                                    hist.append(round(start_p + (price - start_p) * frac + wobble, 6 if price < 1 else (4 if price < 10 else 2)))
+                                    tv_recommend = round(0.58 * tv_rec_1m + 0.42 * tv_rec_5m, 4)
+                            elif tv_rec_1m is not None:
+                                tv_recommend = round(float(tv_rec_1m), 4)
+                            elif tv_rec_5m is not None:
+                                tv_recommend = round(float(tv_rec_5m), 4)
                             else:
-                                hist.append(price)
-                        updated_any = True
+                                tv_recommend = tv_rec_1d
+
+                            if tv_ma_1m is not None and tv_ma_5m is not None:
+                                tv_ma = round(0.58 * tv_ma_1m + 0.42 * tv_ma_5m, 4)
+                            else:
+                                tv_ma = tv_ma_1m if tv_ma_1m is not None else tv_ma_1d
+
+                            if tv_other_1m is not None and tv_other_5m is not None:
+                                tv_other = round(0.58 * tv_other_1m + 0.42 * tv_other_5m, 4)
+                            else:
+                                tv_other = tv_other_1m if tv_other_1m is not None else tv_other_1d
+
+                            tv_rsi = tv_rsi_1m if tv_rsi_1m is not None else (tv_rsi_5m if tv_rsi_5m is not None else tv_rsi_1d)
+
+                            tv_signal = "NEUTRAL"
+                            if tv_recommend is not None:
+                                if tv_recommend >= 0.45: tv_signal = "STRONG_BUY"
+                                elif tv_recommend >= 0.08: tv_signal = "BUY"
+                                elif tv_recommend <= -0.45: tv_signal = "STRONG_SELL"
+                                elif tv_recommend <= -0.08: tv_signal = "SELL"
+
+                            tv_payload = {
+                                "tv_rsi": tv_rsi,
+                                "tv_rsi_1m": tv_rsi_1m,
+                                "tv_rsi_5m": tv_rsi_5m,
+                                "tv_rsi_1d": tv_rsi_1d,
+                                "tv_recommend": tv_recommend,
+                                "tv_rec_1m": tv_rec_1m,
+                                "tv_rec_5m": tv_rec_5m,
+                                "tv_rec_1d": tv_rec_1d,
+                                "tv_ma": tv_ma,
+                                "tv_ma_1m": tv_ma_1m,
+                                "tv_ma_5m": tv_ma_5m,
+                                "tv_other": tv_other,
+                                "tv_other_1m": tv_other_1m,
+                                "tv_other_5m": tv_other_5m,
+                                "tv_macd_1m": macd_1m,
+                                "tv_macd_sig_1m": macd_sig_1m,
+                                "tv_macd_5m": macd_5m,
+                                "tv_macd_sig_5m": macd_sig_5m,
+                                "tv_ema20_1m": ema20_1m,
+                                "tv_ema50_1m": ema50_1m,
+                                "tv_ema20_5m": ema20_5m,
+                                "tv_ema50_5m": ema50_5m,
+                                "tv_chg_1m": chg_1m,
+                                "tv_chg_5m": chg_5m,
+                                "tv_signal": tv_signal,
+                            }
+
+                            for target_key in norm_to_keys.get(sym, [sym]):
+                                row = self.prices.get(target_key)
+                                if not row:
+                                    continue
+                                first_quote = not row.get("live") or not row.get("seeded_real")
+                                updates = {
+                                    **tv_payload,
+                                    "high": high,
+                                    "low": low,
+                                    "volume": vol or row.get("volume", 0),
+                                    "target": price,
+                                    "live": True,
+                                    "seeded_real": True,
+                                    "_tv_scanner_ts": time.time(),
+                                }
+                                if first_quote or row.get("source") == "TRADINGVIEW" or not row.get("price"):
+                                    updates["price"] = price
+                                    updates["open24h"] = open_p
+                                    updates["change_pct"] = chg
+                                    updates["source"] = "TRADINGVIEW"
+                                row.update(updates)
+                                hist = self.history[target_key]
+                                if first_quote or len(hist) < 15:
+                                    hist.clear()
+                                    if ema50_1m and ema50_1m > 0 and abs(price - ema50_1m) / price <= 0.04:
+                                        start_p = float(ema50_1m)
+                                    elif chg_5m is not None and abs(float(chg_5m)) <= 5.0:
+                                        start_p = price / (1.0 + float(chg_5m) / 100.0)
+                                    elif tv_recommend is not None:
+                                        start_p = price / (1.0 + float(tv_recommend) * 0.003)
+                                    else:
+                                        start_p = price
+                                    for k_i in range(20):
+                                        frac = (k_i + 1) / 20.0
+                                        hist.append(round(start_p + (price - start_p) * frac, 6 if price < 1 else (4 if price < 10 else 2)))
+                                else:
+                                    hist.append(price)
+                            updated_any = True
+                        except Exception:
+                            continue
             return updated_any
         except Exception:
             return False
@@ -1182,12 +1382,8 @@ class PriceFeed:
                         if tgt > 0:
                             curr = float(row.get("price") or tgt)
                             gap = tgt - curr
-                            # Authentic crypto order-book micro-ticks around genuine exchange target
-                            jitter_ratio = 0.00012 if tgt >= 100 else (0.00025 if tgt >= 1 else 0.00045)
-                            micro_tick = tgt * random.uniform(-jitter_ratio, jitter_ratio)
-                            new_p = curr + gap * 0.20 + micro_tick
-                            # Safety boundary: keep within ±0.4% band of real exchange price
-                            new_p = max(tgt * 0.996, min(tgt * 1.004, new_p))
+                            # Smoothly converge toward genuine exchange target with ZERO counter-trend random noise
+                            new_p = curr + gap * 0.50 if abs(gap) > tgt * 1e-6 else tgt
                             decimals = 8 if tgt < 0.1 else (6 if tgt < 10 else 2)
                             row["price"] = round(new_p, decimals)
                             row["high"] = max(row.get("high", 0), row["price"])
@@ -1491,7 +1687,14 @@ class PriceFeed:
 
     # ---------- chart + book ----------
     def candles(self, symbol, interval="1m", limit=120):
-        # Sourced from live TradingView 1m/5m indicators & quote range with instant zero-lag response
+        # For live CRYPTO symbols, fetch real Binance/CoinDCX OHLCV klines first so 1m/5m charts & bot signals match 100%
+        with self.lock:
+            row = self.prices.get(symbol) or {}
+            is_live_crypto = row.get("category", "CRYPTO") == "CRYPTO" and bool(row.get("live"))
+        if is_live_crypto and interval in ("1m", "3m", "5m", "15m", "30m", "1h"):
+            real_kl = self._fetch_real_klines(symbol, interval=interval, limit=limit)
+            if real_kl and len(real_kl) >= 10:
+                return real_kl
         return self._synthetic_candles(symbol, interval, limit)
 
     def _synthetic_candles(self, symbol, interval, limit):
@@ -1596,6 +1799,10 @@ class PriceFeed:
             while not self._stop.is_set():
                 try:
                     self.refresh_crypto_tradingview()
+                except Exception:
+                    pass
+                try:
+                    self.refresh_active_crypto_klines()
                 except Exception:
                     pass
                 try:
