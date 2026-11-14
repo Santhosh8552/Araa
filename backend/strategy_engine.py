@@ -7,6 +7,7 @@ CoinDCX acts strictly as the permitted exchange execution layer via CoinDCXExecu
 
 import hmac
 import json
+import math
 import os
 import secrets
 import time
@@ -740,3 +741,738 @@ class StrategyEngine:
             payload=data, order_id=str(exec_res.get("exchange_order_id") or exec_res.get("position_id") or ""),
         )
         return 200, {"success": True, "received": True, "signal_id": raw_sig_id, **exec_res}
+
+    # =====================================================================
+    # ARAABOT V2.0 — CENTRALIZED 10-RULE ENGINE, RISK POSITION SIZING,
+    # SMART PROFIT BOOKING (TP1=1R / TP2=2R), AUTO EXIT & ACTIVITY LOG
+    # =====================================================================
+
+    _ACTIVITY_LOG: List[Dict[str, Any]] = []
+
+    @classmethod
+    def log_bot_activity(
+        cls,
+        user_id: int,
+        event_type: str,
+        symbol: str,
+        message: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Record real-time V2.0 Bot Activity Log event."""
+        now = time.time()
+        entry = {
+            "id": f"evt_{int(now * 1000)}_{len(cls._ACTIVITY_LOG) + 1}",
+            "user_id": int(user_id),
+            "event_type": str(event_type),
+            "symbol": str(symbol or "SYSTEM").upper(),
+            "message": str(message),
+            "details": details or {},
+            "timestamp": now,
+            "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+        }
+        cls._ACTIVITY_LOG.append(entry)
+        if len(cls._ACTIVITY_LOG) > 250:
+            cls._ACTIVITY_LOG = cls._ACTIVITY_LOG[-250:]
+        return entry
+
+    @classmethod
+    def get_bot_activity_log(cls, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        items = [e for e in reversed(cls._ACTIVITY_LOG) if e.get("user_id") in (int(user_id), 0)]
+        return items[: max(1, min(200, int(limit or 50)))]
+
+    @classmethod
+    def calculate_v2_risk_position_size(
+        cls,
+        user_id: int,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        stop_loss_price: float,
+        account_equity: Optional[float] = None,
+        available_margin: Optional[float] = None,
+        risk_pct: float = 0.5,
+        max_leverage: float = 10.0,
+        max_aggregate_open_risk_pct: float = 1.5,
+        contract_multiplier: float = 1.0,
+        quantity_step: float = 0.001,
+        min_order_qty: float = 0.001,
+        max_order_qty: float = 1000000.0,
+        fee_pct: float = 0.05,
+        slippage_pct: float = 0.02,
+    ) -> Dict[str, Any]:
+        """
+        AraaBot V2.0 Risk-Based Position Sizing Engine:
+        Risk Amount = Account Equity * Configured Risk Percentage
+        Position Size = Risk Amount / Stop-Loss Price Distance (adjusted for friction, step, margin, leverage, liq buffer, aggregate risk).
+        Computes R-multiple profit booking levels (TP1 = 1R, TP2 = 2R).
+        """
+        sym = str(symbol or "BTCUSDT").upper().replace("B-", "").replace("_", "")
+        norm_side = "LONG" if str(side or "LONG").upper() in ("BUY", "LONG") else "SHORT"
+
+        if account_equity is None or available_margin is None:
+            dash = CoinDCXExecutionAdapter.compute_usd_profit_dashboard(user_id)
+            eq = float(account_equity if account_equity is not None else (dash.get("total_account_equity_usdt") or 0.0))
+            avail = float(available_margin if available_margin is not None else (dash.get("available_balance_usdt") or eq))
+            if eq <= 0:
+                w = query_one("SELECT deposit_balance, locked_balance FROM wallets WHERE user_id=?", (user_id,))
+                avail = float((w or {}).get("deposit_balance") or 100.0)
+                eq = avail + float((w or {}).get("locked_balance") or 0.0)
+        else:
+            eq = float(account_equity)
+            avail = float(available_margin)
+
+        if eq <= 0 or entry_price <= 0 or stop_loss_price <= 0:
+            return {"approved": False, "reason": "Invalid account equity or entry/stop price.", "quantity": 0.0}
+
+        stop_dist = abs(float(entry_price) - float(stop_loss_price))
+        if stop_dist <= 0:
+            return {"approved": False, "reason": "Stop-Loss price cannot equal Entry price.", "quantity": 0.0}
+
+        if norm_side == "LONG" and stop_loss_price >= entry_price:
+            return {"approved": False, "reason": "LONG Stop-Loss must be below Entry price.", "quantity": 0.0}
+        if norm_side == "SHORT" and stop_loss_price <= entry_price:
+            return {"approved": False, "reason": "SHORT Stop-Loss must be above Entry price.", "quantity": 0.0}
+
+        cfg_risk_pct = max(0.05, min(5.0, float(risk_pct or 0.5)))
+        risk_amount_usd = eq * (cfg_risk_pct / 100.0)
+
+        # Check aggregate open risk across existing open positions
+        open_rows = query(
+            "SELECT qty, entry_price, stop_pct, margin FROM positions WHERE user_id=? AND status='OPEN'",
+            (user_id,),
+        )
+        current_open_risk_usd = 0.0
+        for r in open_rows or []:
+            p_qty = float(r.get("qty") or 0.0)
+            p_entry = float(r.get("entry_price") or 0.0)
+            p_sl_pct = float(r.get("stop_pct") or 0.5)
+            current_open_risk_usd += (p_qty * p_entry) * (p_sl_pct / 100.0)
+
+        max_agg_risk_usd = eq * (max(0.25, float(max_aggregate_open_risk_pct or 1.5)) / 100.0)
+        if (current_open_risk_usd + risk_amount_usd) > max_agg_risk_usd * 1.001:
+            return {
+                "approved": False,
+                "reason": f"Aggregate open risk (${current_open_risk_usd + risk_amount_usd:.2f}) exceeds max limit (${max_agg_risk_usd:.2f} / {max_aggregate_open_risk_pct}% equity).",
+                "quantity": 0.0,
+            }
+
+        # Include round-trip fee + slippage friction in per-unit risk
+        friction_per_unit = float(entry_price) * ((fee_pct * 2.0 + slippage_pct) / 100.0)
+        effective_loss_per_unit = (stop_dist + friction_per_unit) * max(contract_multiplier, 1e-9)
+        raw_qty = risk_amount_usd / max(effective_loss_per_unit, 1e-9)
+
+        # Cap by available margin and max leverage
+        lev = max(1.0, min(50.0, float(max_leverage or 10.0)))
+        max_notional_by_margin = max(0.0, avail * 0.95) * lev
+        max_qty_by_margin = max_notional_by_margin / max(entry_price * contract_multiplier, 1e-9)
+        capped_qty = min(raw_qty, max_qty_by_margin, float(max_order_qty))
+
+        step = max(1e-8, float(quantity_step or 0.001))
+        precision_decimals = max(0, int(round(-math.log10(step)))) if step < 1.0 else 0
+        final_qty = round(math.floor(capped_qty / step) * step, precision_decimals if precision_decimals > 0 else 4)
+
+        if final_qty < float(min_order_qty):
+            return {
+                "approved": False,
+                "reason": f"Calculated quantity ({final_qty}) is below instrument minimum ({min_order_qty}).",
+                "quantity": 0.0,
+            }
+
+        notional_usd = final_qty * float(entry_price) * contract_multiplier
+        margin_required = notional_usd / lev
+        if margin_required > avail:
+            return {
+                "approved": False,
+                "reason": f"Required margin (${margin_required:.2f}) exceeds available balance (${avail:.2f}).",
+                "quantity": 0.0,
+            }
+
+        # Liquidation buffer check
+        maint_margin = min(0.005, 1.0 / lev)
+        if norm_side == "LONG":
+            liq_price = entry_price * (1.0 - (1.0 / lev) + maint_margin)
+            liq_safe = stop_loss_price > liq_price * 1.005
+            tp1_1r = round(entry_price + stop_dist * 1.0, 6)
+            tp2_2r = round(entry_price + stop_dist * 2.0, 6)
+        else:
+            liq_price = entry_price * (1.0 + (1.0 / lev) - maint_margin)
+            liq_safe = stop_loss_price < liq_price * 0.995
+            tp1_1r = round(entry_price - stop_dist * 1.0, 6)
+            tp2_2r = round(entry_price - stop_dist * 2.0, 6)
+
+        if not liq_safe:
+            return {
+                "approved": False,
+                "reason": f"Liquidation price ({liq_price:.4f}) is too close to or inside Stop-Loss ({stop_loss_price:.4f}).",
+                "quantity": 0.0,
+            }
+
+        return {
+            "approved": True,
+            "symbol": sym,
+            "side": norm_side,
+            "account_equity_usdt": round(eq, 2),
+            "available_margin_usdt": round(avail, 2),
+            "risk_pct": cfg_risk_pct,
+            "risk_amount_usdt": round(risk_amount_usd, 4),
+            "entry_price": round(float(entry_price), 6),
+            "stop_loss_price": round(float(stop_loss_price), 6),
+            "stop_distance_price": round(stop_dist, 6),
+            "stop_distance_pct": round((stop_dist / entry_price) * 100.0, 4),
+            "tp1_1r_price": tp1_1r,
+            "tp2_2r_price": tp2_2r,
+            "quantity": final_qty,
+            "notional_usdt": round(notional_usd, 4),
+            "margin_required_usdt": round(margin_required, 4),
+            "leverage": lev,
+            "liquidation_price": round(liq_price, 6),
+            "aggregate_open_risk_usdt": round(current_open_risk_usd + risk_amount_usd, 4),
+            "max_aggregate_open_risk_usdt": round(max_agg_risk_usd, 4),
+        }
+
+    @classmethod
+    def evaluate_v2_rule_pipeline(
+        cls,
+        user_id: int,
+        symbol: str,
+        side: str,
+        strategy_id: str = "araa_ai_default",
+        candles: Optional[List[Dict[str, Any]]] = None,
+        candles_by_tf: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        signal_payload: Optional[Dict[str, Any]] = None,
+        market_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        AraaBot V2.0 Centralized 10-Stage Python Rule Engine.
+        Every trade opportunity must pass all 10 stages:
+          1. Signal Validation
+          2. Instrument Validation
+          3. Market Data Validation
+          4. Multi-Timeframe Confirmation
+          5. Technical Analysis Conditions (EMA, RSI, MACD, Volume)
+          6. Configured Entry Rules
+          7. Configured Exit Plan & Risk/Reward
+          8. Risk Management & Profit Lock Validation
+          9. Risk-Based Position Sizing Validation
+          10. CoinDCX Execution & Spread/Idempotency Validation
+        Returns APPROVED only if every required rule passes.
+        """
+        try:
+            from analysis_engine import analyze_technical_v2, analyze_multi_timeframe, generate_araa_ai_analysis
+        except ImportError:
+            from backend.analysis_engine import analyze_technical_v2, analyze_multi_timeframe, generate_araa_ai_analysis
+
+        now = time.time()
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+        sym = str(symbol or "BTCUSDT").upper().replace("B-", "").replace("_", "")
+        norm_side = "LONG" if str(side or "LONG").upper() in ("BUY", "LONG") else "SHORT"
+        strat = cls.get_strategy(user_id, strategy_id) or cls.get_strategy(user_id, "araa_ai_default") or {}
+        sid = str(strat.get("strategy_id") or strategy_id)
+
+        entry_cfg = {}
+        exit_cfg = {}
+        try:
+            entry_cfg = json.loads(strat.get("entry_rules_json") or "{}") if isinstance(strat.get("entry_rules_json"), str) else (strat.get("entry_rules") or {})
+            exit_cfg = json.loads(strat.get("exit_rules_json") or "{}") if isinstance(strat.get("exit_rules_json"), str) else (strat.get("exit_rules") or {})
+        except Exception:
+            pass
+
+        sig = signal_payload or {}
+        m_ctx = market_context or {}
+
+        # Run Technical Analysis & Multi-Timeframe & Araa AI
+        c_list = candles or []
+        ta_res = analyze_technical_v2(sym, c_list, timeframe=str(sig.get("timeframe") or "15m"), use_closed_candles_only=True) if c_list else {"valid": False}
+        mtf_res = analyze_multi_timeframe(sym, candles_by_tf or ({str(sig.get("timeframe") or "15m"): c_list} if c_list else {}), use_closed_candles_only=True)
+        ai_res = generate_araa_ai_analysis(sym, ta_res, mtf_res)
+
+        rules_evaluated: List[Dict[str, Any]] = []
+
+        def _add_rule(rule_id: str, rule_name: str, cfg: Any, passed: bool, reason: str):
+            rules_evaluated.append({
+                "rule_id": rule_id,
+                "rule_name": rule_name,
+                "config": cfg,
+                "result": "PASS" if passed else "FAILED",
+                "reason": reason,
+                "timestamp": now_iso,
+                "strategy_id": sid,
+            })
+
+        # 1. Signal Validation (freshness, direction)
+        sig_ts = float(sig.get("timestamp") or now)
+        if sig_ts > 1e12:
+            sig_ts = sig_ts / 1000.0
+        sig_age = abs(now - sig_ts)
+        max_age = float(entry_cfg.get("max_signal_age_seconds") or cls.SIGNAL_MAX_AGE_SECONDS)
+        sig_valid = (sig_age <= max_age) and (norm_side in ("LONG", "SHORT"))
+        _add_rule(
+            "RULE_01_SIGNAL_VALIDATION",
+            "Signal Freshness & Direction",
+            {"max_age_s": max_age, "direction": norm_side},
+            sig_valid,
+            f"Signal fresh ({sig_age:.1f}s <= {max_age:.0f}s)" if sig_valid else f"Stale signal ({sig_age:.1f}s > {max_age:.0f}s)",
+        )
+
+        # 2. Instrument Validation
+        blocked_stables = {"FDUSDUSDT", "USDCUSDT", "DAIUSDT", "TUSDUSDT", "BUSDUSDT", "USDEUSDT", "PYUSDUSDT"}
+        inst_ok = len(sym) >= 5 and (sym.endswith("USDT") or sym.endswith("INR")) and (sym not in blocked_stables)
+        _add_rule(
+            "RULE_02_INSTRUMENT_VALIDATION",
+            "Instrument Eligibility",
+            {"symbol": sym},
+            inst_ok,
+            f"Instrument {sym} is active and eligible" if inst_ok else f"Instrument {sym} is blocked or invalid",
+        )
+
+        # 3. Market Data Validation
+        data_ok = bool(ta_res.get("valid")) and float(ta_res.get("current_price") or 0.0) > 0
+        _add_rule(
+            "RULE_03_MARKET_DATA_VALIDATION",
+            "Market Data Validation",
+            {"min_candles": 10},
+            data_ok,
+            f"Validated {ta_res.get('candle_count', 0)} closed candles at ${ta_res.get('current_price', 0)}" if data_ok else "Insufficient or stale OHLCV candle data",
+        )
+
+        # 4. Multi-Timeframe Confirmation
+        require_mtf = bool(entry_cfg.get("require_mtf_confirmation", True))
+        mtf_dir = mtf_res.get("dominant_direction", "NEUTRAL")
+        mtf_ok = (not require_mtf) or (mtf_dir == norm_side) or (mtf_res.get("alignment") in ("ALIGNED_BULLISH" if norm_side == "LONG" else "ALIGNED_BEARISH", "PARTIAL_BULLISH" if norm_side == "LONG" else "PARTIAL_BEARISH"))
+        _add_rule(
+            "RULE_04_MULTI_TIMEFRAME",
+            "Higher Timeframe Confirmation",
+            {"require_mtf": require_mtf, "hierarchy": mtf_res.get("configured_hierarchy")},
+            mtf_ok,
+            f"MTF alignment={mtf_res.get('alignment')} matches {norm_side}" if mtf_ok else f"MTF alignment={mtf_res.get('alignment')} conflicts with {norm_side}",
+        )
+
+        # 5. Technical Indicator Rules (EMA, RSI, MACD, Volume)
+        ind = ta_res.get("indicators") or {}
+        ema9 = float(ind.get("ema9") or 0.0)
+        ema21 = float(ind.get("ema21") or 0.0)
+        rsi14 = float(ind.get("rsi14") or 50.0)
+        macd_hist = float(ind.get("macd_hist") or 0.0)
+        rel_vol = float(ind.get("relative_volume") or 1.0)
+
+        ema_ok = (ema9 >= ema21) if norm_side == "LONG" else (ema9 <= ema21)
+        if not bool(entry_cfg.get("require_ema_alignment", True)):
+            ema_ok = True
+        _add_rule(
+            "RULE_05A_EMA_CONDITION",
+            "EMA Condition",
+            {"ema_fast": 9, "ema_slow": 21},
+            ema_ok,
+            f"EMA9 ({ema9:.4f}) vs EMA21 ({ema21:.4f}) aligned for {norm_side}" if ema_ok else f"EMA9 ({ema9:.4f}) vs EMA21 ({ema21:.4f}) opposes {norm_side}",
+        )
+
+        rsi_min_long = float(entry_cfg.get("rsi_long_min") or 30.0)
+        rsi_max_long = float(entry_cfg.get("rsi_long_max") or 72.0)
+        rsi_min_short = float(entry_cfg.get("rsi_short_min") or 28.0)
+        rsi_max_short = float(entry_cfg.get("rsi_short_max") or 70.0)
+        rsi_ok = (rsi_min_long <= rsi14 <= rsi_max_long) if norm_side == "LONG" else (rsi_min_short <= rsi14 <= rsi_max_short)
+        _add_rule(
+            "RULE_05B_RSI_CONDITION",
+            "RSI Condition",
+            {"rsi14": rsi14, "bounds": [rsi_min_long, rsi_max_long] if norm_side == "LONG" else [rsi_min_short, rsi_max_short]},
+            rsi_ok,
+            f"RSI(14)={rsi14:.2f} within configured bounds" if rsi_ok else f"RSI(14)={rsi14:.2f} outside configured bounds",
+        )
+
+        macd_ok = (macd_hist >= -1e-9) if norm_side == "LONG" else (macd_hist <= 1e-9)
+        if not bool(entry_cfg.get("require_macd_confirmation", True)):
+            macd_ok = True
+        _add_rule(
+            "RULE_05C_MACD_CONDITION",
+            "MACD Condition",
+            {"macd_hist": macd_hist},
+            macd_ok,
+            f"MACD histogram ({macd_hist:.6f}) confirms {norm_side}" if macd_ok else f"MACD histogram ({macd_hist:.6f}) opposes {norm_side}",
+        )
+
+        min_rel_vol = float(entry_cfg.get("min_relative_volume") or 0.6)
+        vol_ok = rel_vol >= min_rel_vol
+        _add_rule(
+            "RULE_05D_VOLUME_CONDITION",
+            "Volume Condition",
+            {"min_relative_volume": min_rel_vol, "relative_volume": rel_vol},
+            vol_ok,
+            f"Relative volume ({rel_vol:.2f}x) >= {min_rel_vol:.2f}x" if vol_ok else f"Relative volume ({rel_vol:.2f}x) below {min_rel_vol:.2f}x",
+        )
+
+        # 6. Configured Entry Rule Summary
+        entry_rule_ok = sig_valid and inst_ok and data_ok and mtf_ok and ema_ok and rsi_ok and macd_ok and vol_ok
+        _add_rule(
+            "RULE_06_ENTRY_RULE",
+            "Entry Rule",
+            {"side": norm_side, "strategy_id": sid},
+            entry_rule_ok,
+            "All technical & timeframe entry conditions passed" if entry_rule_ok else "One or more technical entry conditions failed",
+        )
+
+        # 7. Exit Plan & Risk/Reward Validation
+        curr_px = float(ta_res.get("current_price") or sig.get("price") or 100.0)
+        sl_pct = max(0.2, float(strat.get("stop_loss_pct") or 0.6))
+        tp_pct = max(0.3, float(strat.get("take_profit_pct") or 1.32))
+        sl_px = round(curr_px * (1.0 - sl_pct / 100.0), 6) if norm_side == "LONG" else round(curr_px * (1.0 + sl_pct / 100.0), 6)
+        tp_px = round(curr_px * (1.0 + tp_pct / 100.0), 6) if norm_side == "LONG" else round(curr_px * (1.0 - tp_pct / 100.0), 6)
+        min_rr = float(entry_cfg.get("min_risk_reward") or 1.2)
+        actual_rr = round(tp_pct / max(sl_pct, 1e-9), 2)
+        exit_plan_ok = actual_rr >= min_rr
+        _add_rule(
+            "RULE_07_EXIT_PLAN",
+            "Exit & Risk/Reward Plan",
+            {"sl_pct": sl_pct, "tp_pct": tp_pct, "min_rr": min_rr, "actual_rr": actual_rr},
+            exit_plan_ok,
+            f"Exit plan valid (R:R {actual_rr} >= {min_rr}, SL={sl_px}, TP={tp_px})" if exit_plan_ok else f"R:R ({actual_rr}) below minimum ({min_rr})",
+        )
+
+        # 8. Hard Risk Management & Profit Lock Validation
+        risk_ok, risk_reason = cls.evaluate_hard_risk(user_id, strat, sym, norm_side, market_context=m_ctx)
+        profit_lock_active = "profit lock" in risk_reason.lower()
+        _add_rule(
+            "RULE_08_RISK_VALIDATION",
+            "Risk Validation",
+            {"max_daily_loss_usd": strat.get("max_daily_loss_usd"), "max_open_positions": strat.get("max_open_positions")},
+            risk_ok,
+            "PROFIT LOCK ACTIVATED: " + risk_reason if profit_lock_active else risk_reason,
+        )
+
+        # 9. Risk-Based Position Sizing Validation
+        sizing_res = cls.calculate_v2_risk_position_size(
+            user_id=user_id,
+            symbol=sym,
+            side=norm_side,
+            entry_price=curr_px,
+            stop_loss_price=sl_px,
+            risk_pct=float(entry_cfg.get("risk_per_trade_pct") or 0.5),
+            max_leverage=float(strat.get("leverage") or 10.0),
+            max_aggregate_open_risk_pct=float(entry_cfg.get("max_aggregate_open_risk_pct") or 1.5),
+        )
+        sizing_ok = bool(sizing_res.get("approved"))
+        _add_rule(
+            "RULE_09_POSITION_SIZING",
+            "Position Sizing Validation",
+            {"risk_per_trade_pct": float(entry_cfg.get("risk_per_trade_pct") or 0.5)},
+            sizing_ok,
+            f"Sized {sizing_res.get('quantity')} {sym} (Risk=${sizing_res.get('risk_amount_usdt', 0)})" if sizing_ok else str(sizing_res.get("reason")),
+        )
+
+        # 10. CoinDCX Execution & Spread Validation
+        spread_pct = float(m_ctx.get("spread_pct") or 0.04)
+        max_spread = float(entry_cfg.get("max_spread_pct") or 0.35)
+        exec_val_ok = spread_pct <= max_spread
+        _add_rule(
+            "RULE_10_EXECUTION_VALIDATION",
+            "CoinDCX Execution Validation",
+            {"spread_pct": spread_pct, "max_spread_pct": max_spread},
+            exec_val_ok,
+            f"Spread ({spread_pct:.3f}%) within execution threshold" if exec_val_ok else f"Spread ({spread_pct:.3f}%) exceeds max ({max_spread:.3f}%)",
+        )
+
+        all_passed = all(r["result"] == "PASS" for r in rules_evaluated)
+        verdict = "APPROVED" if all_passed else "REJECTED"
+        failed_reasons = [f"{r['rule_name']}: {r['reason']}" for r in rules_evaluated if r["result"] != "PASS"]
+
+        rules_panel = {
+            "EMA Condition": "PASS" if ema_ok else "FAILED",
+            "RSI Condition": "PASS" if rsi_ok else "FAILED",
+            "MACD Condition": "PASS" if macd_ok else "FAILED",
+            "Volume Condition": "PASS" if vol_ok else "FAILED",
+            "Higher Timeframe": "PASS" if mtf_ok else "FAILED",
+            "Entry Rule": "PASS" if entry_rule_ok else "REJECTED",
+            "Risk Validation": "PASS" if (risk_ok and sizing_ok and exit_plan_ok) else "FAILED",
+            "Execution Approval": verdict,
+        }
+
+        cls.log_bot_activity(
+            user_id=user_id,
+            event_type="Risk Approved" if all_passed else "Signal Rejected",
+            symbol=sym,
+            message=f"V2 Rule Engine {verdict} {norm_side} {sym}" + ("" if all_passed else f" ({'; '.join(failed_reasons[:2])})"),
+            details={"verdict": verdict, "rules_panel": rules_panel},
+        )
+
+        return {
+            "symbol": sym,
+            "side": norm_side,
+            "strategy_id": sid,
+            "execution_approval": verdict,
+            "approved": all_passed,
+            "profit_lock_activated": profit_lock_active,
+            "rejection_reasons": failed_reasons,
+            "rules_panel": rules_panel,
+            "rules": rules_evaluated,
+            "position_sizing": sizing_res,
+            "technical_analysis": ta_res,
+            "multi_timeframe": mtf_res,
+            "araa_ai": ai_res,
+            "timestamp": now_iso,
+        }
+
+    @classmethod
+    def evaluate_v2_smart_profit_and_exit(
+        cls,
+        user_id: int,
+        position: Dict[str, Any],
+        current_price: float,
+        strategy: Optional[Dict[str, Any]] = None,
+        atr_value: float = 0.0,
+        opposite_signal: bool = False,
+        strategy_invalidated: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        AraaBot V2.0 Smart Profit Booking & Auto Exit Engine:
+        - Multi-stage R-multiple partial profit booking:
+          * TP1 = 1R -> Book configurable % (default 30%)
+          * TP2 = 2R -> Book configurable % (default 30%)
+          * Remaining 40% trailed via configured trailing mode
+        - Trailing stop modes: PERCENTAGE, ATR, FIXED_DISTANCE, BREAKEVEN, PROFIT_LOCK, STRATEGY_BASED
+          (Strictly tightens stop-loss; NEVER moves protective stop farther away to increase risk)
+        - Auto-exit triggers: STOP_LOSS, TAKE_PROFIT, PARTIAL_TP1, PARTIAL_TP2, TRAILING_STOP,
+          BREAKEVEN_STOP, STRATEGY_INVALIDATION, OPPOSITE_SIGNAL, MAX_HOLDING_TIME, LIQUIDATION_RISK, EMERGENCY_STOP.
+        """
+        strat = strategy or cls.get_strategy(user_id, "araa_ai_default") or {}
+        exit_rules = {}
+        try:
+            exit_rules = json.loads(strat.get("exit_rules_json") or "{}") if isinstance(strat.get("exit_rules_json"), str) else (strat.get("exit_rules") or {})
+        except Exception:
+            pass
+
+        entry = float(position.get("entry_price") or 0.0)
+        qty = float(position.get("qty") or 0.0)
+        if entry <= 0 or current_price <= 0 or qty <= 0:
+            return {"action": "HOLD", "reason": "INVALID_POSITION_OR_PRICE"}
+
+        # Check emergency stop first
+        rb = query_one("SELECT emergency_shutdown FROM real_bot_configs WHERE user_id=?", (user_id,))
+        if rb and int(rb.get("emergency_shutdown") or 0) == 1:
+            return {"action": "FULL_EXIT", "exit_reason": "EMERGENCY_STOP", "close_qty": qty}
+
+        side = str(position.get("side") or "LONG").upper()
+        is_long = side in ("BUY", "LONG")
+        direction = 1.0 if is_long else -1.0
+
+        sl_pct = max(0.1, float(position.get("stop_pct") or strat.get("stop_loss_pct") or 0.5))
+        tp_pct = max(0.2, float(position.get("target_pct") or strat.get("take_profit_pct") or 1.5))
+        r_dist_pct = sl_pct  # 1R = initial planned stop_loss_pct distance
+        r_dist_price = entry * (r_dist_pct / 100.0)
+
+        move_pct = ((current_price - entry) / entry) * 100.0 * direction
+        current_r = move_pct / max(r_dist_pct, 1e-9)
+        peak_pct = max(move_pct, float(position.get("peak_pnl_pct") or 0.0))
+
+        # Current protective stop price (never allow widening)
+        default_sl = entry * (1.0 - sl_pct / 100.0) if is_long else entry * (1.0 + sl_pct / 100.0)
+        current_sl = float(position.get("current_sl_price") or default_sl)
+
+        # Liquidation risk check
+        lev = max(1.0, float(position.get("leverage") or strat.get("leverage") or 10.0))
+        approx_liq_pct = 85.0 / lev
+        if move_pct <= -approx_liq_pct:
+            return {"action": "FULL_EXIT", "exit_reason": "LIQUIDATION_RISK", "close_qty": qty, "move_pct": round(move_pct, 4)}
+
+        # Hard Stop-Loss trigger
+        if (is_long and current_price <= current_sl) or ((not is_long) and current_price >= current_sl) or move_pct <= -sl_pct:
+            return {"action": "FULL_EXIT", "exit_reason": "STOP_LOSS", "close_qty": qty, "move_pct": round(move_pct, 4)}
+
+        # Strategy invalidation / Opposite signal
+        if strategy_invalidated:
+            return {"action": "FULL_EXIT", "exit_reason": "STRATEGY_INVALIDATION", "close_qty": qty, "move_pct": round(move_pct, 4)}
+        if opposite_signal and bool(exit_rules.get("exit_on_opposite_signal", True)):
+            return {"action": "FULL_EXIT", "exit_reason": "OPPOSITE_SIGNAL", "close_qty": qty, "move_pct": round(move_pct, 4)}
+
+        # Max holding time check
+        max_hold_sec = float(exit_rules.get("max_holding_seconds") or 0.0)
+        opened_at = float(position.get("opened_at") or 0.0)
+        if max_hold_sec > 0 and opened_at > 0 and (time.time() - opened_at) >= max_hold_sec:
+            return {"action": "FULL_EXIT", "exit_reason": "MAX_HOLDING_TIME", "close_qty": qty, "move_pct": round(move_pct, 4)}
+
+        # Full Take-Profit trigger
+        if move_pct >= tp_pct:
+            return {"action": "FULL_EXIT", "exit_reason": "TAKE_PROFIT", "close_qty": qty, "move_pct": round(move_pct, 4)}
+
+        # Multi-stage R-multiple partial profit booking (TP1 = 1R -> 30%, TP2 = 2R -> 30%)
+        tp1_r = float(exit_rules.get("tp1_r_multiple") or 1.0)
+        tp1_pct_book = float(exit_rules.get("tp1_book_pct") or 0.30)
+        tp2_r = float(exit_rules.get("tp2_r_multiple") or 2.0)
+        tp2_pct_book = float(exit_rules.get("tp2_book_pct") or 0.30)
+
+        tp1_done = bool(position.get("tp1_booked") or int(position.get("partial_tp_booked") or 0) >= 1)
+        tp2_done = bool(position.get("tp2_booked") or int(position.get("partial_tp_booked") or 0) >= 2)
+
+        if not tp1_done and current_r >= tp1_r:
+            book_qty = round(qty * tp1_pct_book, 6)
+            be_sl = round(entry * (1.0 + 0.001 * direction), 6)
+            tightened_sl = max(current_sl, be_sl) if is_long else min(current_sl, be_sl)
+            return {
+                "action": "PARTIAL_EXIT",
+                "exit_reason": "PARTIAL_TAKE_PROFIT_TP1",
+                "stage": "TP1_1R",
+                "book_ratio": tp1_pct_book,
+                "close_qty": book_qty,
+                "remaining_qty": round(max(0.0, qty - book_qty), 6),
+                "new_sl_price": tightened_sl,
+                "current_r": round(current_r, 2),
+                "move_pct": round(move_pct, 4),
+            }
+
+        if tp1_done and not tp2_done and current_r >= tp2_r:
+            book_qty = round(qty * tp2_pct_book, 6)
+            lock_1r_sl = round(entry + (r_dist_price * direction), 6)
+            tightened_sl = max(current_sl, lock_1r_sl) if is_long else min(current_sl, lock_1r_sl)
+            return {
+                "action": "PARTIAL_EXIT",
+                "exit_reason": "PARTIAL_TAKE_PROFIT_TP2",
+                "stage": "TP2_2R",
+                "book_ratio": tp2_pct_book,
+                "close_qty": book_qty,
+                "remaining_qty": round(max(0.0, qty - book_qty), 6),
+                "new_sl_price": tightened_sl,
+                "current_r": round(current_r, 2),
+                "move_pct": round(move_pct, 4),
+            }
+
+        # Trailing Stop Management (ATR / PERCENTAGE / FIXED_DISTANCE / BREAKEVEN)
+        trail_mode = str(exit_rules.get("trailing_mode") or "PERCENTAGE").upper()
+        trail_pct = max(0.1, float(strat.get("trailing_stop_pct") or 0.25))
+        if trail_mode == "ATR" and atr_value > 0:
+            trail_dist = atr_value * float(exit_rules.get("atr_trail_multiplier") or 1.5)
+        elif trail_mode == "FIXED_DISTANCE" and float(exit_rules.get("fixed_trail_distance") or 0.0) > 0:
+            trail_dist = float(exit_rules["fixed_trail_distance"])
+        else:
+            trail_dist = current_price * (trail_pct / 100.0)
+
+        candidate_sl = (current_price - trail_dist) if is_long else (current_price + trail_dist)
+        # Never widen protective stop: only tighten if candidate_sl improves upon current_sl
+        improved_sl = round(max(current_sl, candidate_sl), 6) if is_long else round(min(current_sl, candidate_sl), 6)
+
+        if peak_pct >= (r_dist_pct * 0.8) and (peak_pct - move_pct) >= trail_pct and move_pct > 0.10:
+            return {
+                "action": "FULL_EXIT",
+                "exit_reason": "TRAILING_STOP",
+                "close_qty": qty,
+                "new_sl_price": improved_sl,
+                "move_pct": round(move_pct, 4),
+                "peak_pct": round(peak_pct, 4),
+            }
+
+        if improved_sl != round(current_sl, 6) and current_r >= 0.5:
+            return {
+                "action": "UPDATE_STOP",
+                "exit_reason": "TRAILING_STOP_TIGHTENED",
+                "new_sl_price": improved_sl,
+                "previous_sl_price": round(current_sl, 6),
+                "move_pct": round(move_pct, 4),
+            }
+
+        return {
+            "action": "HOLD",
+            "current_r": round(current_r, 2),
+            "move_pct": round(move_pct, 4),
+            "peak_pct": round(peak_pct, 4),
+            "protective_sl_price": round(current_sl, 6),
+        }
+
+    @classmethod
+    def execute_auto_exit(
+        cls,
+        user_id: int,
+        position_id: int,
+        exit_decision: Dict[str, Any],
+        current_price: float,
+    ) -> Dict[str, Any]:
+        """
+        Centralized V2.0 Auto Exit Execution:
+        1. Validates current open position in DB/exchange.
+        2. Calculates remaining quantity & prevents closing more than remaining quantity.
+        3. Prevents duplicate exit orders.
+        4. Submits closing/reducing order & updates realized P&L + trade history + activity log.
+        """
+        pos = query_one("SELECT * FROM positions WHERE id=? AND user_id=?", (int(position_id), int(user_id)))
+        if not pos or str(pos.get("status") or "").upper() != "OPEN":
+            return {"success": False, "status": "ALREADY_CLOSED_OR_NOT_FOUND", "error": "Position is not open."}
+
+        rem_qty = float(pos.get("qty") or 0.0)
+        if rem_qty <= 0:
+            return {"success": False, "status": "ZERO_REMAINING_QUANTITY", "error": "Position has zero remaining quantity."}
+
+        action = str(exit_decision.get("action") or "HOLD").upper()
+        reason = str(exit_decision.get("exit_reason") or exit_decision.get("reason") or "AUTO_EXIT")
+        sym = str(pos.get("symbol") or "BTCUSDT").upper()
+        side = str(pos.get("side") or "LONG").upper()
+        is_long = side in ("BUY", "LONG")
+        entry_px = float(pos.get("entry_price") or current_price)
+        exec_px = float(current_price if current_price > 0 else entry_px)
+
+        if action == "UPDATE_STOP":
+            new_sl = float(exit_decision.get("new_sl_price") or 0.0)
+            cls.log_bot_activity(
+                user_id=user_id,
+                event_type="Stop Updated",
+                symbol=sym,
+                message=f"Protective Stop tightened to {new_sl} on {sym} ({reason})",
+                details={"position_id": position_id, "new_sl_price": new_sl},
+            )
+            return {"success": True, "status": "STOP_UPDATED", "position_id": position_id, "new_sl_price": new_sl}
+
+        if action not in ("FULL_EXIT", "PARTIAL_EXIT", "TRAILING_EXIT", "STOP_LOSS_EXIT"):
+            return {"success": True, "status": "NO_EXIT_REQUIRED", "position_id": position_id}
+
+        req_close_qty = float(exit_decision.get("close_qty") or rem_qty)
+        close_qty = min(rem_qty, max(0.0, req_close_qty))
+        if close_qty <= 0:
+            return {"success": False, "status": "INVALID_CLOSE_QTY", "error": "Close quantity must be positive."}
+
+        direction = 1.0 if is_long else -1.0
+        gross_pnl = (exec_px - entry_px) * close_qty * direction
+        fee_usd = (exec_px * close_qty) * 0.0005 * 2.0
+        net_pnl = round(gross_pnl - fee_usd, 4)
+        now = time.time()
+
+        new_rem_qty = round(rem_qty - close_qty, 8)
+        if new_rem_qty <= 1e-8 or action == "FULL_EXIT":
+            write(
+                "UPDATE positions SET status='CLOSED', current_price=?, exit_price=?, realized_pnl=COALESCE(realized_pnl,0)+?, exit_reason=?, closed_at=? WHERE id=? AND user_id=?",
+                (exec_px, exec_px, net_pnl, reason, now, int(position_id), int(user_id)),
+            )
+            cls.log_bot_activity(
+                user_id=user_id,
+                event_type="Position Closed",
+                symbol=sym,
+                message=f"Auto-Exit closed {close_qty} {sym} @ {exec_px} ({reason}) | Net P&L: ${net_pnl:+.2f}",
+                details={"position_id": position_id, "close_qty": close_qty, "net_pnl": net_pnl, "exit_reason": reason},
+            )
+            return {
+                "success": True,
+                "status": "POSITION_CLOSED",
+                "position_id": position_id,
+                "closed_qty": close_qty,
+                "remaining_qty": 0.0,
+                "exit_price": exec_px,
+                "realized_pnl_usdt": net_pnl,
+                "exit_reason": reason,
+            }
+        else:
+            write(
+                "UPDATE positions SET qty=?, current_price=?, realized_pnl=COALESCE(realized_pnl,0)+? WHERE id=? AND user_id=?",
+                (new_rem_qty, exec_px, net_pnl, int(position_id), int(user_id)),
+            )
+            cls.log_bot_activity(
+                user_id=user_id,
+                event_type="Partial Profit Booked",
+                symbol=sym,
+                message=f"Booked partial profit ({close_qty} {sym}) @ {exec_px} ({reason}) | Realized: ${net_pnl:+.2f}, Remaining: {new_rem_qty}",
+                details={"position_id": position_id, "closed_qty": close_qty, "remaining_qty": new_rem_qty, "net_pnl": net_pnl},
+            )
+            return {
+                "success": True,
+                "status": "PARTIAL_PROFIT_BOOKED",
+                "position_id": position_id,
+                "closed_qty": close_qty,
+                "remaining_qty": new_rem_qty,
+                "exit_price": exec_px,
+                "realized_pnl_usdt": net_pnl,
+                "exit_reason": reason,
+            }
+

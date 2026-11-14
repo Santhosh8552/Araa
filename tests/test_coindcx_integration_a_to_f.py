@@ -325,6 +325,110 @@ class TestCoinDCXIntegrationAToF(unittest.TestCase):
             self.assertIn("net_profit_usdt", dash)
             self.assertIn("total_trading_fees_usdt", dash)
 
+    def test_9_v2_technical_analysis_mtf_ai_10_rules_r_multiple_booking_and_oos_backtest(self):
+        """Verify AraaBot V2.0 TA indicators, MTF, Araa AI proposal, 10-Stage Rule Engine, R-Multiple TP1/TP2 booking, Auto Exit, and OOS Backtest."""
+        from analysis_engine import analyze_technical_v2, analyze_multi_timeframe, generate_araa_ai_analysis
+        from backtest_engine import BacktestEngine
+
+        # Build an ascending candle series for bullish confluence
+        candles = []
+        base_ts = int(time.time()) - 4000
+        for i in range(45):
+            p = 80000.0 + (i * 45.0)
+            candles.append({
+                "t": base_ts + i * 60,
+                "o": p - 15.0,
+                "h": p + 35.0,
+                "l": p - 25.0,
+                "c": p,
+                "v": 1500.0 + (i * 25.0),
+            })
+
+        # 1. Technical Analysis V2
+        ta = analyze_technical_v2("BTCUSDT", candles, timeframe="15m", use_closed_candles_only=True)
+        self.assertTrue(ta["valid"])
+        self.assertEqual(ta["trend"], "BULLISH")
+        ind = ta["indicators"]
+        for key in ("ema9", "ema21", "ema50", "ema200", "sma20", "sma50", "sma200", "rsi14", "macd", "atr", "adx", "vwap", "stoch_rsi_k", "relative_volume"):
+            self.assertIn(key, ind)
+        self.assertIn("structure", ta["market_structure"])
+        self.assertIn("setup_type", ta["breakout_pullback"])
+
+        # 2. Multi-Timeframe Analysis
+        mtf = analyze_multi_timeframe("BTCUSDT", {"4h": candles, "1h": candles, "15m": candles, "5m": candles})
+        self.assertEqual(mtf["alignment"], "ALIGNED_BULLISH")
+        self.assertTrue(mtf["mtf_confirmed"])
+        self.assertEqual(mtf["dominant_direction"], "LONG")
+
+        # 3. Araa AI Technical Analyzer (Proposal Only)
+        ai = generate_araa_ai_analysis("BTCUSDT", ta, mtf)
+        self.assertEqual(ai["instrument"], "BTCUSDT")
+        self.assertTrue(ai["proposal_only"])
+        self.assertGreater(ai["risk_reward"], 1.0)
+        self.assertIn("confidence", ai)
+
+        # 4. Risk-Based Position Sizing (0.5% equity risk, TP1=1R, TP2=2R)
+        sizing = StrategyEngine.calculate_v2_risk_position_size(
+            user_id=self.uid,
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=82000.0,
+            stop_loss_price=81590.0,  # 0.5% stop distance = $410
+            account_equity=1000.0,
+            available_margin=1000.0,
+            risk_pct=0.5,
+            max_leverage=10.0,
+        )
+        self.assertTrue(sizing["approved"])
+        self.assertAlmostEqual(sizing["risk_amount_usdt"], 5.0, places=2)
+        self.assertEqual(sizing["tp1_1r_price"], 82410.0)
+        self.assertEqual(sizing["tp2_2r_price"], 82820.0)
+
+        # 5. Centralized 10-Rule Pipeline Evaluation
+        eval_res = StrategyEngine.evaluate_v2_rule_pipeline(
+            user_id=self.uid,
+            symbol="BTCUSDT",
+            side="LONG",
+            candles=candles,
+            candles_by_tf={"4h": candles, "1h": candles, "15m": candles, "5m": candles},
+            signal_payload={"timestamp": time.time(), "timeframe": "15m"},
+        )
+        self.assertEqual(len(eval_res["rules"]), 13)
+        self.assertIn("EMA Condition", eval_res["rules_panel"])
+        self.assertIn("Execution Approval", eval_res["rules_panel"])
+
+        # 6. Smart Profit Booking (TP1 = 1R 30%, TP2 = 2R 30%) & Auto Exit
+        pos_v2 = {
+            "entry_price": 80000.0,
+            "qty": 1.0,
+            "side": "LONG",
+            "stop_pct": 0.50,    # 1R = +0.50% ($80,400), 2R = +1.00% ($80,800)
+            "target_pct": 2.00,
+            "leverage": 10.0,
+            "tp1_booked": False,
+            "tp2_booked": False,
+        }
+        # At +0.55% ($80,440) -> >= 1R -> books 30% at TP1 and locks breakeven stop
+        dec_tp1 = StrategyEngine.evaluate_v2_smart_profit_and_exit(self.uid, pos_v2, 80440.0)
+        self.assertEqual(dec_tp1["action"], "PARTIAL_EXIT")
+        self.assertEqual(dec_tp1["exit_reason"], "PARTIAL_TAKE_PROFIT_TP1")
+        self.assertAlmostEqual(dec_tp1["close_qty"], 0.30, places=4)
+
+        # After TP1 is booked, at +1.05% ($80,840) -> >= 2R -> books 30% of remaining at TP2 and locks 1R stop
+        pos_v2["tp1_booked"] = True
+        pos_v2["qty"] = 0.70
+        dec_tp2 = StrategyEngine.evaluate_v2_smart_profit_and_exit(self.uid, pos_v2, 80840.0)
+        self.assertEqual(dec_tp2["action"], "PARTIAL_EXIT")
+        self.assertEqual(dec_tp2["exit_reason"], "PARTIAL_TAKE_PROFIT_TP2")
+        self.assertAlmostEqual(dec_tp2["close_qty"], 0.21, places=4)
+
+        # 7. Out-of-Sample Backtest Verification
+        bt = BacktestEngine.run_backtest(user_id=self.uid, symbol="BTCUSDT", timeframe="15m", initial_capital=1000.0)
+        self.assertTrue(bt["closed_candles_only"])
+        self.assertIn("in_sample_metrics", bt)
+        self.assertIn("out_of_sample_metrics", bt)
+        self.assertIn("risk_disclaimer", bt)
+
 
 if __name__ == "__main__":
     unittest.main()

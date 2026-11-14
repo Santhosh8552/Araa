@@ -513,3 +513,645 @@ def calculate_position_size(account_capital, risk_pct, entry_price, stop_loss_pr
         "warnings": warnings,
         "is_valid": len([w for w in warnings if "DANGER" in w or "exceeds" in w]) == 0
     }
+
+
+# =====================================================================
+# ARAABOT V2.0 — ADVANCED TECHNICAL ANALYSIS, MULTI-TIMEFRAME & AI ENGINE
+# =====================================================================
+
+def calculate_vwap(candles):
+    """Volume Weighted Average Price over validated OHLCV candles."""
+    if not candles:
+        return 0.0
+    cum_pv = 0.0
+    cum_vol = 0.0
+    for c in candles:
+        typical = (float(c.get("h", c.get("c", 0.0))) + float(c.get("l", c.get("c", 0.0))) + float(c.get("c", 0.0))) / 3.0
+        vol = max(float(c.get("v", 1.0) or 1.0), 0.0001)
+        cum_pv += typical * vol
+        cum_vol += vol
+    return round(cum_pv / max(cum_vol, 0.0001), 6)
+
+
+def calculate_stoch_rsi(prices, rsi_period=14, stoch_period=14, k_smooth=3, d_smooth=3):
+    """Stochastic RSI (%K and %D) in [0, 100]."""
+    if not prices or len(prices) < rsi_period + 3:
+        return {"k": 50.0, "d": 50.0}
+    rsi_series = []
+    start_idx = max(rsi_period + 1, len(prices) - (stoch_period + k_smooth + d_smooth + 5))
+    for end_i in range(start_idx, len(prices) + 1):
+        rsi_series.append(calculate_rsi(prices[:end_i], rsi_period))
+    if len(rsi_series) < 2:
+        val = rsi_series[-1] if rsi_series else 50.0
+        return {"k": round(val, 2), "d": round(val, 2)}
+
+    raw_k = []
+    for i in range(len(rsi_series)):
+        win = rsi_series[max(0, i - stoch_period + 1): i + 1]
+        lo = min(win)
+        hi = max(win)
+        if hi - lo <= 1e-9:
+            raw_k.append(50.0)
+        else:
+            raw_k.append(((rsi_series[i] - lo) / (hi - lo)) * 100.0)
+
+    k_series = []
+    for i in range(len(raw_k)):
+        win_k = raw_k[max(0, i - k_smooth + 1): i + 1]
+        k_series.append(sum(win_k) / len(win_k))
+
+    d_win = k_series[-d_smooth:] if len(k_series) >= d_smooth else k_series
+    k_val = k_series[-1]
+    d_val = sum(d_win) / len(d_win)
+    return {"k": round(k_val, 2), "d": round(d_val, 2)}
+
+
+def calculate_adx(candles, period=14):
+    """Average Directional Index (ADX 14) with +DI and -DI."""
+    if not candles or len(candles) < 3:
+        return {"adx": 20.0, "plus_di": 20.0, "minus_di": 20.0, "trend_strength": "WEAK"}
+    trs, plus_dms, minus_dms = [], [], []
+    for i in range(1, len(candles)):
+        h = float(candles[i].get("h", candles[i].get("c", 0.0)))
+        l = float(candles[i].get("l", candles[i].get("c", 0.0)))
+        prev_h = float(candles[i - 1].get("h", candles[i - 1].get("c", 0.0)))
+        prev_l = float(candles[i - 1].get("l", candles[i - 1].get("c", 0.0)))
+        prev_c = float(candles[i - 1].get("c", 0.0))
+
+        up_move = h - prev_h
+        down_move = prev_l - l
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+        tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+        trs.append(tr)
+        plus_dms.append(plus_dm)
+        minus_dms.append(minus_dm)
+
+    win = min(period, len(trs))
+    if win == 0:
+        return {"adx": 20.0, "plus_di": 20.0, "minus_di": 20.0, "trend_strength": "WEAK"}
+
+    dx_list = []
+    plus_di = 20.0
+    minus_di = 20.0
+    for end_i in range(win, len(trs) + 1):
+        tr_sum = max(sum(trs[end_i - win: end_i]), 1e-9)
+        p_dm_sum = sum(plus_dms[end_i - win: end_i])
+        m_dm_sum = sum(minus_dms[end_i - win: end_i])
+        plus_di = (p_dm_sum / tr_sum) * 100.0
+        minus_di = (m_dm_sum / tr_sum) * 100.0
+        di_sum = max(plus_di + minus_di, 1e-9)
+        dx = (abs(plus_di - minus_di) / di_sum) * 100.0
+        dx_list.append(dx)
+
+    adx_val = sum(dx_list[-win:]) / max(1, len(dx_list[-win:])) if dx_list else 20.0
+    strength = "STRONG" if adx_val >= 25.0 else ("MODERATE" if adx_val >= 18.0 else "WEAK")
+    return {
+        "adx": round(adx_val, 2),
+        "plus_di": round(plus_di, 2),
+        "minus_di": round(minus_di, 2),
+        "trend_strength": strength,
+    }
+
+
+def detect_market_structure(candles, swing_window=3):
+    """
+    Detects Swing Highs, Swing Lows, Higher-High / Higher-Low (HH/HL),
+    and Lower-High / Lower-Low (LH/LL) market structure.
+    """
+    if not candles or len(candles) < (swing_window * 2 + 2):
+        p = float(candles[-1].get("c", 0.0)) if candles else 0.0
+        return {
+            "structure": "CONSOLIDATION",
+            "higher_high": False,
+            "higher_low": False,
+            "lower_high": False,
+            "lower_low": False,
+            "swing_highs": [round(p * 1.005, 6)] if p else [],
+            "swing_lows": [round(p * 0.995, 6)] if p else [],
+        }
+
+    highs = [float(c.get("h", c.get("c", 0.0))) for c in candles]
+    lows = [float(c.get("l", c.get("c", 0.0))) for c in candles]
+    swing_highs = []
+    swing_lows = []
+
+    for i in range(swing_window, len(candles) - swing_window):
+        if highs[i] == max(highs[i - swing_window: i + swing_window + 1]):
+            if not swing_highs or swing_highs[-1] != highs[i]:
+                swing_highs.append(round(highs[i], 6))
+        if lows[i] == min(lows[i - swing_window: i + swing_window + 1]):
+            if not swing_lows or swing_lows[-1] != lows[i]:
+                swing_lows.append(round(lows[i], 6))
+
+    if len(swing_highs) < 2:
+        mid = len(highs) // 2
+        swing_highs = [round(max(highs[:mid]), 6), round(max(highs[mid:]), 6)]
+    if len(swing_lows) < 2:
+        mid = len(lows) // 2
+        swing_lows = [round(min(lows[:mid]), 6), round(min(lows[mid:]), 6)]
+
+    hh = swing_highs[-1] > swing_highs[-2]
+    hl = swing_lows[-1] > swing_lows[-2]
+    lh = swing_highs[-1] < swing_highs[-2]
+    ll = swing_lows[-1] < swing_lows[-2]
+
+    if hh and hl:
+        structure = "BULLISH_HH_HL"
+    elif lh and ll:
+        structure = "BEARISH_LH_LL"
+    elif hh and ll:
+        structure = "EXPANSION_VOLATILE"
+    else:
+        structure = "CONSOLIDATION"
+
+    return {
+        "structure": structure,
+        "higher_high": bool(hh),
+        "higher_low": bool(hl),
+        "lower_high": bool(lh),
+        "lower_low": bool(ll),
+        "swing_highs": swing_highs[-4:],
+        "swing_lows": swing_lows[-4:],
+    }
+
+
+def detect_breakout_pullback(candles, ema21, vwap, sr_levels):
+    """Detects validated breakouts and trend pullbacks."""
+    if not candles or len(candles) < 5:
+        return {
+            "breakout_up": False,
+            "breakout_down": False,
+            "pullback_long": False,
+            "pullback_short": False,
+            "setup_type": "NONE",
+        }
+    curr = float(candles[-1].get("c", 0.0))
+    prev = float(candles[-2].get("c", curr))
+    high_prev_n = max(float(c.get("h", c.get("c", 0.0))) for c in candles[-min(15, len(candles)):-1])
+    low_prev_n = min(float(c.get("l", c.get("c", 0.0))) for c in candles[-min(15, len(candles)):-1])
+
+    breakout_up = curr > high_prev_n and curr > prev
+    breakout_down = curr < low_prev_n and curr < prev
+
+    ref_level = float(ema21 or vwap or curr)
+    dist_to_ref_pct = abs(curr - ref_level) / max(ref_level, 1e-9) * 100.0
+    pullback_long = (curr >= ref_level) and (dist_to_ref_pct <= 0.45) and (curr > prev)
+    pullback_short = (curr <= ref_level) and (dist_to_ref_pct <= 0.45) and (curr < prev)
+
+    if breakout_up:
+        setup_type = "BULLISH_BREAKOUT"
+    elif breakout_down:
+        setup_type = "BEARISH_BREAKOUT"
+    elif pullback_long:
+        setup_type = "BULLISH_PULLBACK"
+    elif pullback_short:
+        setup_type = "BEARISH_PULLBACK"
+    else:
+        setup_type = "CONTINUATION_OR_RANGE"
+
+    return {
+        "breakout_up": bool(breakout_up),
+        "breakout_down": bool(breakout_down),
+        "pullback_long": bool(pullback_long),
+        "pullback_short": bool(pullback_short),
+        "recent_range_high": round(high_prev_n, 6),
+        "recent_range_low": round(low_prev_n, 6),
+        "setup_type": setup_type,
+    }
+
+
+def detect_candlestick_patterns(candles):
+    """Recognizes classic institutional candlestick patterns on closed candles."""
+    if not candles or len(candles) < 2:
+        return ["NONE"]
+    patterns = []
+    c1 = candles[-2]
+    c2 = candles[-1]
+    o1, h1, l1, cl1 = float(c1.get("o", c1["c"])), float(c1["h"]), float(c1["l"]), float(c1["c"])
+    o2, h2, l2, cl2 = float(c2.get("o", c2["c"])), float(c2["h"]), float(c2["l"]), float(c2["c"])
+
+    body1 = abs(cl1 - o1)
+    body2 = abs(cl2 - o2)
+    rng2 = max(h2 - l2, 1e-9)
+    upper_wick2 = h2 - max(o2, cl2)
+    lower_wick2 = min(o2, cl2) - l2
+
+    # Bullish Engulfing
+    if cl1 < o1 and cl2 > o2 and cl2 >= o1 and o2 <= cl1 and body2 > body1:
+        patterns.append("BULLISH_ENGULFING")
+    # Bearish Engulfing
+    if cl1 > o1 and cl2 < o2 and cl2 <= o1 and o2 >= cl1 and body2 > body1:
+        patterns.append("BEARISH_ENGULFING")
+    # Hammer / Bullish Pinbar
+    if lower_wick2 >= body2 * 2.0 and upper_wick2 <= body2 * 0.8 and (body2 / rng2) >= 0.1:
+        patterns.append("HAMMER_PINBAR")
+    # Shooting Star / Bearish Pinbar
+    if upper_wick2 >= body2 * 2.0 and lower_wick2 <= body2 * 0.8 and (body2 / rng2) >= 0.1:
+        patterns.append("SHOOTING_STAR")
+    # Doji
+    if (body2 / rng2) <= 0.08:
+        patterns.append("DOJI_INDECISION")
+
+    return patterns or ["STANDARD_BAR"]
+
+
+def analyze_technical_v2(symbol, candles, timeframe="15m", use_closed_candles_only=True):
+    """
+    AraaBot V2.0 Real-Time Technical Analysis Engine on validated OHLCV candles.
+    Computes all required indicators:
+    EMA 9/21/50/200, SMA 20/50/200, RSI 14, MACD, Bollinger Bands, ATR, ADX, VWAP,
+    Stochastic RSI, Volume SMA & Relative Volume, Support/Resistance, Market Structure (HH/HL/LH/LL),
+    Breakout/Pullback detection, Momentum, Volatility, and Candlestick Patterns.
+    """
+    now = time.time()
+    sym = str(symbol or "BTCUSDT").upper().replace("B-", "").replace("_", "")
+    raw_candles = list(candles or [])
+    if use_closed_candles_only and len(raw_candles) > 25:
+        eval_candles = raw_candles[:-1]
+    else:
+        eval_candles = raw_candles
+
+    if len(eval_candles) < 10:
+        return {
+            "valid": False,
+            "symbol": sym,
+            "timeframe": timeframe,
+            "reason": "INSUFFICIENT_CANDLE_DATA",
+            "candle_count": len(eval_candles),
+            "timestamp": now,
+        }
+
+    closes = [float(c.get("c", 0.0)) for c in eval_candles]
+    volumes = [float(c.get("v", 1.0) or 1.0) for c in eval_candles]
+    current_price = float(raw_candles[-1].get("c", closes[-1]))
+    last_candle_ts = float(raw_candles[-1].get("t", now))
+
+    ema9 = calculate_ema(closes, 9) or current_price
+    ema21 = calculate_ema(closes, 21) or calculate_ema(closes, min(len(closes), 21)) or current_price
+    ema50 = calculate_ema(closes, min(len(closes), 50)) or current_price
+    ema200 = calculate_ema(closes, min(len(closes), 200)) or current_price
+
+    sma20 = calculate_sma(closes, min(len(closes), 20)) or current_price
+    sma50 = calculate_sma(closes, min(len(closes), 50)) or current_price
+    sma200 = calculate_sma(closes, min(len(closes), 200)) or current_price
+
+    rsi14 = calculate_rsi(closes, 14)
+    macd = calculate_macd(closes)
+    bb = calculate_bollinger_bands(closes, min(len(closes), 20), 2.0)
+    atr = calculate_atr(eval_candles, 14)
+    adx_data = calculate_adx(eval_candles, 14)
+    vwap = calculate_vwap(eval_candles[-min(len(eval_candles), 50):])
+    stoch_rsi = calculate_stoch_rsi(closes, 14, 14, 3, 3)
+
+    vol_sma20 = sum(volumes[-min(len(volumes), 20):]) / max(1, min(len(volumes), 20))
+    rel_volume = round(volumes[-1] / max(vol_sma20, 1e-9), 2)
+
+    sr = detect_support_resistance(eval_candles, window=min(8, max(2, len(eval_candles) // 4)))
+    structure = detect_market_structure(eval_candles, swing_window=min(3, max(1, len(eval_candles) // 6)))
+    bp = detect_breakout_pullback(eval_candles, ema21, vwap, sr)
+    patterns = detect_candlestick_patterns(eval_candles)
+
+    atr_pct = round((atr / max(current_price, 1e-9)) * 100.0, 4)
+    if atr_pct >= 2.2 or bb["bandwidth"] >= 0.065:
+        volatility_state = "HIGH"
+    elif atr_pct <= 0.25 or bb["bandwidth"] <= 0.012:
+        volatility_state = "LOW"
+    else:
+        volatility_state = "NORMAL"
+
+    # Trend & Momentum Detection
+    bull_points = 0
+    bear_points = 0
+    if ema9 > ema21:
+        bull_points += 1
+    else:
+        bear_points += 1
+    if current_price > ema50:
+        bull_points += 1
+    else:
+        bear_points += 1
+    if current_price > ema200:
+        bull_points += 1
+    else:
+        bear_points += 1
+    if macd["hist"] > 0:
+        bull_points += 1
+    elif macd["hist"] < 0:
+        bear_points += 1
+    if current_price >= vwap:
+        bull_points += 1
+    else:
+        bear_points += 1
+    if structure["structure"] == "BULLISH_HH_HL":
+        bull_points += 1
+    elif structure["structure"] == "BEARISH_LH_LL":
+        bear_points += 1
+
+    if bull_points >= bear_points + 2:
+        trend = "BULLISH"
+    elif bear_points >= bull_points + 2:
+        trend = "BEARISH"
+    else:
+        trend = "NEUTRAL"
+
+    if adx_data["adx"] >= 25.0 and abs(bull_points - bear_points) >= 2:
+        market_regime = "TRENDING"
+    elif volatility_state == "HIGH":
+        market_regime = "VOLATILE_EXPANSION"
+    else:
+        market_regime = "RANGING"
+
+    if (trend == "BULLISH" and rsi14 >= 54 and macd["hist"] > 0) or (trend == "BEARISH" and rsi14 <= 46 and macd["hist"] < 0):
+        momentum = "STRONG"
+    elif 45 <= rsi14 <= 55:
+        momentum = "NEUTRAL"
+    else:
+        momentum = "MODERATE"
+
+    return {
+        "valid": True,
+        "symbol": sym,
+        "timeframe": timeframe,
+        "current_price": round(current_price, 6),
+        "candle_count": len(eval_candles),
+        "used_closed_candles": bool(use_closed_candles_only),
+        "market_data_timestamp": datetime.fromtimestamp(last_candle_ts, timezone.utc).isoformat(),
+        "analysis_timestamp": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+        "trend": trend,
+        "trend_strength": adx_data["trend_strength"],
+        "market_regime": market_regime,
+        "momentum": momentum,
+        "volatility": volatility_state,
+        "indicators": {
+            "ema9": round(ema9, 6),
+            "ema21": round(ema21, 6),
+            "ema50": round(ema50, 6),
+            "ema200": round(ema200, 6),
+            "sma20": round(sma20, 6),
+            "sma50": round(sma50, 6),
+            "sma200": round(sma200, 6),
+            "rsi14": round(rsi14, 2),
+            "macd": macd["macd"],
+            "macd_signal": macd["signal"],
+            "macd_hist": macd["hist"],
+            "bollinger": bb,
+            "atr": round(atr, 6),
+            "atr_pct": atr_pct,
+            "adx": adx_data["adx"],
+            "plus_di": adx_data["plus_di"],
+            "minus_di": adx_data["minus_di"],
+            "vwap": round(vwap, 6),
+            "stoch_rsi_k": stoch_rsi["k"],
+            "stoch_rsi_d": stoch_rsi["d"],
+            "volume_sma20": round(vol_sma20, 2),
+            "relative_volume": rel_volume,
+            "supports": sr["supports"],
+            "resistances": sr["resistances"],
+        },
+        "market_structure": structure,
+        "breakout_pullback": bp,
+        "candlestick_patterns": patterns,
+        "scores": {
+            "bullish_points": bull_points,
+            "bearish_points": bear_points,
+        },
+    }
+
+
+def analyze_multi_timeframe(symbol, candles_by_tf, tf_config=None, use_closed_candles_only=True):
+    """
+    Multi-Timeframe Analysis across configurable timeframes (1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d).
+    Example hierarchy:
+      - major_tf (e.g. 4h): Determine major market trend
+      - confirm_tf (e.g. 1h): Confirm trend & market structure
+      - setup_tf (e.g. 15m): Identify setup confirmation
+      - entry_tf (e.g. 5m): Entry trigger
+    """
+    cfg = tf_config or {
+        "major_tf": "4h",
+        "confirm_tf": "1h",
+        "setup_tf": "15m",
+        "entry_tf": "5m",
+    }
+    supported = ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    tf_results = {}
+    for tf, c_list in (candles_by_tf or {}).items():
+        if c_list and len(c_list) >= 10:
+            tf_results[tf] = analyze_technical_v2(
+                symbol=symbol,
+                candles=c_list,
+                timeframe=tf,
+                use_closed_candles_only=use_closed_candles_only,
+            )
+
+    major_tf = cfg.get("major_tf", "4h")
+    confirm_tf = cfg.get("confirm_tf", "1h")
+    setup_tf = cfg.get("setup_tf", "15m")
+    entry_tf = cfg.get("entry_tf", "5m")
+
+    active_hierarchy = [t for t in [major_tf, confirm_tf, setup_tf, entry_tf] if t in tf_results]
+    if not active_hierarchy:
+        active_hierarchy = list(tf_results.keys())
+
+    bull_tfs = [t for t in active_hierarchy if tf_results[t].get("trend") == "BULLISH"]
+    bear_tfs = [t for t in active_hierarchy if tf_results[t].get("trend") == "BEARISH"]
+
+    total_checked = len(active_hierarchy)
+    if total_checked > 0 and len(bull_tfs) >= max(1, total_checked - 1) and len(bear_tfs) == 0:
+        alignment = "ALIGNED_BULLISH"
+        mtf_confirmed = True
+        dominant_direction = "LONG"
+    elif total_checked > 0 and len(bear_tfs) >= max(1, total_checked - 1) and len(bull_tfs) == 0:
+        alignment = "ALIGNED_BEARISH"
+        mtf_confirmed = True
+        dominant_direction = "SHORT"
+    elif len(bull_tfs) > len(bear_tfs):
+        alignment = "PARTIAL_BULLISH"
+        mtf_confirmed = len(bull_tfs) >= 2
+        dominant_direction = "LONG"
+    elif len(bear_tfs) > len(bull_tfs):
+        alignment = "PARTIAL_BEARISH"
+        mtf_confirmed = len(bear_tfs) >= 2
+        dominant_direction = "SHORT"
+    else:
+        alignment = "MIXED_CONSOLIDATION"
+        mtf_confirmed = False
+        dominant_direction = "NEUTRAL"
+
+    return {
+        "symbol": str(symbol or "BTCUSDT").upper(),
+        "supported_timeframes": supported,
+        "configured_hierarchy": cfg,
+        "evaluated_timeframes": active_hierarchy,
+        "alignment": alignment,
+        "mtf_confirmed": bool(mtf_confirmed),
+        "dominant_direction": dominant_direction,
+        "bullish_timeframes": bull_tfs,
+        "bearish_timeframes": bear_tfs,
+        "timeframe_summaries": {
+            tf: {
+                "trend": res.get("trend"),
+                "trend_strength": res.get("trend_strength"),
+                "market_regime": res.get("market_regime"),
+                "momentum": res.get("momentum"),
+                "rsi14": res.get("indicators", {}).get("rsi14"),
+                "ema9": res.get("indicators", {}).get("ema9"),
+                "ema21": res.get("indicators", {}).get("ema21"),
+                "ema50": res.get("indicators", {}).get("ema50"),
+                "macd_hist": res.get("indicators", {}).get("macd_hist"),
+                "structure": res.get("market_structure", {}).get("structure"),
+            }
+            for tf, res in tf_results.items()
+        },
+    }
+
+
+def generate_araa_ai_analysis(symbol, primary_ta, mtf_result=None):
+    """
+    Araa AI Technical Analyzer (Decision-Support & Proposal Layer).
+    Generates structured market analysis, setup reasoning, invalidation, SL/TP suggestions,
+    and R:R ratio.
+    IMPORTANT: AI recommendations are proposals only and NEVER bypass the Python StrategyEngine.
+    """
+    sym = str(symbol or "BTCUSDT").upper().replace("B-", "").replace("_", "")
+    if not primary_ta or not primary_ta.get("valid"):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return {
+            "instrument": sym,
+            "trend": "NEUTRAL",
+            "trend_strength": "WEAK",
+            "market_regime": "UNKNOWN",
+            "momentum": "NEUTRAL",
+            "volatility": "NORMAL",
+            "long_setup": False,
+            "short_setup": False,
+            "entry_reason": "Insufficient validated market data for technical confluence.",
+            "invalidation_reason": "Market data feed incomplete or fewer than minimum closed candles.",
+            "stop_loss_suggestion": 0.0,
+            "take_profit_suggestion": 0.0,
+            "risk_reward": 0.0,
+            "confidence": 0,
+            "technical_confluence": [],
+            "analysis_timestamp": now_iso,
+            "market_data_timestamp": now_iso,
+            "proposal_only": True,
+        }
+
+    ind = primary_ta["indicators"]
+    price = float(primary_ta["current_price"])
+    atr = max(float(ind.get("atr") or (price * 0.005)), price * 0.002)
+    trend = primary_ta["trend"]
+    regime = primary_ta["market_regime"]
+    momentum = primary_ta["momentum"]
+    volatility = primary_ta["volatility"]
+    structure = primary_ta["market_structure"]["structure"]
+    bp = primary_ta["breakout_pullback"]
+    patterns = primary_ta["candlestick_patterns"]
+
+    mtf = mtf_result or {}
+    mtf_aligned = bool(mtf.get("mtf_confirmed", True))
+    mtf_dir = mtf.get("dominant_direction", "LONG" if trend == "BULLISH" else ("SHORT" if trend == "BEARISH" else "NEUTRAL"))
+
+    confluence = []
+    if ind["ema9"] > ind["ema21"] > ind["ema50"]:
+        confluence.append("Bullish EMA Ribbon (EMA 9 > 21 > 50)")
+    elif ind["ema9"] < ind["ema21"] < ind["ema50"]:
+        confluence.append("Bearish EMA Ribbon (EMA 9 < 21 < 50)")
+
+    if price > ind["vwap"]:
+        confluence.append("Price holding above institutional VWAP")
+    else:
+        confluence.append("Price trading below institutional VWAP")
+
+    if ind["macd_hist"] > 0:
+        confluence.append("Positive MACD momentum histogram")
+    elif ind["macd_hist"] < 0:
+        confluence.append("Negative MACD momentum histogram")
+
+    if ind["relative_volume"] >= 1.1:
+        confluence.append(f"Relative volume confirmation ({ind['relative_volume']}x SMA20)")
+
+    if structure in ("BULLISH_HH_HL", "BEARISH_LH_LL"):
+        confluence.append(f"Market structure: {structure}")
+
+    long_setup = bool(
+        trend == "BULLISH"
+        and (mtf_dir in ("LONG", "NEUTRAL"))
+        and 32.0 <= ind["rsi14"] <= 72.0
+        and ind["macd_hist"] >= 0
+    )
+    short_setup = bool(
+        trend == "BEARISH"
+        and (mtf_dir in ("SHORT", "NEUTRAL"))
+        and 28.0 <= ind["rsi14"] <= 68.0
+        and ind["macd_hist"] <= 0
+    )
+
+    stop_dist = max(atr * 1.5, price * 0.006)
+    tp_dist = stop_dist * 2.2
+    rr = round(tp_dist / max(stop_dist, 1e-9), 2)
+
+    if long_setup:
+        sl_sug = round(price - stop_dist, 6)
+        tp_sug = round(price + tp_dist, 6)
+        entry_reason = (
+            f"Bullish technical confluence on {sym}: {trend} trend ({regime}), "
+            f"EMA9 ({ind['ema9']}) > EMA21 ({ind['ema21']}), RSI14={ind['rsi14']}, "
+            f"setup={bp['setup_type']}, patterns={','.join(patterns)}."
+        )
+        inv_reason = f"Close below swing support / SL {sl_sug} or EMA21 breakdown with negative MACD cross."
+    elif short_setup:
+        sl_sug = round(price + stop_dist, 6)
+        tp_sug = round(price - tp_dist, 6)
+        entry_reason = (
+            f"Bearish technical confluence on {sym}: {trend} trend ({regime}), "
+            f"EMA9 ({ind['ema9']}) < EMA21 ({ind['ema21']}), RSI14={ind['rsi14']}, "
+            f"setup={bp['setup_type']}, patterns={','.join(patterns)}."
+        )
+        inv_reason = f"Close above swing resistance / SL {sl_sug} or EMA21 reclaim with positive MACD cross."
+    else:
+        sl_sug = round(price - stop_dist, 6)
+        tp_sug = round(price + tp_dist, 6)
+        entry_reason = f"No confirmed high-confluence entry setup ({trend} / RSI={ind['rsi14']}). Waiting for rule alignment."
+        inv_reason = f"Range boundary breach beyond {round(price - stop_dist, 6)} / {round(price + stop_dist, 6)}."
+
+    pts = max(primary_ta["scores"]["bullish_points"], primary_ta["scores"]["bearish_points"])
+    base_conf = 52 + (pts * 6) + (6 if mtf_aligned else 0) + (4 if ind["relative_volume"] >= 1.0 else 0)
+    confidence = int(max(35, min(92, base_conf if (long_setup or short_setup) else min(64, base_conf))))
+
+    return {
+        "instrument": sym,
+        "trend": trend,
+        "trend_strength": primary_ta["trend_strength"],
+        "market_regime": regime,
+        "momentum": momentum,
+        "volatility": volatility,
+        "volume_confirmation": bool(ind["relative_volume"] >= 0.9),
+        "support_levels": ind["supports"],
+        "resistance_levels": ind["resistances"],
+        "market_structure": primary_ta["market_structure"],
+        "breakout_conditions": primary_ta["breakout_pullback"],
+        "pullback_conditions": {
+            "pullback_long": bp["pullback_long"],
+            "pullback_short": bp["pullback_short"],
+        },
+        "multi_timeframe_alignment": {
+            "alignment": mtf.get("alignment", "SINGLE_TF"),
+            "confirmed": mtf_aligned,
+            "dominant_direction": mtf_dir,
+        },
+        "long_setup": long_setup,
+        "short_setup": short_setup,
+        "entry_reason": entry_reason,
+        "invalidation_reason": inv_reason,
+        "stop_loss_suggestion": sl_sug,
+        "take_profit_suggestion": tp_sug,
+        "risk_reward": rr,
+        "confidence": confidence,
+        "technical_confluence": confluence,
+        "analysis_timestamp": primary_ta["analysis_timestamp"],
+        "market_data_timestamp": primary_ta["market_data_timestamp"],
+        "proposal_only": True,
+    }
+

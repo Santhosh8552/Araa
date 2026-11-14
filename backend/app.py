@@ -4360,6 +4360,254 @@ def api_coindcx_real_bot_controller_state():
     return ok(controller=ctrl, preflight=preflight, state=ctrl["state"], real_mode=ctrl["real_mode"])
 
 
+@api.route("/api/v2/technical-analysis", methods=["GET"])
+def api_v2_technical_analysis():
+    """
+    AraaBot V2.0 Real-Time Technical Analysis + Multi-Timeframe + Araa AI Analyzer.
+    Uses validated closed OHLCV candles.
+    """
+    u = current_user()
+    uid = u["id"] if u else 1
+    symbol = str(request.args.get("symbol") or "BTCUSDT").upper().strip()
+    timeframe = str(request.args.get("timeframe") or "15m").lower().strip()
+    from analysis_engine import analyze_technical_v2, analyze_multi_timeframe, generate_araa_ai_analysis
+    from backtest_engine import BacktestEngine
+    from strategy_engine import StrategyEngine
+
+    candles_by_tf = {}
+    for tf in ["4h", "1h", "15m", "5m", "1m"]:
+        c_list, _, _, _ = BacktestEngine.generate_historical_candles(symbol=symbol, timeframe=tf, count=65)
+        live_px = float(feed.live_price(symbol) or feed.price(symbol) or 0.0)
+        if live_px > 0 and c_list:
+            c_list[-1]["c"] = live_px
+            c_list[-1]["h"] = max(float(c_list[-1]["h"]), live_px)
+            c_list[-1]["l"] = min(float(c_list[-1]["l"]), live_px)
+        candles_by_tf[tf] = c_list
+
+    primary_candles = candles_by_tf.get(timeframe) or candles_by_tf["15m"]
+    ta_res = analyze_technical_v2(symbol, primary_candles, timeframe=timeframe, use_closed_candles_only=True)
+    mtf_res = analyze_multi_timeframe(symbol, candles_by_tf, use_closed_candles_only=True)
+    ai_res = generate_araa_ai_analysis(symbol, ta_res, mtf_res)
+
+    StrategyEngine.log_bot_activity(
+        user_id=uid,
+        event_type="Technical Analysis Completed",
+        symbol=symbol,
+        message=f"TA & MTF completed for {symbol} ({timeframe}): Trend={ta_res.get('trend')}, AI Confidence={ai_res.get('confidence')}%",
+    )
+    return ok(
+        symbol=symbol,
+        timeframe=timeframe,
+        technical_analysis=ta_res,
+        multi_timeframe=mtf_res,
+        araa_ai=ai_res,
+    )
+
+
+@api.route("/api/v2/position-sizing/calculate", methods=["POST"])
+def api_v2_position_sizing_calculate():
+    """AraaBot V2.0 Risk-Based Position Sizing Calculator (with TP1=1R and TP2=2R)."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    body = request.get_json(silent=True) or {}
+    from strategy_engine import StrategyEngine
+    res = StrategyEngine.calculate_v2_risk_position_size(
+        user_id=u["id"],
+        symbol=str(body.get("symbol") or "BTCUSDT"),
+        side=str(body.get("side") or "LONG"),
+        entry_price=float(body.get("entry_price") or 100.0),
+        stop_loss_price=float(body.get("stop_loss_price") or 99.0),
+        account_equity=float(body["account_equity"]) if body.get("account_equity") is not None else None,
+        available_margin=float(body["available_margin"]) if body.get("available_margin") is not None else None,
+        risk_pct=float(body.get("risk_pct") or 0.5),
+        max_leverage=float(body.get("max_leverage") or 10.0),
+        max_aggregate_open_risk_pct=float(body.get("max_aggregate_open_risk_pct") or 1.5),
+    )
+    return ok(sizing=res, **res)
+
+
+@api.route("/api/v2/rule-engine/evaluate", methods=["POST"])
+def api_v2_rule_engine_evaluate():
+    """
+    Evaluates a trade opportunity against AraaBot's 10-Stage Python Rule Engine.
+    Only executes when auto_execute=True AND all 10 rules return APPROVED.
+    """
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol") or "BTCUSDT").upper().strip()
+    side = str(body.get("side") or "LONG").upper().strip()
+    strategy_id = str(body.get("strategy_id") or "araa_ai_default").strip()
+    auto_execute = bool(body.get("auto_execute", False))
+
+    from backtest_engine import BacktestEngine
+    from strategy_engine import StrategyEngine
+
+    candles = body.get("candles")
+    if not candles:
+        candles, _, _, _ = BacktestEngine.generate_historical_candles(symbol=symbol, timeframe="15m", count=65)
+        live_px = float(feed.live_price(symbol) or feed.price(symbol) or 0.0)
+        if live_px > 0 and candles:
+            candles[-1]["c"] = live_px
+
+    eval_res = StrategyEngine.evaluate_v2_rule_pipeline(
+        user_id=u["id"],
+        symbol=symbol,
+        side=side,
+        strategy_id=strategy_id,
+        candles=candles,
+        signal_payload=body.get("signal") or {"timestamp": time.time(), "timeframe": body.get("timeframe", "15m")},
+        market_context=body.get("market_context") or {},
+    )
+
+    execution_result = None
+    if auto_execute and eval_res.get("approved"):
+        strat = StrategyEngine.get_strategy(u["id"], strategy_id) or StrategyEngine.get_strategy(u["id"], "araa_ai_default")
+        sizing = eval_res.get("position_sizing") or {}
+        execution_result = StrategyEngine.execute_order_intent(
+            user_id=u["id"],
+            strategy=strat,
+            symbol=symbol,
+            side=side,
+            ref_price=float(sizing.get("entry_price") or 0.0),
+            quantity=float(sizing.get("quantity") or 0.0),
+            margin_usd=float(sizing.get("margin_required_usdt") or 0.0),
+            source_label="V2_AUTO_ENTRY",
+            reason=f"V2 Rule Engine Approved {side} {symbol}",
+        )
+
+    return ok(evaluation=eval_res, execution=execution_result, **eval_res)
+
+
+@api.route("/api/v2/positions/manage", methods=["POST"])
+def api_v2_positions_manage():
+    """
+    Validated V2.0 Open Position Actions:
+    CLOSE_POSITION, REDUCE_POSITION, UPDATE_PROTECTION.
+    """
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    body = request.get_json(silent=True) or {}
+    pos_id = int(body.get("position_id") or 0)
+    action_type = str(body.get("action") or "CLOSE_POSITION").upper().strip()
+    pos = query_one("SELECT * FROM positions WHERE id=? AND user_id=?", (pos_id, u["id"]))
+    if not pos:
+        return fail("Position not found", 404)
+
+    from strategy_engine import StrategyEngine
+    sym = str(pos.get("symbol") or "BTCUSDT").upper()
+    curr_px = float(body.get("current_price") or feed.live_price(sym) or feed.price(sym) or pos.get("current_price") or pos.get("entry_price") or 0.0)
+    rem_qty = float(pos.get("qty") or 0.0)
+
+    if action_type == "CLOSE_POSITION":
+        decision = {"action": "FULL_EXIT", "exit_reason": "USER_MANUAL_CLOSE", "close_qty": rem_qty}
+    elif action_type == "REDUCE_POSITION":
+        red_ratio = max(0.05, min(0.95, float(body.get("reduce_ratio") or 0.5)))
+        decision = {"action": "PARTIAL_EXIT", "exit_reason": "USER_POSITION_REDUCTION", "close_qty": round(rem_qty * red_ratio, 6)}
+    elif action_type == "UPDATE_PROTECTION":
+        new_sl = float(body.get("new_sl_price") or 0.0)
+        entry_px = float(pos.get("entry_price") or 0.0)
+        is_long = str(pos.get("side") or "LONG").upper() in ("BUY", "LONG")
+        curr_sl = float(pos.get("current_sl_price") or (entry_px * 0.99 if is_long else entry_px * 1.01))
+        if (is_long and new_sl < curr_sl) or ((not is_long) and new_sl > curr_sl):
+            return fail("Protective Stop-Loss can only be tightened, never moved farther away to increase risk.", 400)
+        decision = {"action": "UPDATE_STOP", "exit_reason": "USER_PROTECTION_UPDATE", "new_sl_price": new_sl}
+    else:
+        return fail(f"Unsupported action '{action_type}'", 400)
+
+    res = StrategyEngine.execute_auto_exit(u["id"], pos_id, decision, curr_px)
+    if not res.get("success"):
+        return fail(res.get("error") or "Position action failed", 400)
+    return ok(result=res, **res)
+
+
+@api.route("/api/v2/live-trading-panel", methods=["GET"])
+def api_v2_live_trading_panel():
+    """
+    Complete AraaBot V2.0 Live Trading Dashboard payload:
+    - header, account_overview, technical_analysis, araa_ai_panel,
+      our_rules_panel, coindcx_execution_panel, open_positions, profit_panel, bot_activity_log.
+    """
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    uid = u["id"]
+    symbol = str(request.args.get("symbol") or "BTCUSDT").upper().strip()
+    timeframe = str(request.args.get("timeframe") or "15m").lower().strip()
+
+    from backtest_engine import BacktestEngine
+    from coindcx_adapter import CoinDCXExecutionAdapter
+    from strategy_engine import StrategyEngine
+
+    candles_by_tf = {}
+    for tf in ["4h", "1h", "15m", "5m"]:
+        c_list, _, _, _ = BacktestEngine.generate_historical_candles(symbol=symbol, timeframe=tf, count=65)
+        live_px = float(feed.live_price(symbol) or feed.price(symbol) or 0.0)
+        if live_px > 0 and c_list:
+            c_list[-1]["c"] = live_px
+        candles_by_tf[tf] = c_list
+
+    rule_eval = StrategyEngine.evaluate_v2_rule_pipeline(
+        user_id=uid,
+        symbol=symbol,
+        side=str(request.args.get("side") or "LONG"),
+        candles=candles_by_tf.get(timeframe) or candles_by_tf["15m"],
+        candles_by_tf=candles_by_tf,
+    )
+    ctrl = StrategyEngine.get_real_bot_controller_state(uid)
+    dash = CoinDCXExecutionAdapter.compute_usd_profit_dashboard(uid)
+
+    open_pos = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' ORDER BY opened_at DESC", (uid,))
+    recent_orders = query("SELECT * FROM order_mappings WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (uid,))
+
+    wins_sum = abs(float(dash.get("avg_profit_per_trade_usdt") or 0.0) * int(dash.get("winning_trades") or 0))
+    loss_sum = abs(float(dash.get("avg_loss_per_trade_usdt") or 0.0) * int(dash.get("losing_trades") or 0))
+    profit_factor = round(wins_sum / loss_sum, 2) if loss_sum > 0 else (round(wins_sum, 2) if wins_sum > 0 else 0.0)
+
+    return ok(
+        header={
+            "araa_ai": "ONLINE",
+            "coindcx_connection": "CONNECTED" if ctrl.get("real_mode") else "STANDBY",
+            "real_bot_mode_state": ctrl.get("state"),
+            "strategy_status": "ACTIVE",
+            "risk_engine_status": "PROFIT LOCK ACTIVATED" if rule_eval.get("profit_lock_activated") else "GUARDING",
+            "theme": u.get("theme_preference") or "dark",
+        },
+        account_overview={
+            "total_equity_usdt": dash.get("total_account_equity_usdt"),
+            "available_balance_usdt": dash.get("available_balance_usdt"),
+            "used_margin_usdt": dash.get("locked_margin_usdt"),
+            "unrealized_pnl_usdt": dash.get("unrealized_pnl_usdt"),
+            "realized_pnl_usdt": dash.get("realized_pnl_usdt"),
+            "today_net_pnl_usdt": dash.get("today_pnl_usdt"),
+            "daily_drawdown_usdt": dash.get("max_drawdown_usdt"),
+            "open_positions_count": len(open_pos or []),
+        },
+        technical_analysis=rule_eval.get("technical_analysis"),
+        multi_timeframe=rule_eval.get("multi_timeframe"),
+        araa_ai_panel=rule_eval.get("araa_ai"),
+        our_rules_panel={
+            "summary": rule_eval.get("rules_panel"),
+            "execution_approval": rule_eval.get("execution_approval"),
+            "rejection_reasons": rule_eval.get("rejection_reasons"),
+            "rules": rule_eval.get("rules"),
+        },
+        coindcx_execution_panel={
+            "recent_orders": recent_orders or [],
+            "position_sizing_preview": rule_eval.get("position_sizing"),
+        },
+        open_positions=open_pos or [],
+        profit_panel={
+            **dash,
+            "profit_factor": profit_factor,
+        },
+        bot_activity_log=StrategyEngine.get_bot_activity_log(uid, limit=40),
+    )
+
+
 
 @api.route("/api/coindcx/real-bot/confirm", methods=["GET"])
 def api_coindcx_real_bot_confirm():

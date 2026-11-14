@@ -322,6 +322,30 @@ class BacktestEngine:
         net_pnl_total = round(equity - init_cap, 2)
         roi_total_pct = round((net_pnl_total / init_cap) * 100.0, 2)
 
+        # Out-of-Sample (OOS) vs In-Sample Split (70% In-Sample / 30% Out-of-Sample)
+        split_ts = start_time + int((end_time - start_time) * 0.70)
+        is_trades = [t for t in trades if int(t.get("entry_time") or 0) <= split_ts]
+        oos_trades = [t for t in trades if int(t.get("entry_time") or 0) > split_ts]
+
+        def _segment_metrics(seg_trades):
+            cnt = len(seg_trades)
+            if cnt == 0:
+                return {"trades": 0, "win_rate": 0.0, "profit_factor": 0.0, "net_pnl_usd": 0.0}
+            w = [t for t in seg_trades if t["net_pnl_usd"] > 0]
+            l = [t for t in seg_trades if t["net_pnl_usd"] <= 0]
+            gp = sum(t["net_pnl_usd"] for t in w)
+            gl = abs(sum(t["net_pnl_usd"] for t in l))
+            pf = round(gp / gl, 2) if gl > 0 else (round(gp, 2) if gp > 0 else 0.0)
+            return {
+                "trades": cnt,
+                "win_rate": round((len(w) / cnt) * 100.0, 2),
+                "profit_factor": pf,
+                "net_pnl_usd": round(sum(t["net_pnl_usd"] for t in seg_trades), 2),
+            }
+
+        in_sample_metrics = _segment_metrics(is_trades)
+        out_of_sample_metrics = _segment_metrics(oos_trades)
+
         # Institutional Validation Gate
         validation_passed = bool(
             total_trades >= 3
@@ -378,6 +402,10 @@ class BacktestEngine:
             "total_fees_usd": round(total_fees_usd, 2),
             "total_slippage_usd": round(total_slippage_usd, 2),
             "total_funding_usd": round(total_funding_usd, 2),
+            "in_sample_metrics": in_sample_metrics,
+            "out_of_sample_metrics": out_of_sample_metrics,
+            "closed_candles_only": True,
+            "risk_disclaimer": "Historical backtesting and paper simulation do not guarantee future live trading profitability.",
             "validation_passed": validation_passed,
             "equity_curve": equity_curve,
             "trades": trades,
