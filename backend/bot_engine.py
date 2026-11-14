@@ -509,17 +509,22 @@ class Bot:
             t_map = get_live_tickers()
             if t_map:
                 # Add Top CoinDCX USDT Futures pairs (Priority for USD trading)
+                stable_bases = {"USDC", "DAI", "FDUSD", "TUSD", "USDE", "USDP", "BUSD", "EURC", "PYUSD", "RLUSD", "USD1", "USDD", "FRAX", "LUSD", "USTC"}
                 priority_order = [
                     "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "NEARUSDT", "BNBUSDT",
                     "1000PEPEUSDT", "ZECUSDT", "YBUSDT", "CARVUSDT", "SPELLUSDT", "SAPIENUSDT",
-                    "USTCUSDT", "BANANAUSDT", "MOCAUSDT", "SONICUSDT", "DOLOUSDT", "MTLUSDT",
+                    "BANANAUSDT", "MOCAUSDT", "SONICUSDT", "DOLOUSDT", "MTLUSDT",
                     "GASUSDT", "BELUSDT", "ASTRUSDT", "ASRUSDT", "SANTOSUSDT", "BNTUSDT",
-                    "1000000MOGUSDT", "JOEUSDT", "FRAXUSDT", "WAXPUSDT", "XVSUSDT"
+                    "1000000MOGUSDT", "JOEUSDT", "WAXPUSDT", "XVSUSDT"
                 ]
                 p_set = {s: i for i, s in enumerate(priority_order)}
+                def _is_stable_pair(sym_name):
+                    su = str(sym_name or "").upper()
+                    base = su[2:-5] if (su.startswith("B-") and su.endswith("_USDT")) else (su[:-4] if su.endswith("USDT") else su)
+                    return base in stable_bases
                 usdt_list = [
                     (s, td) for s, td in t_map.items()
-                    if (s.endswith("USDT") or s.startswith("B-")) and not s.startswith("USDC") and not s.startswith("DAI")
+                    if (s.endswith("USDT") or s.startswith("B-")) and not _is_stable_pair(s)
                 ]
                 usdt_list.sort(key=lambda x: (0 if x[0] in p_set else 1, p_set.get(x[0], 9999), -float(x[1].get("volume") or 0.0)))
                 for sym, t_data in usdt_list[:150]:
@@ -746,6 +751,14 @@ class Bot:
         for crypto only the candle agreement from real Binance 1m klines.
         """
         cat = row.get("category", "CRYPTO")
+        if cat == "CRYPTO":
+            _su = str(symbol or "").upper()
+            _base = _su[2:-5] if (_su.startswith("B-") and _su.endswith("_USDT")) else (_su[:-4] if _su.endswith("USDT") else _su)
+            if _base in {"USDC", "DAI", "FDUSD", "TUSD", "USDE", "USDP", "BUSD", "EURC", "PYUSD", "RLUSD", "USD1", "USDD", "FRAX", "LUSD", "USTC"}:
+                return None
+            _vol = float(row.get("volume") or 0.0)
+            if 0.0 < _vol < 2_000_000.0:
+                return None
         tune = MARKET.get(cat, MARKET["CRYPTO"])
         price = row["price"]
         hi, lo = row.get("high") or 0.0, row.get("low") or 0.0
@@ -1062,6 +1075,8 @@ class Bot:
             if change >= 12.0 and range_pos >= 0.88:
                 return None
             if cat == "CRYPTO" and change <= -5.5 and (tv_rec_5m is None or float(tv_rec_5m) < 0.20) and not ob_bullish:
+                return None
+            if cat == "CRYPTO" and change <= -2.5 and ((tv_rec_5m is not None and float(tv_rec_5m) < 0.15) or slope_z < 0.15) and not ob_bullish:
                 return None
             if cat == "CRYPTO" and r14 >= 75.0:
                 return None
@@ -2410,6 +2425,8 @@ class Bot:
             )["c"]
             raw_max_allowed = int(user.get("bot_max_positions") or 10)
             is_unlim_pos = (raw_max_allowed >= 999 or raw_max_allowed <= 0)
+            if is_coindcx_live and capital < 150.0 and not is_unlim_pos:
+                raw_max_allowed = min(raw_max_allowed, max(2, min(4, int(capital // 15.0) + 1)))
             if not is_unlim_pos and cur_open_cnt >= raw_max_allowed:
                 self._log(user["id"], "LIMIT_REACHED", f"Current open positions ({cur_open_cnt}) reached user max limit ({raw_max_allowed}). Halting new entries.")
                 break
@@ -2521,7 +2538,10 @@ class Bot:
                         strat_sl_pct = max(0.30, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                         strat_tp_pct = max(strat_sl_pct * 1.8, custom_tp or float(strat.get("take_profit_pct") or 1.00))
                     risk_pct = max(0.2, min(35.0, float(strat.get("risk_per_trade_pct") or 15.0)))
-                    min_cdx_margin = 10.0 if free >= 20.0 else (5.0 if free >= 10.0 else (1.5 if free >= 1.5 else min_pos_margin))
+                    if capital >= 25.0 and free < 10.0:
+                        self._log(user["id"], "MARGIN_SKIP", f"Skipped {picked['symbol']}: free margin (${free:.2f}) below $10 scalp minimum.")
+                        continue
+                    min_cdx_margin = 10.0 if free >= 10.0 else (5.0 if free >= 5.0 else (1.5 if free >= 1.5 else min_pos_margin))
                     risk_margin = round(min(free, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
                     # Scale high-conviction A+ signals and lower-leverage (5x-10x) futures contracts meaningfully so +$0.10 to +$1.00 scalps hit fast
                     if win_p >= 80 or effective_lev <= 20.0:
@@ -2529,7 +2549,7 @@ class Bot:
                         max_slot_margin = max(min_cdx_margin, round(capital * conf_cap_pct, 2))
                         max_ord_cap = float(strat.get("max_order_size_usd") or 25000.0)
                         target_margin = min(max_ord_cap, max(risk_margin, base_margin, max_slot_margin))
-                        risk_margin = round(min(free * 0.45 if free > 3.5 else free, target_margin), 4)
+                        risk_margin = round(max(min_cdx_margin, min(free * 0.60 if free > 12.0 else free, target_margin)), 4)
                     if risk_margin >= min_pos_margin:
                         margin = risk_margin
                         qty = round((margin * effective_lev) / picked["price"], 8)
