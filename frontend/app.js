@@ -921,6 +921,12 @@ async function refreshAccount() {
   }
   S.acct = d;
   S.logs = d.logs || []; S.botEnabled = !!d.user.bot_enabled;
+  if (d.user && d.user.theme_preference && !window._userThemeSyncedForUid) {
+    window._userThemeSyncedForUid = d.user.id;
+    if (typeof window.applyTheme === "function") {
+      window.applyTheme(d.user.theme_preference, { skipBackendSync: true });
+    }
+  }
 
   renderTopbar(); renderGoal(d.portfolio); renderKpi(d.portfolio);
   if (typeof renderConnectedApiAndRules === "function") renderConnectedApiAndRules(d);
@@ -6487,7 +6493,7 @@ function renderCoinDcxLightweightChart(candles) {
   const lastClose = bars[bars.length - 1].close;
   const prec = lastClose < 0.001 ? 7 : lastClose < 0.01 ? 6 : lastClose < 1 ? 5 : lastClose < 10 ? 4 : 2;
   const minMove = Number((1 / Math.pow(10, prec)).toFixed(prec));
-  const chartKey = `${S.symbol}|${S.tf}|${isLight ? "L" : "D"}|${indOpts.ema?1:0}${indOpts.bb?1:0}${indOpts.vol?1:0}${indOpts.rsi?1:0}`;
+  const chartKey = `${S.symbol}|${S.tf}|${indOpts.ema?1:0}${indOpts.bb?1:0}${indOpts.vol?1:0}${indOpts.rsi?1:0}`;
   const lastBar = bars[bars.length - 1];
 
   const _applyAllSeriesData = (fit = false) => {
@@ -6532,28 +6538,28 @@ function renderCoinDcxLightweightChart(candles) {
 
     const legend = document.createElement("div");
     legend.id = "cdx_tv_legend";
-    legend.style.cssText = "position:absolute;top:8px;left:12px;z-index:12;pointer-events:none;font-family:var(--mono,monospace);font-size:11px;line-height:1.45;background:rgba(15,23,42,0.55);padding:4px 8px;border-radius:6px;backdrop-filter:blur(4px);color:" + (isLight ? "#0f172a" : "#e2e8f0");
+    legend.style.cssText = "position:absolute;top:8px;left:12px;z-index:12;pointer-events:none;font-family:var(--mono,monospace);font-size:11px;line-height:1.45;padding:4px 8px;border-radius:6px;backdrop-filter:blur(4px);background:" + (isLight ? "rgba(255,255,255,0.90)" : "rgba(17,24,33,0.78)") + ";border:1px solid " + (isLight ? "#E2E8F0" : "#263241") + ";color:" + (isLight ? "#111827" : "#F4F7FA");
     host.appendChild(legend);
 
     cdxLwChart = window.LightweightCharts.createChart(host, {
       width: host.clientWidth || 720,
       height: host.clientHeight || 430,
       layout: {
-        background: { type: "solid", color: isLight ? "#FFFFFF" : "#111317" },
-        textColor: isLight ? "#475569" : "#94a3b8",
+        background: { type: "solid", color: isLight ? "#FFFFFF" : "#0B0F14" },
+        textColor: isLight ? "#64748B" : "#A7B1C2",
         fontFamily: "'Inter', sans-serif",
       },
       grid: {
-        vertLines: { color: isLight ? "#EAEEF4" : "#1E232C" },
-        horzLines: { color: isLight ? "#EAEEF4" : "#1E232C" },
+        vertLines: { color: isLight ? "#E2E8F0" : "#1B2634" },
+        horzLines: { color: isLight ? "#E2E8F0" : "#1B2634" },
       },
       crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: {
-        borderColor: isLight ? "#DBE2EC" : "#262B36",
+        borderColor: isLight ? "#E2E8F0" : "#263241",
         scaleMargins: { top: 0.10, bottom: indOpts.vol ? 0.22 : 0.08 },
       },
       timeScale: {
-        borderColor: isLight ? "#DBE2EC" : "#262B36",
+        borderColor: isLight ? "#E2E8F0" : "#263241",
         timeVisible: true,
         secondsVisible: S.tf === "1m",
       },
@@ -9367,35 +9373,152 @@ function startPollers() {
   withdrawPreview(); setTimeout(() => { pingFeed(); }, 1200); tickClock();
 }
 
-/* ================================ Theme Management (Light / Dark) ================================ */
-function initTheme() {
-  const saved = localStorage.getItem("tradepro_theme") || "dark";
-  applyTheme(saved);
+/* ================================ Global Theme Architecture (ThemeProvider / ThemeContext / useTheme) ================================ */
+function resolveEffectiveTheme(mode) {
+  if (mode === "system") {
+    return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+  }
+  return mode === "light" ? "light" : "dark";
 }
 
-function applyTheme(theme) {
-  if (theme === "light") {
-    document.documentElement.setAttribute("data-theme", "light");
+function updateLwChartTheme(isLight) {
+  try {
+    const chartBg = isLight ? "#FFFFFF" : "#0B0F14";
+    const chartTxt = isLight ? "#64748B" : "#A7B1C2";
+    const gridCol = isLight ? "#E2E8F0" : "#1B2634";
+    const borderCol = isLight ? "#E2E8F0" : "#263241";
+    if (typeof cdxLwChart !== "undefined" && cdxLwChart) {
+      cdxLwChart.applyOptions({
+        layout: { background: { type: "solid", color: chartBg }, textColor: chartTxt },
+        grid: { vertLines: { color: gridCol }, horzLines: { color: gridCol } },
+        rightPriceScale: { borderColor: borderCol },
+        timeScale: { borderColor: borderCol },
+      });
+    }
+    if (typeof cdxRsiChart !== "undefined" && cdxRsiChart) {
+      cdxRsiChart.applyOptions({
+        layout: { background: { type: "solid", color: chartBg }, textColor: chartTxt },
+        grid: { vertLines: { color: gridCol }, horzLines: { color: gridCol } },
+        rightPriceScale: { borderColor: borderCol },
+        timeScale: { borderColor: borderCol },
+      });
+    }
+    const leg = $("cdx_tv_legend");
+    if (leg) {
+      leg.style.background = isLight ? "rgba(255,255,255,0.90)" : "rgba(17,24,33,0.78)";
+      leg.style.borderColor = isLight ? "#E2E8F0" : "#263241";
+      leg.style.color = isLight ? "#111827" : "#F4F7FA";
+    }
+  } catch (_) {}
+}
+window.updateLwChartTheme = updateLwChartTheme;
+
+const ThemeContext = {
+  mode: "dark",
+  theme: "dark",
+  listeners: new Set(),
+  subscribe(fn) {
+    if (typeof fn === "function") this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  },
+  notify() {
+    this.listeners.forEach(fn => {
+      try { fn({ mode: this.mode, theme: this.theme }); } catch (_) {}
+    });
+  }
+};
+window.ThemeContext = ThemeContext;
+window.ThemeProvider = {
+  getTheme: () => ThemeContext.theme,
+  getMode: () => ThemeContext.mode,
+  setTheme: (m, opts) => applyTheme(m, opts),
+  toggleTheme: () => toggleTheme(),
+  subscribe: (fn) => ThemeContext.subscribe(fn),
+};
+window.useTheme = function() {
+  return {
+    theme: ThemeContext.theme,
+    mode: ThemeContext.mode,
+    isLight: ThemeContext.theme === "light",
+    isDark: ThemeContext.theme === "dark",
+    setTheme: (m, opts) => applyTheme(m, opts),
+    toggleTheme: () => toggleTheme(),
+  };
+};
+
+function initTheme() {
+  const saved = localStorage.getItem("araabot_theme_mode") || localStorage.getItem("tradepro_theme") || "dark";
+  applyTheme(saved, { skipBackendSync: true });
+  if (window.matchMedia) {
+    try {
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        if ((localStorage.getItem("araabot_theme_mode") || "dark") === "system") {
+          applyTheme("system", { skipBackendSync: true });
+        }
+      });
+    } catch (_) {}
+  }
+}
+
+function applyTheme(mode, opts = {}) {
+  const cleanMode = (mode === "light" || mode === "system") ? mode : "dark";
+  const effective = resolveEffectiveTheme(cleanMode);
+  ThemeContext.mode = cleanMode;
+  ThemeContext.theme = effective;
+
+  document.documentElement.setAttribute("data-theme", effective);
+  document.documentElement.setAttribute("data-theme-mode", cleanMode);
+
+  if (effective === "light") {
     if ($("theme_toggle")) $("theme_toggle").innerHTML = "☀️ LIGHT";
     if ($("themeBtn")) $("themeBtn").innerHTML = "🌙";
-    if ($("top_theme_btn")) $("top_theme_btn").innerHTML = "🌙";
+    if ($("top_theme_btn")) {
+      $("top_theme_btn").innerHTML = cleanMode === "system" ? "🖥 System (☀️)" : "☀️ Light";
+      $("top_theme_btn").title = "Current: " + cleanMode.toUpperCase() + " — Click to switch theme";
+    }
     if ($("rail_theme_btn")) {
       $("rail_theme_btn").innerHTML = `<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
       $("rail_theme_btn").title = "Switch to Dark Theme";
     }
     document.querySelectorAll(".auth-theme-btn").forEach(el => el.innerHTML = "🌙");
   } else {
-    document.documentElement.removeAttribute("data-theme");
     if ($("theme_toggle")) $("theme_toggle").innerHTML = "🌙 DARK";
     if ($("themeBtn")) $("themeBtn").innerHTML = "☼";
-    if ($("top_theme_btn")) $("top_theme_btn").innerHTML = "☼";
+    if ($("top_theme_btn")) {
+      $("top_theme_btn").innerHTML = cleanMode === "system" ? "🖥 System (🌙)" : "🌙 Dark";
+      $("top_theme_btn").title = "Current: " + cleanMode.toUpperCase() + " — Click to switch theme";
+    }
     if ($("rail_theme_btn")) {
       $("rail_theme_btn").innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`;
       $("rail_theme_btn").title = "Switch to Light Theme";
     }
     document.querySelectorAll(".auth-theme-btn").forEach(el => el.innerHTML = "☼");
   }
-  localStorage.setItem("tradepro_theme", theme);
+
+  ["dark", "light", "system"].forEach(m => {
+    const b = $("theme_opt_" + m);
+    if (b) b.classList.toggle("active", m === cleanMode);
+  });
+
+  localStorage.setItem("araabot_theme_mode", cleanMode);
+  localStorage.setItem("tradepro_theme", effective);
+
+  if (!opts.skipBackendSync && localStorage.getItem("tp_token")) {
+    try {
+      fetch("/api/user/theme", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + localStorage.getItem("tp_token"),
+        },
+        body: JSON.stringify({ theme: cleanMode }),
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Update live Lightweight Charts in-place without destroying candle series or state
+  updateLwChartTheme(effective === "light");
+
   // Redraw canvas chart if candles exist to match theme background
   if (S.candles && S.candles.length) {
     try { drawChart(S.candles); } catch (e) {}
@@ -9407,12 +9530,13 @@ function applyTheme(theme) {
       equityCurve($("equity"), S.pf.equity_curve, S.pf.starting_balance);
     } catch (e) {}
   }
-  // Re-render TradingView chart if TV widget is currently active
-  if (S.chartMode === "tv" && S.tvSymbol) {
-    S.tvKey = ""; // force widget destruction and reload
-    try { showChart(S.tvSymbol, S.candles); } catch (e) {}
-  }
+  ThemeContext.notify();
 }
+window.applyTheme = applyTheme;
+window.setThemePreference = function(mode) {
+  applyTheme(mode);
+  toast(`Theme set to ${String(mode).toUpperCase()}`, mode === "light" ? "amber" : "green");
+};
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";

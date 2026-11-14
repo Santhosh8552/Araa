@@ -759,22 +759,48 @@ async function tick() {
     if (typeof loadEnterpriseV3Health === "function") await loadEnterpriseV3Health();
   } catch (e) { $("feed").textContent = "API DOWN — is python3 backend/app.py running?"; }
 }
-/* ---------------- Theme Management (Light / Dark) ---------------- */
-function initTheme() {
-  const saved = localStorage.getItem("tradepro_theme") || "dark";
-  applyTheme(saved);
+/* ---------------- Admin Theme Management (Isolated from User Dashboard) ---------------- */
+function resolveAdminEffectiveTheme(mode) {
+  if (mode === "system") {
+    return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+  }
+  return mode === "light" ? "light" : "dark";
 }
 
-function applyTheme(theme) {
-  if (theme === "light") {
-    document.documentElement.setAttribute("data-theme", "light");
-    if ($("theme_toggle")) $("theme_toggle").textContent = "☀️ LIGHT";
-  } else {
-    document.documentElement.removeAttribute("data-theme");
-    if ($("theme_toggle")) $("theme_toggle").textContent = "🌙 DARK";
+function initTheme() {
+  const saved = localStorage.getItem("araabot_admin_theme_mode") || localStorage.getItem("tradepro_admin_theme") || "dark";
+  applyTheme(saved);
+  if (window.matchMedia) {
+    try {
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const curMode = localStorage.getItem("araabot_admin_theme_mode") || "dark";
+        if (curMode === "system") applyTheme("system");
+      });
+    } catch (_) {}
   }
-  localStorage.setItem("tradepro_theme", theme);
 }
+
+function applyTheme(mode) {
+  const cleanMode = (mode === "light" || mode === "system") ? mode : "dark";
+  const effective = resolveAdminEffectiveTheme(cleanMode);
+  document.documentElement.setAttribute("data-theme", effective);
+  document.documentElement.setAttribute("data-theme-mode", cleanMode);
+  if ($("theme_toggle")) {
+    $("theme_toggle").textContent = effective === "light" ? "☀️ LIGHT" : "🌙 DARK";
+  }
+  ["dark", "light", "system"].forEach(m => {
+    const btn = $("adm_theme_" + m);
+    if (btn) {
+      btn.classList.toggle("active", m === cleanMode);
+      btn.style.background = m === cleanMode ? (effective === "light" ? "#84CC16" : "#C8F169") : "transparent";
+      btn.style.color = m === cleanMode ? "#0B0F14" : "";
+      btn.style.fontWeight = m === cleanMode ? "800" : "600";
+    }
+  });
+  localStorage.setItem("araabot_admin_theme_mode", cleanMode);
+  localStorage.setItem("tradepro_admin_theme", effective);
+}
+window.setAdminTheme = applyTheme;
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";

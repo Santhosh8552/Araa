@@ -19,9 +19,12 @@
 <script>
   (function() {
     try {
-      var t = localStorage.getItem('tradepro_theme') || 'dark';
-      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
-      else document.documentElement.removeAttribute('data-theme');
+      var mode = localStorage.getItem('araabot_theme_mode') || localStorage.getItem('tradepro_theme') || 'dark';
+      var resolved = mode === 'system'
+        ? ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark')
+        : (mode === 'light' ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', resolved);
+      document.documentElement.setAttribute('data-theme-mode', mode);
 
       var token = localStorage.getItem('tp_token');
       var hash = window.location.hash;
@@ -1864,7 +1867,7 @@
       <button id="open_wallet" class="tp-wallet" title="Open wallet">BALANCE <b id="top_equity">$10,000.00</b></button>
       <button id="top_pnl_badge" class="tp-chip" style="display:inline-flex; align-items:center; gap:5px; background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.4); color:#10b981; font-weight:800; font-size:11px; font-family:'JetBrains Mono', monospace; cursor:pointer;" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal();" title="Real-Time Combined Live P&L (Araa 500x Boost & CoinDCX Real Wallet)"><span>P&L:</span> <b id="top_pnl_val">+$0.00</b></button>
       <button id="top_ai_forecast_btn" class="tp-icon" style="display:none;" title="Open Araa AI Prediction &amp; Forecast Engine">🧠</button>
-      <button id="top_theme_btn" class="tp-icon" style="display:none;" title="Switch Light / Dark Theme" aria-label="Switch Light / Dark Theme" onclick="if(window.toggleGlobalTheme) window.toggleGlobalTheme();">☼</button>
+      <button id="top_theme_btn" class="tp-chip" style="display:inline-flex; align-items:center; gap:5px; font-weight:700; cursor:pointer;" title="Switch Theme (Dark / Light / System)" aria-label="Switch Theme" onclick="if(window.toggleGlobalTheme) window.toggleGlobalTheme();">🌙 Dark</button>
       <button id="open_notif_btn" class="tp-icon notif-bell-btn" style="display:none;" title="Notification Center &amp; Trade Logs" aria-label="Notification Center">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5Z"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0"/></svg>
         <span id="notif_badge" class="notif-pill-badge" style="display:none;">0</span>
@@ -4685,16 +4688,21 @@
         </button>
       </div>
 
-      <!-- THEME TOGGLE -->
-      <div style="display:flex; justify-content:space-between; align-items:center; background:var(--panel2); padding:14px 16px; border-radius:12px; border:1px solid var(--line); gap:12px;">
-        <div style="flex:1;">
+      <!-- SETTINGS -> APPEARANCE (THEME TOGGLE: DARK / LIGHT / SYSTEM) -->
+      <div id="settings_appearance_section" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; background:var(--panel2); padding:14px 16px; border-radius:12px; border:1px solid var(--line); gap:12px;">
+        <div style="flex:1; min-width:160px;">
           <div style="display:flex; align-items:center; gap:6px;">
             <span style="font-size:15px;">🎨</span>
-            <b style="font-size:13.5px; display:inline-block;">Theme Mode</b>
+            <b style="font-size:13.5px; display:inline-block;">Appearance &amp; Theme</b>
           </div>
-          <span class="tiny" style="color:var(--muted2); margin-top:2px; display:block;">Dark / High-Contrast Light theme</span>
+          <span class="tiny" style="color:var(--muted2); margin-top:2px; display:block;">Choose Dark, Light, or System preference</span>
         </div>
-        <button id="theme_toggle" class="ghost" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; cursor:pointer; padding:7px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); font-size:12px; white-space:nowrap;" title="Switch Light / Dark Theme">
+        <div class="theme-switcher-seg" role="group" aria-label="Theme Selection">
+          <button type="button" id="theme_opt_dark" data-theme-opt="dark" aria-label="Dark Theme" onclick="if(window.setThemePreference) window.setThemePreference('dark')">🌙 Dark</button>
+          <button type="button" id="theme_opt_light" data-theme-opt="light" aria-label="Light Theme" onclick="if(window.setThemePreference) window.setThemePreference('light')">☀️ Light</button>
+          <button type="button" id="theme_opt_system" data-theme-opt="system" aria-label="System Theme" onclick="if(window.setThemePreference) window.setThemePreference('system')">🖥 System</button>
+        </div>
+        <button id="theme_toggle" class="ghost" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; cursor:pointer; padding:7px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); font-size:12px; white-space:nowrap;" title="Switch Light / Dark Theme" aria-label="Toggle Theme">
           <span id="theme_icon">🌙</span> <span id="theme_lbl">DARK</span>
         </button>
       </div>

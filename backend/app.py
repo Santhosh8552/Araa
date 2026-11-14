@@ -1411,7 +1411,29 @@ def user_public(uid):
     u.setdefault("bot_activated_at", 0.0)
     u.setdefault("bot_market_focus", "ALL")
     u.setdefault("bot_trade_direction", "BOTH")
+    u["theme_preference"] = str(u.get("theme_preference") or "dark").lower()
+    if u["theme_preference"] not in ("dark", "light", "system"):
+        u["theme_preference"] = "dark"
     return u
+
+
+@api.route("/api/user/theme", methods=["GET", "POST"])
+def user_theme_preference():
+    u = resolve_user()
+    if not u:
+        return fail("Not logged in", 401)
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        theme = str(data.get("theme") or data.get("theme_preference") or "dark").strip().lower()
+        if theme not in ("dark", "light", "system"):
+            return fail("Invalid theme; must be dark, light, or system", 400)
+        write("UPDATE users SET theme_preference=? WHERE id=?", (theme, u["id"]))
+        return ok(theme=theme, theme_preference=theme, user=user_public(u["id"]))
+    row = query_one("SELECT theme_preference FROM users WHERE id=?", (u["id"],))
+    theme = str((row or {}).get("theme_preference") or "dark").lower()
+    if theme not in ("dark", "light", "system"):
+        theme = "dark"
+    return ok(theme=theme, theme_preference=theme)
 
 
 def make_session(uid, email):

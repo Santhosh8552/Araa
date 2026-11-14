@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS users(
   bot_leverage REAL DEFAULT 100.0,
   bot_activated_at REAL DEFAULT 0,
   bot_market_focus TEXT DEFAULT 'FUTURES_USD',
-  bot_trade_direction TEXT DEFAULT 'BOTH'
+  bot_trade_direction TEXT DEFAULT 'BOTH',
+  theme_preference TEXT DEFAULT 'dark'
 );
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY,
@@ -1344,6 +1345,7 @@ def init_schema():
                                            ("bot_activated_at", "REAL DEFAULT 0"),
                                            ("bot_market_focus", "TEXT DEFAULT 'ALL'"),
                                            ("bot_trade_direction", "TEXT DEFAULT 'BOTH'"),
+                                           ("theme_preference", "TEXT DEFAULT 'dark'"),
                                            ("brand_id", "TEXT DEFAULT 'ARAA'"),
                                            ("role", "TEXT DEFAULT 'CUSTOMER'"),
                                            ("account_status", "TEXT DEFAULT 'ACTIVE'"),

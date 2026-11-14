@@ -16,7 +16,16 @@
 <link rel="stylesheet" href="/admin/styles.css?v=20261021_admin_pro_v2">
 <link rel="stylesheet" href="/admin/theme.css?v=20261112_unique_v5">
 <script>
-  (function(){ try { if ((localStorage.getItem("tradepro_theme") || "dark") === "light") document.documentElement.setAttribute("data-theme","light"); } catch(e){} })();
+  (function(){
+    try {
+      var mode = localStorage.getItem("araabot_admin_theme_mode") || localStorage.getItem("tradepro_admin_theme") || "dark";
+      var resolved = mode === "system"
+        ? ((window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark")
+        : (mode === "light" ? "light" : "dark");
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-mode", mode);
+    } catch(e){}
+  })();
 </script>
 </head>
 <body>
@@ -35,7 +44,12 @@
   <div class="botctl">
     <a href="/company/" target="_blank" class="pill" style="text-decoration:none; background:rgba(16,185,129,0.18); border:1px solid #10b981; color:#34d399; font-weight:800; padding:6px 12px; border-radius:6px;" title="Open ARAA Company Proprietary Trading Control Center">🏢 PROP DESK</a>
     <a href="/docs" target="_blank" class="pill" style="text-decoration:none; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8; font-weight:700; padding:6px 12px; border-radius:6px;" title="Open Swagger API Docs">📖 API DOCS</a>
-    <button class="pill" id="theme_toggle" style="cursor:pointer; font-weight:700;" title="Switch Light / Dark Theme">🌙 DARK</button>
+    <div class="theme-switcher-seg" role="group" aria-label="Admin Theme Selection" style="display:inline-flex; gap:3px; padding:2px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2);">
+      <button type="button" id="adm_theme_dark" data-adm-theme="dark" class="pill" style="padding:4px 8px; cursor:pointer; font-size:11px; border:none;" onclick="if(window.setAdminTheme) window.setAdminTheme('dark')" title="Dark Theme">🌙 Dark</button>
+      <button type="button" id="adm_theme_light" data-adm-theme="light" class="pill" style="padding:4px 8px; cursor:pointer; font-size:11px; border:none;" onclick="if(window.setAdminTheme) window.setAdminTheme('light')" title="Light Theme">☀️ Light</button>
+      <button type="button" id="adm_theme_system" data-adm-theme="system" class="pill" style="padding:4px 8px; cursor:pointer; font-size:11px; border:none;" onclick="if(window.setAdminTheme) window.setAdminTheme('system')" title="System Theme">🖥 System</button>
+    </div>
+    <button class="pill" id="theme_toggle" style="cursor:pointer; font-weight:700;" title="Switch Light / Dark Theme" aria-label="Toggle Admin Theme">🌙 DARK</button>
     <button class="btn on" id="bot_on">BOT ON</button>
     <button class="btn danger" id="bot_off">BOT OFF</button>
     <span class="pill" id="bot_state">—</span>
