@@ -2403,10 +2403,13 @@ class Bot:
                 self._log(user["id"], "LIMIT_REACHED", f"Current open positions ({cur_open_cnt}) reached user max limit ({raw_max_allowed}). Halting new entries.")
                 break
 
-            # Defensive verification: Prevent opening duplicate positions for the same symbol
+            # Defensive verification: Prevent opening duplicate positions for the same underlying coin (e.g. ZECUSDT & B-ZEC_USDT)
+            _p_sym = str(picked["symbol"]).upper()
+            _p_base = _p_sym[2:-5] if (_p_sym.startswith("B-") and _p_sym.endswith("_USDT")) else (_p_sym[:-4] if _p_sym.endswith("USDT") else _p_sym)
+            _alt_sym = f"B-{_p_base}_USDT" if not _p_sym.startswith("B-") else f"{_p_base}USDT"
             already_open = query_one(
-                "SELECT id FROM positions WHERE user_id=? AND symbol=? AND status IN ('OPEN','PENDING_BROKER')",
-                (user["id"], picked["symbol"])
+                "SELECT id FROM positions WHERE user_id=? AND symbol IN (?, ?) AND status IN ('OPEN','PENDING_BROKER')",
+                (user["id"], picked["symbol"], _alt_sym)
             )
             if already_open:
                 held.add(picked["symbol"])
@@ -2506,15 +2509,15 @@ class Bot:
                         custom_tp = rbc_tp or (float(tr_custom_rules.get("target_profit_pct") or 0.0) if tr_custom_rules else 0.0)
                         strat_sl_pct = max(0.30, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                         strat_tp_pct = max(strat_sl_pct * 1.8, custom_tp or float(strat.get("take_profit_pct") or 1.00))
-                    risk_pct = max(0.2, min(30.0, float(strat.get("risk_per_trade_pct") or 2.0)))
-                    min_cdx_margin = 1.5 if free >= 1.5 else min_pos_margin
+                    risk_pct = max(0.2, min(35.0, float(strat.get("risk_per_trade_pct") or 15.0)))
+                    min_cdx_margin = 10.0 if free >= 20.0 else (5.0 if free >= 10.0 else (1.5 if free >= 1.5 else min_pos_margin))
                     risk_margin = round(min(free, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
-                    # Scale high-conviction A+ signals and lower-leverage (5x-10x) futures contracts meaningfully within safe per-slot bounds
-                    if win_p >= 84 or effective_lev <= 10.0:
-                        conf_cap_pct = 0.14 if effective_lev <= 5.0 else (0.11 if effective_lev <= 10.0 else 0.09)
+                    # Scale high-conviction A+ signals and lower-leverage (5x-10x) futures contracts meaningfully so +$0.10 to +$1.00 scalps hit fast
+                    if win_p >= 80 or effective_lev <= 20.0:
+                        conf_cap_pct = 0.28 if effective_lev <= 10.0 else 0.22
                         max_slot_margin = max(min_cdx_margin, round(capital * conf_cap_pct, 2))
                         max_ord_cap = float(strat.get("max_order_size_usd") or 25000.0)
-                        target_margin = min(max_ord_cap, max(risk_margin, min(base_margin, max_slot_margin)))
+                        target_margin = min(max_ord_cap, max(risk_margin, base_margin, max_slot_margin))
                         risk_margin = round(min(free * 0.45 if free > 3.5 else free, target_margin), 4)
                     if risk_margin >= min_pos_margin:
                         margin = risk_margin
