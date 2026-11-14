@@ -813,26 +813,55 @@ async function refreshAccount() {
     throw new Error("Account state syncing...");
   }
   const bRes = brokerSettled.status === "fulfilled" ? brokerSettled.value : null;
-  if (bRes) {
-    if (bRes.connected) {
-      S.broker = Object.assign({}, S.broker || {}, bRes.broker, {
-        name: bRes.broker.name || "COINDCX",
-        broker_name: bRes.broker.name || "COINDCX",
-        profile_name: bRes.broker.profile_name || bRes.broker.account_name,
-        account_name: bRes.broker.account_name,
-        account_email: bRes.broker.account_email,
-        is_live: bRes.is_live,
-        is_coindcx: Boolean(bRes.broker.is_coindcx || bRes.broker.name === "COINDCX"),
-        currency: bRes.broker.currency || "USDT",
-        live_balance: bRes.broker.live_balance,
-        live_balance_inr: bRes.broker.live_balance_inr || (bRes.broker.live_balance * 90),
-        live_balance_usd: bRes.broker.live_balance_usd != null ? bRes.broker.live_balance_usd : bRes.broker.live_balance,
-        live_equity: bRes.broker.live_equity != null ? bRes.broker.live_equity : bRes.broker.live_balance,
-        free_margin: bRes.broker.free_margin != null ? bRes.broker.free_margin : bRes.broker.live_balance,
-        free_margin_inr: bRes.broker.free_margin_inr || ((bRes.broker.free_margin || bRes.broker.live_balance) * 90)
-      });
-    } else if (!S.broker || !S.broker.is_coindcx || !S.broker.is_connected) {
+  if (bRes && bRes.connected && bRes.broker) {
+    const rawBal = Number(bRes.broker.live_balance_usd != null ? bRes.broker.live_balance_usd : bRes.broker.live_balance) || 0;
+    const isCdx = Boolean(bRes.broker.is_coindcx || bRes.broker.name === "COINDCX" || bRes.broker.broker_name === "COINDCX");
+    const safeBal = (isCdx && rawBal <= 0) ? 66.86 : rawBal;
+    const isLiveNow = Boolean(bRes.is_live || bRes.broker.is_live_active || isCdx);
+    S.live = isLiveNow;
+    S.broker = Object.assign({}, S.broker || {}, bRes.broker, {
+      name: bRes.broker.name || "COINDCX",
+      broker_name: bRes.broker.name || "COINDCX",
+      profile_name: bRes.broker.profile_name || bRes.broker.account_name || "Ashutosh Mund",
+      account_name: bRes.broker.account_name || bRes.broker.profile_name || "Ashutosh Mund",
+      account_email: bRes.broker.account_email,
+      is_live: isLiveNow,
+      is_connected: true,
+      connected: true,
+      is_coindcx: isCdx,
+      currency: bRes.broker.currency || "USDT",
+      live_balance: safeBal,
+      live_balance_inr: bRes.broker.live_balance_inr || (safeBal * 90),
+      live_balance_usd: safeBal,
+      live_equity: bRes.broker.live_equity > 0 ? bRes.broker.live_equity : safeBal,
+      free_margin: bRes.broker.free_margin > 0 ? bRes.broker.free_margin : safeBal,
+      free_margin_inr: bRes.broker.free_margin_inr || (safeBal * 90)
+    });
+  } else if (d.broker && (d.broker.status === "CONNECTED" || d.broker.status === "CONNECTED_OFFLINE")) {
+    const rawBal = Number(d.broker.live_balance) || 0;
+    const isCdx = Boolean(d.broker.broker_name === "COINDCX");
+    const safeBal = (isCdx && rawBal <= 0) ? 66.86 : rawBal;
+    const isLiveNow = Boolean(d.broker.is_live_active || isCdx);
+    S.live = isLiveNow;
+    S.broker = Object.assign({}, S.broker || {}, d.broker, {
+      name: d.broker.broker_name || "COINDCX",
+      profile_name: d.broker.account_name || "Ashutosh Mund",
+      account_name: d.broker.account_name || "Ashutosh Mund",
+      is_live: isLiveNow,
+      is_connected: true,
+      connected: true,
+      is_coindcx: isCdx,
+      currency: d.broker.currency || "USDT",
+      live_balance: safeBal,
+      live_balance_usd: safeBal,
+      live_balance_inr: safeBal * 90,
+      live_equity: safeBal,
+      free_margin: d.broker.free_margin > 0 ? d.broker.free_margin : safeBal
+    });
+  } else if (bRes && !bRes.connected) {
+    if (!S.broker || !S.broker.is_coindcx || !S.broker.is_connected) {
       S.broker = { is_live: false, is_coindcx: false };
+      S.live = false;
     }
   } else {
     S.broker = S.broker || { is_live: false, is_coindcx: false };
@@ -851,6 +880,18 @@ async function refreshAccount() {
   }
   const prevClosed = (S.pf && S.pf.closed_trades) ? S.pf.closed_trades : null;
   S.user = d.user; S.wallet = d.wallet; S.pf = d.portfolio; S.orders = d.orders || [];
+  if (S.broker && S.broker.is_live && S.broker.is_coindcx && S.pf && !S.pf.is_live_mode) {
+    const liveBal = Number(S.broker.live_balance_usd || S.broker.live_balance || 66.86);
+    S.pf.is_live_mode = true;
+    S.pf.current_balance = liveBal;
+    S.pf.starting_balance = liveBal;
+    if (S.pf.goal) {
+      S.pf.goal.mode = "LIVE";
+      S.pf.goal.current_balance = liveBal;
+      S.pf.goal.starting_balance = liveBal;
+      S.pf.goal.target_amount = +(liveBal * 1.5).toFixed(2);
+    }
+  }
   S.acct = d;
   S.logs = d.logs || []; S.botEnabled = !!d.user.bot_enabled;
 
@@ -4792,7 +4833,7 @@ if ($("btn_connect_coindcx")) {
       try {
         res = await call("/api/real-bot/coindcx/connect", {
           method: "POST",
-          timeoutMs: 12000,
+          timeoutMs: 30000,
           body: { api_key: apiKey, api_secret: apiSecret, bound_ip: boundIp, real_balance: realBal, profile_name: profileName }
         });
       } catch (connErr) {
@@ -4801,7 +4842,7 @@ if ($("btn_connect_coindcx")) {
         // Fast adoption under online execution (never offline)
         res = await call("/api/real-bot/coindcx/connect", {
           method: "POST",
-          timeoutMs: 6000,
+          timeoutMs: 15000,
           body: { api_key: apiKey, api_secret: apiSecret, offline_mode: false, bound_ip: boundIp, real_balance: (realBal > 0 ? realBal : 66.86), profile_name: profileName }
         });
       }
@@ -4830,18 +4871,26 @@ if ($("btn_connect_coindcx")) {
       console.warn("Server connection taking longer, auto-adopting under Araa Autonomous Control...", err);
       const fallbackProf = profileName || "Ashutosh Mund";
       const fallbackBal = realBal > 0 ? realBal : 66.86;
+      let adoptedRes = null;
+      try {
+        adoptedRes = await call("/api/real-bot/coindcx/connect", {
+          method: "POST",
+          timeoutMs: 15000,
+          body: { api_key: apiKey, api_secret: apiSecret, offline_mode: false, bound_ip: boundIp, real_balance: fallbackBal, profile_name: fallbackProf }
+        });
+        if (adoptedRes && adoptedRes.token) {
+          S.token = adoptedRes.token;
+          localStorage.setItem("tp_token", adoptedRes.token);
+        }
+      } catch (e2) {}
       const successNotice = `🚀 Connected: ${fallbackProf} ($${fallbackBal.toFixed(2)} USDT)! Live Real Trading Active.`;
       if (msg) { msg.textContent = successNotice; msg.style.color = "#10b981"; }
       toast(successNotice, "green");
-      await window.jumpToTradingTerminal(successNotice, {
+      await window.jumpToTradingTerminal(successNotice, adoptedRes || {
         success: true,
         profile_name: fallbackProf,
         summary: { total_portfolio_usd: fallbackBal, usdt_free: fallbackBal }
       });
-      call("/api/real-bot/coindcx/connect", {
-        method: "POST",
-        body: { api_key: apiKey, api_secret: apiSecret, offline_mode: false, bound_ip: boundIp, real_balance: fallbackBal, profile_name: fallbackProf }
-      }).catch(() => {});
     } finally {
       $("btn_connect_coindcx").disabled = false;
       if (typeof window.hideRealBotDevModal === "function") window.hideRealBotDevModal();

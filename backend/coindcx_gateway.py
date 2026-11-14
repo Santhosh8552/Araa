@@ -435,33 +435,36 @@ def verify_coindcx_credentials(api_key: str, api_secret: str) -> Tuple[bool, str
     rate = _get_live_usdt_inr_rate()
     err_msgs: List[str] = []
 
-    # Run all 4 CoinDCX checks IN PARALLEL with short timeouts (3s) and no retries,
-    # so total verification time stays ~1-3s instead of stalling or timing out.
-    from concurrent.futures import ThreadPoolExecutor
+    # Run all 4 CoinDCX checks IN PARALLEL with short timeouts (2.5s) and no retries,
+    # so total verification time never exceeds ~2.5s and never stalls or times out.
+    from concurrent.futures import ThreadPoolExecutor, wait
 
     def _signed(ep, method, body):
         return _request(ep, method=method, body=body, api_key=clean_key,
-                        api_secret=clean_secret, timeout=3, retries=0)
+                        api_secret=clean_secret, timeout=2.5, retries=0)
 
+    pool = ThreadPoolExecutor(max_workers=4)
     try:
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            f_spot = pool.submit(_signed, "/exchange/v1/users/balances", "POST", {})
-            f_wal = pool.submit(_signed, "/exchange/v1/derivatives/futures/wallets", "GET", {})
-            f_info = pool.submit(_signed, "/exchange/v1/users/info", "POST", {})
-            f_pos = pool.submit(_signed, "/exchange/v1/derivatives/futures/positions", "POST",
-                                {"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]})
-            try: ok_spot, res_spot = f_spot.result(timeout=3.5)
-            except Exception: ok_spot, res_spot = False, {"message": "Spot balances timeout"}
-            try: ok_fut_wal, res_fut_wal = f_wal.result(timeout=3.5)
-            except Exception: ok_fut_wal, res_fut_wal = False, {"message": "Futures wallets timeout"}
-            try: ok_info, res_info = f_info.result(timeout=3.5)
-            except Exception: ok_info, res_info = False, {"message": "User info timeout"}
-            try: ok_fut_pos, res_fut_pos = f_pos.result(timeout=3.5)
-            except Exception: ok_fut_pos, res_fut_pos = False, {"message": "Futures positions timeout"}
+        f_spot = pool.submit(_signed, "/exchange/v1/users/balances", "POST", {})
+        f_wal = pool.submit(_signed, "/exchange/v1/derivatives/futures/wallets", "GET", {})
+        f_info = pool.submit(_signed, "/exchange/v1/users/info", "POST", {})
+        f_pos = pool.submit(_signed, "/exchange/v1/derivatives/futures/positions", "POST",
+                            {"page": "1", "size": "10", "margin_currency_short_name": ["USDT"]})
+        done, _ = wait([f_spot, f_wal, f_info, f_pos], timeout=2.5)
+        try: ok_spot, res_spot = f_spot.result(timeout=0) if f_spot in done else (False, {"message": "Spot balances timeout"})
+        except Exception: ok_spot, res_spot = False, {"message": "Spot balances timeout"}
+        try: ok_fut_wal, res_fut_wal = f_wal.result(timeout=0) if f_wal in done else (False, {"message": "Futures wallets timeout"})
+        except Exception: ok_fut_wal, res_fut_wal = False, {"message": "Futures wallets timeout"}
+        try: ok_info, res_info = f_info.result(timeout=0) if f_info in done else (False, {"message": "User info timeout"})
+        except Exception: ok_info, res_info = False, {"message": "User info timeout"}
+        try: ok_fut_pos, res_fut_pos = f_pos.result(timeout=0) if f_pos in done else (False, {"message": "Futures positions timeout"})
+        except Exception: ok_fut_pos, res_fut_pos = False, {"message": "Futures positions timeout"}
     except Exception as pool_err:
         logger.warning(f"CoinDCX parallel verification error: {pool_err}")
         ok_spot, ok_fut_wal, ok_info, ok_fut_pos = False, False, False, False
         res_spot, res_fut_wal, res_info, res_fut_pos = {}, {}, {}, {}
+    finally:
+        pool.shutdown(wait=False)
 
     # 1. Spot Wallet Balances
     spot_summary = parse_balances(res_spot) if (ok_spot and isinstance(res_spot, list)) else None
