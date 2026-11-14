@@ -2780,7 +2780,7 @@ async function renderOracleTab() {
       "BOOST":        {title: "QUANTUM BOOST 500x", target: "86% Win Target · 500x Leverage · $200–$1,500+/Day", col: "var(--blue)"},
       "CONTINUOUS":   {title: "CONTINUOUS ACTIVE", target: "75% Win Target · Unlimited Trades · $10–$50 Loop", col: "var(--green)"},
       "CONSERVATIVE": {title: "SAFE & CONSERVATIVE", target: "78% Win Target · $25–$40/Day (5–8%)", col: "var(--green)"},
-      "SCALP":        {title: "TARGET SCALPING (GOLD/FX)", target: "75% Win Target · $50–$75/Day (10–15%)", col: "var(--amber)"},
+      "SCALP":        {title: "TARGET SCALPING (CRYPTO + GOLD/FX)", target: "75% Win Target · Fast Scalp Exits (10–15% ROI)", col: "var(--amber)"},
       "AGGRESSIVE":   {title: "AGGRESSIVE HIGH-MOMENTUM", target: "70% Win Target · $100–$150/Day (20–30%)", col: "var(--red)"}
     };
     const info = modeMap[mode] || modeMap["BOOST"];
@@ -7546,7 +7546,7 @@ function openDrawer(id) {
 }
 function closeDrawers() {
   /* Walking away from an unsaved figure must not carry it into the next look at the drawer. */
-  clearEdits($("b_max"), $("b_risk"), $("b_mode"), $("b_enabled"), $("goal_target"));
+  clearEdits($("b_max"), $("b_risk"), $("b_lev"), $("b_mode"), $("b_enabled"), $("b_dir"), $("b_focus"), $("b_tp_pct"), $("b_sl_pct"), $("b_daily_loss"), $("goal_target"));
   document.querySelectorAll(".drawer").forEach(d => d.classList.remove("open"));
   const settingsModal = $("settings_modal");
   const aiScanOverlay = $("ai_scan_overlay");
@@ -7625,10 +7625,39 @@ function put(el, value) { if (!beingEdited(el)) el.value = value; }
 ["b_max", "b_risk", "b_lev", "b_mode", "b_enabled", "b_dir", "b_focus", "b_tp_pct", "b_sl_pct", "b_daily_loss", "goal_target"].forEach(id => {
   const el = $(id);
   if (!el) return;
-  el.addEventListener("input", () => { el.dataset.dirty = "1"; });
-  el.addEventListener("change", () => { el.dataset.dirty = "1"; });
+  el.addEventListener("input", () => {
+    el.dataset.dirty = "1";
+    if (id === "b_tp_pct" || id === "b_sl_pct") el.dataset.customTpSl = "1";
+  });
+  el.addEventListener("change", () => {
+    el.dataset.dirty = "1";
+    if (id === "b_tp_pct" || id === "b_sl_pct") el.dataset.customTpSl = "1";
+  });
 });
-function clearEdits(...els) { els.forEach(el => { if (el) delete el.dataset.dirty; }); }
+const _MODE_TP_SL_DEFAULTS = {
+  SCALP: [0.55, 0.28],
+  PURE_CRYPTO: [0.60, 0.28],
+  BOOST: [0.65, 0.32],
+  SQUEEZE_5M: [0.90, 0.45],
+  CONTINUOUS: [0.80, 0.40],
+  CONSERVATIVE: [1.20, 0.60],
+  AGGRESSIVE: [2.50, 1.20]
+};
+if ($("b_mode")) {
+  $("b_mode").addEventListener("change", () => {
+    const preset = _MODE_TP_SL_DEFAULTS[$("b_mode").value];
+    if (!preset) return;
+    const tpEl = $("b_tp_pct");
+    const slEl = $("b_sl_pct");
+    // Preserve custom TP/SL just entered by the user during this edit session
+    const hasCustom = (tpEl && tpEl.dataset.customTpSl === "1" && tpEl.value !== "") ||
+                      (slEl && slEl.dataset.customTpSl === "1" && slEl.value !== "");
+    if (hasCustom) return;
+    if (tpEl) { tpEl.value = preset[0]; tpEl.dataset.dirty = "1"; }
+    if (slEl) { slEl.value = preset[1]; slEl.dataset.dirty = "1"; }
+  });
+}
+function clearEdits(...els) { els.forEach(el => { if (el) { delete el.dataset.dirty; delete el.dataset.customTpSl; } }); }
 
 async function renderBot(d) {
   d = d || S.acct || await call("/api/account").catch(() => null);
@@ -7653,8 +7682,9 @@ async function renderBot(d) {
   if ($("b_dir")) put($("b_dir"), d.user.bot_trade_direction || "BOTH");
   if ($("b_focus")) put($("b_focus"), d.user.bot_market_focus || "FUTURES_USD");
   const rbc = d.real_bot_config || (S.acct && S.acct.real_bot_config) || {};
-  if ($("b_tp_pct")) put($("b_tp_pct"), rbc.take_profit_pct || 2.5);
-  if ($("b_sl_pct")) put($("b_sl_pct"), rbc.stop_loss_pct || 1.5);
+  const modePreset = _MODE_TP_SL_DEFAULTS[d.user.bot_mode] || [0.60, 0.28];
+  if ($("b_tp_pct")) put($("b_tp_pct"), rbc.take_profit_pct || modePreset[0]);
+  if ($("b_sl_pct")) put($("b_sl_pct"), rbc.stop_loss_pct || modePreset[1]);
   if ($("b_daily_loss")) put($("b_daily_loss"), rbc.max_daily_loss || 250);
   if (!beingEdited($("b_risk")) && $("b_risk_lbl")) $("b_risk_lbl").textContent = (d.user.bot_risk_pct || 2) + "%";
   if ($("b_lev") && !beingEdited($("b_lev"))) {
@@ -8066,8 +8096,9 @@ $("b_save").onclick = async () => {
     const selectedMode = $("b_mode") ? $("b_mode").value : "PURE_CRYPTO";
     const tradeDir = $("b_dir") ? $("b_dir").value : "BOTH";
     const marketFocus = $("b_focus") ? $("b_focus").value : "FUTURES_USD";
-    const tpPct = $("b_tp_pct") ? Number($("b_tp_pct").value) : 2.5;
-    const slPct = $("b_sl_pct") ? Number($("b_sl_pct").value) : 1.5;
+    const fallbackPreset = _MODE_TP_SL_DEFAULTS[selectedMode] || [0.60, 0.28];
+    const tpPct = $("b_tp_pct") ? Number($("b_tp_pct").value) : fallbackPreset[0];
+    const slPct = $("b_sl_pct") ? Number($("b_sl_pct").value) : fallbackPreset[1];
     const dailyLoss = $("b_daily_loss") ? Number($("b_daily_loss").value) : 250;
     const modeSelectEl = $("b_mode");
     const modeText = (modeSelectEl && modeSelectEl.options[modeSelectEl.selectedIndex]) 

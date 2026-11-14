@@ -1906,8 +1906,23 @@ def bot_config():
     market_focus = str(data.get("market_focus") or u.get("bot_market_focus") or "FUTURES_USD").strip().upper()
     if market_focus not in ("FUTURES_USD", "ALL", "CRYPTO", "FOREX", "METALS"):
         market_focus = "FUTURES_USD"
-    tp_pct = max(0.2, min(100.0, float(data.get("take_profit_pct") or 2.5)))
-    sl_pct = max(0.2, min(50.0, float(data.get("stop_loss_pct") or 1.5)))
+    prev_rbc = query_one("SELECT stop_loss_pct, take_profit_pct FROM real_bot_configs WHERE user_id=?", (u["id"],))
+    from bot_engine import resolve_scalp_targets
+    def_tp, def_sl = resolve_scalp_targets(mode, leverage=leverage)
+    raw_tp_req = data.get("take_profit_pct")
+    raw_sl_req = data.get("stop_loss_pct")
+    if raw_tp_req is not None:
+        tp_pct = max(0.2, min(100.0, float(raw_tp_req)))
+    elif prev_rbc and prev_rbc.get("take_profit_pct") and float(prev_rbc["take_profit_pct"]) > 0:
+        tp_pct = float(prev_rbc["take_profit_pct"])
+    else:
+        tp_pct = def_tp
+    if raw_sl_req is not None:
+        sl_pct = max(0.2, min(50.0, float(raw_sl_req)))
+    elif prev_rbc and prev_rbc.get("stop_loss_pct") and float(prev_rbc["stop_loss_pct"]) > 0:
+        sl_pct = float(prev_rbc["stop_loss_pct"])
+    else:
+        sl_pct = def_sl
     daily_loss = max(5.0, min(50000.0, float(data.get("max_daily_loss") or 250.0)))
     flush_pnl = 0.0
     closed_count = 0
