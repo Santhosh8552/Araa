@@ -178,6 +178,60 @@ class TestScalpingEngine(unittest.TestCase):
         }
         self.assertIsNone(bot.analyse("SOPHUSDT", row_long, mode="SCALP"))
 
+    def test_tradingview_1m_5m_chart_consensus_controls_direction(self):
+        class _FakeFeed:
+            def __init__(self, ticks_map, candles_map):
+                self._ticks = ticks_map
+                self._candles = candles_map
+
+            def ticks(self, sym, n=40):
+                return self._ticks.get(sym, [])[-n:]
+
+            def candles(self, sym, interval="1m", limit=30):
+                return self._candles.get(sym, [])[-limit:]
+
+            def quote(self, sym):
+                return None
+
+        base_t = 1794000000
+        up_ticks = [83.00 + i * 0.08 for i in range(30)]
+        up_candles = [
+            {"t": base_t + i * 60, "o": 83.0 + i * 0.06, "h": 83.12 + i * 0.06, "l": 82.98 + i * 0.06, "c": 83.09 + i * 0.06, "v": 1500}
+            for i in range(25)
+        ]
+        bot = Bot.__new__(Bot)
+        bot.feed = _FakeFeed({"SOLUSDT": up_ticks}, {"SOLUSDT": up_candles})
+        bot._trainer_state = {}
+        bot._leader_impulse = {}
+
+        # Even if 24h change is -4.6% (1D negative), when TradingView 1m + 5m are BUY, bot must produce LONG (never SHORT)
+        sol_row = {
+            "category": "CRYPTO",
+            "live": True,
+            "price": up_ticks[-1],
+            "high": 88.50,
+            "low": 81.20,
+            "change_pct": -4.60,
+            "volume": 120_000_000,
+            "tv_rec_1m": 0.42,
+            "tv_rec_5m": 0.31,
+            "tv_recommend": 0.35,
+            "tv_ma_1m": 0.50,
+            "tv_ma_5m": 0.38,
+            "tv_rsi_1m": 58.5,
+            "tv_ema20_1m": up_ticks[-1] - 0.15,
+            "tv_ema50_1m": up_ticks[-1] - 0.35,
+        }
+        setup = bot.analyse("SOLUSDT", sol_row, mode="SCALP")
+        self.assertIsNotNone(setup)
+        self.assertEqual(setup["side"], "LONG")
+        self.assertIn(setup["tv_signal"], ("BUY", "STRONG_BUY"))
+
+        # Conflicting 1m (+0.40 BUY) vs 5m (-0.35 SELL) must be rejected until timeframes align
+        conflict_row = dict(sol_row, tv_rec_1m=0.40, tv_rec_5m=-0.35)
+        self.assertIsNone(bot.analyse("SOLUSDT", conflict_row, mode="SCALP"))
+
+
 
 if __name__ == "__main__":
     unittest.main()

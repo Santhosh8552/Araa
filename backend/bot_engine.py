@@ -526,25 +526,28 @@ class Bot:
                     p = float(t_data.get("last_price") or 0.0)
                     if p > 0 and sym not in existing_syms:
                         chg = float(t_data.get("change_24_hour") or 0.0)
-                        universe.append((sym, {
-                            "price": p, "open24h": p, "change_pct": chg,
-                            "high": float(t_data.get("high") or (p * 1.02)),
-                            "low": float(t_data.get("low") or (p * 0.98)),
-                            "volume": float(t_data.get("volume") or 100000.0),
+                        clean_s = sym[2:].replace("_USDT", "USDT") if sym.startswith("B-") else sym
+                        with self.feed.lock:
+                            existing_feed = dict(self.feed.prices.get(sym) or self.feed.prices.get(clean_s) or {})
+                        merged_row = dict(existing_feed)
+                        merged_row.update({
+                            "price": p, "target": p,
+                            "open24h": float(existing_feed.get("open24h") or (p / (1.0 + chg / 100.0) if chg != -100.0 else p)),
+                            "change_pct": chg,
+                            "high": float(t_data.get("high") or existing_feed.get("high") or (p * 1.02)),
+                            "low": float(t_data.get("low") or existing_feed.get("low") or (p * 0.98)),
+                            "volume": float(t_data.get("volume") or existing_feed.get("volume") or 100000.0),
                             "category": "CRYPTO",
                             "live": True, "source": "COINDCX FUTURES"
-                        }))
+                        })
+                        universe.append((sym, merged_row))
                         self.by_category.setdefault("CRYPTO", []).append(sym)
                         existing_syms.add(sym)
                         with self.feed.lock:
                             if sym not in self.feed.prices:
-                                self.feed.prices[sym] = {
-                                    "price": p, "target": p, "open24h": p, "change_pct": chg,
-                                    "high": float(t_data.get("high") or (p * 1.02)),
-                                    "low": float(t_data.get("low") or (p * 0.98)),
-                                    "volume": float(t_data.get("volume") or 100000.0),
-                                    "category": "CRYPTO", "live": True, "source": "COINDCX FUTURES"
-                                }
+                                self.feed.prices[sym] = dict(merged_row)
+                            else:
+                                self.feed.prices[sym].update(merged_row)
 
                 inr_list = [
                     (s, td) for s, td in t_map.items()
@@ -555,25 +558,28 @@ class Bot:
                     p = float(t_data.get("last_price") or 0.0)
                     if p > 0 and sym not in existing_syms:
                         chg = float(t_data.get("change_24_hour") or 0.0)
-                        universe.append((sym, {
-                            "price": p, "open24h": p, "change_pct": chg,
-                            "high": float(t_data.get("high") or (p * 1.02)),
-                            "low": float(t_data.get("low") or (p * 0.98)),
-                            "volume": float(t_data.get("volume") or 100000.0),
+                        usdt_equiv = sym[:-3] + "USDT"
+                        with self.feed.lock:
+                            existing_feed = dict(self.feed.prices.get(sym) or self.feed.prices.get(usdt_equiv) or {})
+                        merged_row = dict(existing_feed)
+                        merged_row.update({
+                            "price": p, "target": p,
+                            "open24h": float(existing_feed.get("open24h") or (p / (1.0 + chg / 100.0) if chg != -100.0 else p)),
+                            "change_pct": chg,
+                            "high": float(t_data.get("high") or existing_feed.get("high") or (p * 1.02)),
+                            "low": float(t_data.get("low") or existing_feed.get("low") or (p * 0.98)),
+                            "volume": float(t_data.get("volume") or existing_feed.get("volume") or 100000.0),
                             "category": "CRYPTO",
                             "live": True, "source": "COINDCX LIVE"
-                        }))
+                        })
+                        universe.append((sym, merged_row))
                         self.by_category.setdefault("CRYPTO", []).append(sym)
                         existing_syms.add(sym)
                         with self.feed.lock:
                             if sym not in self.feed.prices:
-                                self.feed.prices[sym] = {
-                                    "price": p, "target": p, "open24h": p, "change_pct": chg,
-                                    "high": float(t_data.get("high") or (p * 1.02)),
-                                    "low": float(t_data.get("low") or (p * 0.98)),
-                                    "volume": float(t_data.get("volume") or 100000.0),
-                                    "category": "CRYPTO", "live": True, "source": "COINDCX LIVE"
-                                }
+                                self.feed.prices[sym] = dict(merged_row)
+                            else:
+                                self.feed.prices[sym].update(merged_row)
         except Exception:
             pass
 
@@ -589,6 +595,8 @@ class Bot:
             base = clean_sym.replace("INR", "")
             clean_sym = f"{base}USDT"
         key = (clean_sym, interval, limit)
+        if not hasattr(self, "_candle_cache"):
+            self._candle_cache = {}
         hit = self._candle_cache.get(key)
         now = time.time()
         if hit and now - hit[0] < ttl:
@@ -727,7 +735,8 @@ class Bot:
         slope_z = ((fast - slow) / price * 100.0) / tick_vol
         range_pos = (price - lo) / (hi - lo)
         change = row.get("change_pct") or 0.0
-        r14 = rsi(ticks, 14)
+        tv_rsi_live = row.get("tv_rsi_1m") if row.get("tv_rsi_1m") is not None else row.get("tv_rsi")
+        r14 = float(tv_rsi_live) if tv_rsi_live is not None else rsi(ticks, 14)
         if r14 is None:
             r14 = 50.0             # too short for Wilder's smoothing: neutral, never a signal
 
@@ -835,19 +844,58 @@ class Bot:
                 pass
 
         # REAL LIVE TRADINGVIEW & TECHNICAL SIGNAL INTEGRATION (BIDIRECTIONAL LONG & SHORT):
+        tv_rec_1m = row.get("tv_rec_1m")
+        tv_rec_5m = row.get("tv_rec_5m")
         tv_rec = row.get("tv_recommend")
+        tv_ma_1m = row.get("tv_ma_1m")
+        tv_ma_5m = row.get("tv_ma_5m")
         tv_ma = row.get("tv_ma")
+        tv_ema20_1m = row.get("tv_ema20_1m")
+        tv_ema50_1m = row.get("tv_ema50_1m")
+        tv_macd_1m = row.get("tv_macd_1m")
+        tv_macd_sig_1m = row.get("tv_macd_sig_1m")
         tv_label = "NEUTRAL"
-        
+
+        # Multi-Timeframe TradingView Scalp Consensus (1m + 5m live chart agreement):
+        # If 1m and 5m TradingView chart ratings directly conflict, skip until both timeframes align.
+        if tv_rec_1m is not None and tv_rec_5m is not None:
+            if (float(tv_rec_1m) > 0.08 and float(tv_rec_5m) < -0.08) or (float(tv_rec_1m) < -0.08 and float(tv_rec_5m) > 0.08):
+                return None
+            tv_rec = round(0.58 * float(tv_rec_1m) + 0.42 * float(tv_rec_5m), 4)
+        elif tv_rec_1m is not None:
+            tv_rec = float(tv_rec_1m)
+        elif tv_rec_5m is not None and tv_rec is None:
+            tv_rec = float(tv_rec_5m)
+
+        if tv_ma_1m is not None and tv_ma_5m is not None:
+            tv_ma = round(0.58 * float(tv_ma_1m) + 0.42 * float(tv_ma_5m), 4)
+        elif tv_ma_1m is not None:
+            tv_ma = float(tv_ma_1m)
+
+        if tv_ema20_1m and tv_ema50_1m:
+            ema20_v, ema50_v = float(tv_ema20_1m), float(tv_ema50_1m)
+            if price > ema20_v > ema50_v:
+                parts.append(("TV_EMA_1m", 0.14, f"Price > EMA20 > EMA50"))
+            elif price < ema20_v < ema50_v:
+                parts.append(("TV_EMA_1m", -0.14, f"Price < EMA20 < EMA50"))
+
+        if tv_macd_1m is not None and tv_macd_sig_1m is not None:
+            macd_diff = float(tv_macd_1m) - float(tv_macd_sig_1m)
+            if macd_diff > 0:
+                parts.append(("TV_MACD_1m", 0.10, f"MACD Bullish ({macd_diff:+.4f})"))
+            elif macd_diff < 0:
+                parts.append(("TV_MACD_1m", -0.10, f"MACD Bearish ({macd_diff:+.4f})"))
+
         if tv_rec is not None:
+            tf_note = f"1m:{float(tv_rec_1m):+.2f}/5m:{float(tv_rec_5m):+.2f}" if (tv_rec_1m is not None and tv_rec_5m is not None) else f"{tv_rec:+.2f}"
             if tv_rec > 0.05:
                 side = "LONG"
-                tv_label = "STRONG_BUY" if tv_rec >= 0.5 else "BUY" if tv_rec >= 0.1 else "BULLISH_SCAN"
-                parts.insert(0, ("TRADINGVIEW", round(max(0.12, abs(tv_rec) * 0.40), 2), f"{tv_label} ({tv_rec:+.2f})"))
+                tv_label = "STRONG_BUY" if tv_rec >= 0.45 else "BUY" if tv_rec >= 0.08 else "BULLISH_SCAN"
+                parts.insert(0, ("TRADINGVIEW", round(max(0.14, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
             elif tv_rec < -0.05:
                 side = "SHORT"
-                tv_label = "STRONG_SELL" if tv_rec <= -0.5 else "SELL" if tv_rec <= -0.1 else "BEARISH_SCAN"
-                parts.insert(0, ("TRADINGVIEW", round(max(0.12, abs(tv_rec) * 0.40), 2), f"{tv_label} ({tv_rec:+.2f})"))
+                tv_label = "STRONG_SELL" if tv_rec <= -0.45 else "SELL" if tv_rec <= -0.08 else "BEARISH_SCAN"
+                parts.insert(0, ("TRADINGVIEW", round(max(0.14, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
             else:
                 # Neutral / Inconclusive TradingView consensus - Momentum or 24h Trend confirmation
                 if slope_z > 0.05 and r14 >= 38 and r14 <= 75 and change >= -1.0:
@@ -899,6 +947,15 @@ class Bot:
         ob_bullish = bool(ob and ob.get("found") and ob.get("bias") == "LONG")
 
         if side == "SHORT":
+            # TradingView 1m/5m Chart Protection: Never open SHORT if 1m or 5m TradingView chart is bullish (BUY)
+            if tv_rec_1m is not None and float(tv_rec_1m) > 0.05:
+                return None
+            if tv_rec_5m is not None and float(tv_rec_5m) > 0.08:
+                return None
+            if tv_ma_1m is not None and float(tv_ma_1m) > 0.15:
+                return None
+            if tv_ema20_1m and tv_ema50_1m and price > float(tv_ema20_1m) > float(tv_ema50_1m):
+                return None
             # Anti-green-bounce veto: block SHORT entries when live 1m candles or micro-ticks are bouncing upward
             if micro["last_3_green"]:
                 return None
@@ -921,7 +978,7 @@ class Bot:
             if cat == "CRYPTO" and not (slope_z < -0.02 or micro["recent_tick_pct"] < -0.02 or micro["last_body_pct"] < -0.02 or sq_mom < 0 or ob_bearish):
                 return None
 
-            directional_tags = {"TREND", "24H", "1m CANDLES", "ORDER BLOCK"}
+            directional_tags = {"TREND", "24H", "1m CANDLES", "ORDER BLOCK", "TV_EMA_1m", "TV_MACD_1m"}
             if slope_z <= -0.15:
                 directional_tags.add("RANGE")
             score = 0.0
@@ -940,6 +997,15 @@ class Bot:
                 score += 0.08
                 parts.append(("BEAR_IMPULSE", 0.08, f"Breakdown Velocity ({change:+.2f}%)"))
         else:
+            # TradingView 1m/5m Chart Protection: Never open LONG if 1m or 5m TradingView chart is bearish (SELL)
+            if tv_rec_1m is not None and float(tv_rec_1m) < -0.05:
+                return None
+            if tv_rec_5m is not None and float(tv_rec_5m) < -0.08:
+                return None
+            if tv_ma_1m is not None and float(tv_ma_1m) < -0.15:
+                return None
+            if tv_ema20_1m and tv_ema50_1m and price < float(tv_ema20_1m) < float(tv_ema50_1m):
+                return None
             # Anti-red-waterfall veto: block LONG entries when live 1m candles or micro-ticks are dropping sharply
             if micro["last_3_red"]:
                 return None
@@ -1019,8 +1085,10 @@ class Bot:
                 "side": side, "score": round(score, 4),
                 "confidence": confidence, "reason": reason, "price": price,
                 "target_pct": tp, "stop_pct": sl, "vol_pct": round(day_range_pct, 3),
-                "tick_vol": round(tick_vol, 4), "rsi": round(row.get("tv_rsi") or r14, 1),
+                "tick_vol": round(tick_vol, 4), "rsi": round(r14, 1),
                 "tv_signal": tv_label, "tv_recommend": tv_rec, "tv_ma": tv_ma,
+                "tv_rec_1m": tv_rec_1m, "tv_rec_5m": tv_rec_5m,
+                "tv_ma_1m": tv_ma_1m, "tv_ma_5m": tv_ma_5m,
                 "slope_z": round(slope_z, 4),
                 "feed": "TRADINGVIEW_LIVE",
                 "order_block": ob,
@@ -1472,6 +1540,15 @@ class Bot:
             min_take_profit = max(0.005, round(pos_margin * 0.03, 4))
             target_pct = float(p.get("target_pct") or 0.50)
             sl = float(p.get("stop_pct") or 0.85)
+            pos_mode_up = str(p.get("mode") or "SCALP").upper()
+            if pos_mode_up in SCALP_MODE_PRESETS and target_pct >= 2.0:
+                target_pct, sl = resolve_scalp_targets(pos_mode_up, leverage=pos_lev)
+                p["target_pct"] = target_pct
+                p["stop_pct"] = sl
+                try:
+                    write("UPDATE positions SET target_pct=?, stop_pct=? WHERE id=?", (target_pct, sl, p["id"]))
+                except Exception:
+                    pass
 
             exit_reason = self._evaluate_bot_exit_signal(p, price, current_pnl, move_pct, peak_cash, peak_pct, time_held)
             if exit_reason:
@@ -1905,15 +1982,32 @@ class Bot:
 
                 def _lev_tier(sym_name):
                     s_up = str(sym_name or "").upper()
+                    try:
+                        import coindcx_client
+                        max_l = int(coindcx_client.get_coindcx_max_leverage(s_up) or 0)
+                        if max_l >= 20:
+                            return 0
+                        if max_l >= 10:
+                            return 1
+                    except Exception:
+                        pass
                     if s_up in tier1_lev_pairs:
                         return 0
                     if s_up in tier2_lev_pairs:
                         return 1
                     return 2
 
+                def _tv_verified_tier(cand_obj):
+                    # Prioritize candidates backed by live TradingView BUY/SELL ratings over neutral fallbacks
+                    tv_r = cand_obj.get("tv_recommend")
+                    if tv_r is not None and abs(float(tv_r)) >= 0.08:
+                        return 0
+                    return 1
+
                 if bot_dir == "SHORT":
                     pool = [x for x in pool if x.get("side") in ("SHORT", "SELL")]
                     pool.sort(key=lambda x: (
+                        _tv_verified_tier(x),
                         _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0),
                         -float(x.get("score") or 0.0)
@@ -1921,12 +2015,14 @@ class Bot:
                 elif bot_dir == "LONG":
                     pool = [x for x in pool if x.get("side") in ("LONG", "BUY")]
                     pool.sort(key=lambda x: (
+                        _tv_verified_tier(x),
                         _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0),
                         -float(x.get("score") or 0.0)
                     ))
                 else:
                     pool.sort(key=lambda x: (
+                        _tv_verified_tier(x),
                         _lev_tier(x.get("symbol")),
                         -x.get("confidence", 0.0),
                         -float(x.get("score") or 0.0)
@@ -1974,6 +2070,30 @@ class Bot:
                         continue
                     if bot_dir == "LONG" and cand.get("side") not in ("BUY", "LONG"):
                         continue
+
+                    # TRADINGVIEW -> COINDCX EXECUTION ALIGNMENT GATE:
+                    # Ensure CoinDCX live BUY/SELL orders strictly obey live TradingView chart analysis
+                    if is_coindcx_live:
+                        cand_q = self.feed.quote(cand["symbol"]) or {}
+                        tv_r = cand.get("tv_recommend") if cand.get("tv_recommend") is not None else cand_q.get("tv_recommend")
+                        tv_r1m = cand.get("tv_rec_1m") if cand.get("tv_rec_1m") is not None else cand_q.get("tv_rec_1m")
+                        tv_r5m = cand.get("tv_rec_5m") if cand.get("tv_rec_5m") is not None else cand_q.get("tv_rec_5m")
+                        c_side = str(cand.get("side") or "").upper()
+                        if tv_r is not None:
+                            if c_side in ("LONG", "BUY") and float(tv_r) < 0.05:
+                                continue
+                            if c_side in ("SHORT", "SELL") and float(tv_r) > -0.05:
+                                continue
+                        if tv_r1m is not None:
+                            if c_side in ("LONG", "BUY") and float(tv_r1m) < -0.05:
+                                continue
+                            if c_side in ("SHORT", "SELL") and float(tv_r1m) > 0.05:
+                                continue
+                        if tv_r5m is not None:
+                            if c_side in ("LONG", "BUY") and float(tv_r5m) < -0.08:
+                                continue
+                            if c_side in ("SHORT", "SELL") and float(tv_r5m) > 0.08:
+                                continue
                     picked = cand
                     break
                 if picked:
@@ -2006,9 +2126,12 @@ class Bot:
             if q_row:
                 change = q_row.get("change_pct") or 0.0
                 tv_indicators = {
-                    "tv_rsi": q_row.get("tv_rsi"),
+                    "tv_rsi": q_row.get("tv_rsi_1m") or q_row.get("tv_rsi"),
                     "tv_recommend": q_row.get("tv_recommend"),
-                    "tv_ma": q_row.get("tv_ma")
+                    "tv_ma": q_row.get("tv_ma"),
+                    "tv_rec_1m": q_row.get("tv_rec_1m"),
+                    "tv_rec_5m": q_row.get("tv_rec_5m"),
+                    "tv_ma_1m": q_row.get("tv_ma_1m"),
                 }
             slope_z = picked.get("slope_z") if picked.get("slope_z") is not None else (picked.get("score") or 0.0)
 

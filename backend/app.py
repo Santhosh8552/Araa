@@ -1960,6 +1960,16 @@ def bot_config():
                     bot.close(p, float(p.get("current_price") or p.get("entry_price") or 1.0), "POSITION_LIMIT_REDUCED")
                 except Exception:
                     pass
+            kept_opens = kept_opens[:max_pos]
+        # Sync open positions' TP/SL to the active mode/config so legacy +3.0% positions tighten immediately
+        for p in kept_opens:
+            try:
+                p_lev = float(p.get("leverage") or leverage or 20.0)
+                eff_tp, eff_sl = resolve_scalp_targets(mode, leverage=p_lev, tp_override=tp_pct, sl_override=sl_pct)
+                write("UPDATE positions SET target_pct=?, stop_pct=?, mode=? WHERE id=?",
+                      (round(eff_tp, 3), round(eff_sl, 3), mode, p["id"]))
+            except Exception:
+                pass
 
     now = time.time()
     # No warmup delay — continuous slot refill starts immediately when bot is turned ON
@@ -6806,6 +6816,12 @@ def boot_data():
     db.init_schema()
     write("UPDATE instruments SET enabled=1")
     ensure_world_universe()
+    if not query_one("SELECT symbol FROM instruments WHERE category='CRYPTO' LIMIT 1"):
+        try:
+            feed.load_instruments(persist=persist_instruments)
+        except Exception:
+            persist_instruments([(f"{b}USDT", b, "USDT", n, "CRYPTO", "BINANCE")
+                                 for b, n, _ in FALLBACK_PAIRS])
     write("UPDATE instruments SET enabled=1")
     rows = query("SELECT symbol, category, country, currency, tv_code, ref_price, display_name "
                  "FROM instruments WHERE enabled=1")
@@ -6831,8 +6847,18 @@ def boot_data():
             if count == 0 and not query_one("SELECT symbol FROM instruments WHERE category='CRYPTO'"):
                 persist_instruments([(f"{b}USDT", b, "USDT", n, "CRYPTO", "BINANCE")
                                      for b, n, _ in FALLBACK_PAIRS])
+            write("UPDATE instruments SET enabled=1")
+            all_rows = query("SELECT symbol, category, country, currency, tv_code, ref_price, display_name "
+                             "FROM instruments WHERE enabled=1")
+            register_dynamic(all_rows)
+            feed.prime(all_rows)
             feed.refresh_forex()
             feed.refresh_crypto()
+            try:
+                bot.scan()
+                bot.analyse_universe("SCALP")
+            except Exception:
+                pass
         except Exception as e:
             print(f"[BOOT] Background feed prime notice: {e}", flush=True)
 
