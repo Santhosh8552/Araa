@@ -112,12 +112,11 @@ class TestScalpingEngine(unittest.TestCase):
                 self.assertIsNotNone(r_lock)
                 self.assertIn("PROFIT_SHIELD_LOCK_+0.10", r_lock)
 
-            # 4) -$0.03 tight loss-cut closes position in both Paper & Real Mode
-            r_sl = self.bot._evaluate_bot_exit_signal(
-                pos, price=1850.0, raw_pnl=-0.035, move_pct=-0.03, peak_cash=0.01, peak_pct=0.01, time_held=3.0
+            # 4) Real Mode stays Profit-Only (never closes red positions on noise); Paper uses technical SL
+            r_red = self.bot._evaluate_bot_exit_signal(
+                pos, price=1875.0, raw_pnl=-0.10, move_pct=-0.08, peak_cash=0.01, peak_pct=0.01, time_held=3.0
             )
-            self.assertIsNotNone(r_sl)
-            self.assertIn("SCALP_MAX_LOSS_CUT_-0.03", r_sl)
+            self.assertIsNone(r_red)
 
     def test_bot_config_toggle_preserves_saved_scalp_tp_sl(self):
         email = f"scalptest_{int(time.time() * 1000)}@araabot.in"

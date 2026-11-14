@@ -1320,10 +1320,6 @@ class Bot:
             if pnl <= lock_floor and pnl > 0:
                 return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0.6: -$0.03 Tight Loss-Cut Stop (Both Paper & Real Mode)
-        if pnl <= -0.03 and time_held >= 1.5:
-            return f"SCALP_MAX_LOSS_CUT_-0.03 (-${abs(pnl):.2f} | {roi_pct:.1f}% ROI)"
-
         # RULE 1: Immediate Target-Profit Execution when percentage target hit
         min_hold_tp = 2.0 if is_live else 0.0
         if move_pct >= tp_pct and pnl >= min_net_profit and time_held >= min_hold_tp:
@@ -2361,7 +2357,7 @@ class Bot:
             tv_sig_str = (
                 f"⚡ TV[1s:{tv_1s_d}|1m:{tv_1m_val:+.2f}|5m:{tv_5m_val:+.2f}] → "
                 f"SMC+DNA[{smc_stat} {smc_sim:.0f}%] → {exec_route} → "
-                f"SCALP[+$1.00 TP | +$0.10 Lock | -$0.03 SL]"
+                f"SCALP[+$1.00 TP | +$0.90 Close | +$0.10 Lock]"
             )
             pred["rationale"] = f"{tv_sig_str} | {pred.get('rationale', '')}"
             picked["reason"] = f"{tv_sig_str} · Araa AI [{pred['win_probability']}% win | R:R {pred['risk_reward']}:1]"

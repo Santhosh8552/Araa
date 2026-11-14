@@ -5513,8 +5513,6 @@ def ai_predictions():
             lock_state = "LOCKED +$0.15 FLOOR"
         elif peak_v >= 0.10:
             lock_state = "PROFIT LOCK ARMED (+$0.10+)"
-        elif pnl_v <= -0.02:
-            lock_state = "WATCH SL (-$0.03 CUT)"
         else:
             lock_state = "SCANNING (1s/1m/5m)"
         active_scalps.append({
@@ -5549,7 +5547,6 @@ def ai_predictions():
                 "target_usd": 1.00,
                 "scalp_auto_close_usd": 0.90,
                 "profit_lock_arm_usd": 0.10,
-                "max_loss_cut_usd": -0.03,
             },
             "active_positions": active_scalps,
             "live_signals": live_signals,
