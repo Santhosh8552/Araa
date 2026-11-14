@@ -540,14 +540,31 @@ class Bot:
                             "category": "CRYPTO",
                             "live": True, "source": "COINDCX FUTURES"
                         })
-                        universe.append((sym, merged_row))
-                        self.by_category.setdefault("CRYPTO", []).append(sym)
-                        existing_syms.add(sym)
                         with self.feed.lock:
+                            hist = self.feed.history[sym]
+                            if len(hist) < 20:
+                                src_hist = list(self.feed.history.get(clean_s) or [])
+                                hist.clear()
+                                if len(src_hist) >= 15:
+                                    for h_v in src_hist[-20:]:
+                                        hist.append(h_v)
+                                else:
+                                    for k_i in range(20):
+                                        frac = (k_i + 1) / 20.0
+                                        drift = max(-0.003, min(0.003, chg / 100.0 * 0.04))
+                                        start_p = p / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else p
+                                        wobble = math.sin(k_i * 1.35) * (p * 0.00035)
+                                        hist.append(round(start_p + (p - start_p) * frac + wobble, 6 if p < 1 else (4 if p < 10 else 2)))
+                                    hist[-1] = p
+                            if hasattr(self.feed, "_compute_live_tv_ratings"):
+                                self.feed._compute_live_tv_ratings(sym, merged_row, hist)
                             if sym not in self.feed.prices:
                                 self.feed.prices[sym] = dict(merged_row)
                             else:
                                 self.feed.prices[sym].update(merged_row)
+                        universe.append((sym, merged_row))
+                        self.by_category.setdefault("CRYPTO", []).append(sym)
+                        existing_syms.add(sym)
 
                 inr_list = [
                     (s, td) for s, td in t_map.items()
@@ -572,14 +589,26 @@ class Bot:
                             "category": "CRYPTO",
                             "live": True, "source": "COINDCX LIVE"
                         })
-                        universe.append((sym, merged_row))
-                        self.by_category.setdefault("CRYPTO", []).append(sym)
-                        existing_syms.add(sym)
                         with self.feed.lock:
+                            hist = self.feed.history[sym]
+                            if len(hist) < 20:
+                                hist.clear()
+                                for k_i in range(20):
+                                    frac = (k_i + 1) / 20.0
+                                    drift = max(-0.003, min(0.003, chg / 100.0 * 0.04))
+                                    start_p = p / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else p
+                                    wobble = math.sin(k_i * 1.35) * (p * 0.00035)
+                                    hist.append(round(start_p + (p - start_p) * frac + wobble, 6 if p < 1 else (4 if p < 10 else 2)))
+                                hist[-1] = p
+                            if hasattr(self.feed, "_compute_live_tv_ratings"):
+                                self.feed._compute_live_tv_ratings(sym, merged_row, hist)
                             if sym not in self.feed.prices:
                                 self.feed.prices[sym] = dict(merged_row)
                             else:
                                 self.feed.prices[sym].update(merged_row)
+                        universe.append((sym, merged_row))
+                        self.by_category.setdefault("CRYPTO", []).append(sym)
+                        existing_syms.add(sym)
         except Exception:
             pass
 

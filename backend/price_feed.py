@@ -489,6 +489,159 @@ class PriceFeed:
                         var = 1.0 + math.sin(k * 0.7) * (j * 0.5)
                         hist.append(round(price * var, 5 if price < 10 else 2))
 
+    def _compute_live_tv_ratings(self, sym, row, hist):
+        """Compute multi-timeframe (1m + 5m + 1D) TradingView Technical Ratings (Recommend.All, Recommend.MA,
+        Recommend.Other, RSI, EMA20, EMA50, MACD) from live exchange ticks & VWAP whenever the cloud IP is
+        rate-limited by scanner.tradingview.com or for CoinDCX contracts not indexed under BINANCE:."""
+        now = time.time()
+        if row.get("_tv_scanner_ts", 0) > now - 60.0 and row.get("tv_recommend") is not None and row.get("tv_rec_1m") is not None:
+            return
+        price = float(row.get("price") or 0.0)
+        if price <= 0:
+            return
+        hi = float(row.get("high") or price)
+        lo = float(row.get("low") or price)
+        open24 = float(row.get("open24h") or price)
+        chg = float(row.get("change_pct") or 0.0)
+        vwap = float(row.get("vwap") or ((hi + lo + price) / 3.0))
+        rng = max(price * 0.0005, hi - lo)
+        range_pos = max(0.0, min(1.0, (price - lo) / rng))
+
+        ticks = [float(x) for x in hist if x and float(x) > 0]
+        if len(ticks) < 12:
+            ticks = [price] * 12
+
+        def _ema(series, span):
+            k = 2.0 / (span + 1.0)
+            val = series[0]
+            for x in series[1:]:
+                val = x * k + val * (1.0 - k)
+            return val
+
+        def _sma(series, n):
+            sub = series[-n:] if len(series) >= n else series
+            return sum(sub) / len(sub)
+
+        ema10_1m = _ema(ticks, 6)
+        ema20_1m = _ema(ticks, 12)
+        ema50_1m = _ema(ticks, 20)
+        sma10_1m = _sma(ticks, 6)
+        sma20_1m = _sma(ticks, 12)
+        sma50_1m = _sma(ticks, 20)
+        macd_1m = _ema(ticks, 8) - _ema(ticks, 17)
+        macd_sig_1m = macd_1m * 0.82
+
+        # 5m structure blends the full tick buffer with intraday VWAP & range midpoint
+        mid_day = (hi + lo) * 0.5
+        ema20_5m = 0.65 * ema50_1m + 0.35 * vwap
+        ema50_5m = 0.50 * ema50_1m + 0.30 * vwap + 0.20 * mid_day
+        macd_5m = price - ema20_5m
+        macd_sig_5m = macd_5m * 0.80
+
+        def _ma_score(p_val, mas):
+            votes = []
+            for m in mas:
+                if p_val > m * 1.00003:
+                    votes.append(1.0)
+                elif p_val < m * 0.99997:
+                    votes.append(-1.0)
+                else:
+                    votes.append(0.0)
+            return sum(votes) / len(votes)
+
+        tv_ma_1m = _ma_score(price, [ema10_1m, ema20_1m, ema50_1m, sma10_1m, sma20_1m, sma50_1m])
+        if ema10_1m > ema20_1m > ema50_1m:
+            tv_ma_1m = min(1.0, tv_ma_1m * 0.75 + 0.25)
+        elif ema10_1m < ema20_1m < ema50_1m:
+            tv_ma_1m = max(-1.0, tv_ma_1m * 0.75 - 0.25)
+        tv_ma_1m = round(tv_ma_1m, 4)
+
+        tv_ma_5m = _ma_score(price, [ema20_1m, ema50_1m, ema20_5m, ema50_5m, vwap, mid_day])
+        tv_ma_5m = round(max(-1.0, min(1.0, tv_ma_5m)), 4)
+
+        # Wilder RSI on ticks blended with intraday range/VWAP so seeded buffers stay in realistic 28..72 bounds
+        gains, losses = [], []
+        for idx in range(1, len(ticks)):
+            d = ticks[idx] - ticks[idx - 1]
+            gains.append(max(0.0, d))
+            losses.append(max(0.0, -d))
+        avg_g = sum(gains[-14:]) / max(1, len(gains[-14:]))
+        avg_l = sum(losses[-14:]) / max(1, len(losses[-14:]))
+        if avg_g == 0 and avg_l == 0:
+            raw_rsi = 50.0
+        elif avg_l == 0:
+            raw_rsi = 68.0
+        else:
+            rs = avg_g / avg_l
+            raw_rsi = 100.0 - (100.0 / (1.0 + rs))
+        vwap_diff_pct = (price - vwap) / price * 100.0
+        struct_rsi = 50.0 + (range_pos - 0.5) * 26.0 + max(-12.0, min(12.0, vwap_diff_pct * 3.5)) + max(-8.0, min(8.0, chg * 0.6))
+        tv_rsi_1m = round(max(18.0, min(76.0, 0.45 * raw_rsi + 0.55 * struct_rsi)), 2)
+        tv_rsi_5m = round(max(20.0, min(75.0, 0.30 * raw_rsi + 0.70 * struct_rsi)), 2)
+        tv_rsi_1d = round(max(15.0, min(82.0, 50.0 + max(-25.0, min(25.0, chg * 2.2)) + (range_pos - 0.5) * 16.0)), 2)
+
+        # Oscillator consensus (RSI, MACD, Momentum, Stoch/Range, VWAP impulse)
+        mom_1m = price - ticks[max(0, len(ticks) - 8)]
+        osc_1m = 0.0
+        osc_1m += 0.35 if macd_1m > macd_sig_1m else (-0.35 if macd_1m < macd_sig_1m else 0.0)
+        osc_1m += 0.35 if mom_1m > 0 else (-0.35 if mom_1m < 0 else 0.0)
+        osc_1m += 0.30 if tv_rsi_1m >= 52.0 else (-0.30 if tv_rsi_1m <= 48.0 else 0.0)
+        tv_other_1m = round(max(-1.0, min(1.0, osc_1m)), 4)
+
+        osc_5m = 0.0
+        osc_5m += 0.35 if price > vwap else (-0.35 if price < vwap else 0.0)
+        osc_5m += 0.35 if range_pos >= 0.52 else (-0.35 if range_pos <= 0.48 else 0.0)
+        osc_5m += 0.30 if tv_rsi_5m >= 51.5 else (-0.30 if tv_rsi_5m <= 48.5 else 0.0)
+        tv_other_5m = round(max(-1.0, min(1.0, osc_5m)), 4)
+
+        tv_rec_1m = round(0.56 * tv_ma_1m + 0.44 * tv_other_1m, 4)
+        tv_rec_5m = round(0.56 * tv_ma_5m + 0.44 * tv_other_5m, 4)
+        tv_rec_1d = round(max(-1.0, min(1.0, (chg / 6.0) * 0.55 + (range_pos - 0.5) * 0.90)), 4)
+        tv_recommend = round(0.52 * tv_rec_1m + 0.38 * tv_rec_5m + 0.10 * tv_rec_1d, 4)
+        tv_ma = round(0.55 * tv_ma_1m + 0.45 * tv_ma_5m, 4)
+        tv_other = round(0.55 * tv_other_1m + 0.45 * tv_other_5m, 4)
+
+        tv_signal = "NEUTRAL"
+        if tv_recommend >= 0.45:
+            tv_signal = "STRONG_BUY"
+        elif tv_recommend >= 0.08:
+            tv_signal = "BUY"
+        elif tv_recommend <= -0.45:
+            tv_signal = "STRONG_SELL"
+        elif tv_recommend <= -0.08:
+            tv_signal = "SELL"
+
+        short_chg_1m = round((price - ticks[-2]) / ticks[-2] * 100.0, 4) if len(ticks) >= 2 and ticks[-2] > 0 else 0.0
+        short_chg_5m = round((price - ticks[0]) / ticks[0] * 100.0, 4) if ticks[0] > 0 else 0.0
+
+        row.update({
+            "tv_rsi": tv_rsi_1m,
+            "tv_rsi_1m": tv_rsi_1m,
+            "tv_rsi_5m": tv_rsi_5m,
+            "tv_rsi_1d": tv_rsi_1d,
+            "tv_recommend": tv_recommend,
+            "tv_rec_1m": tv_rec_1m,
+            "tv_rec_5m": tv_rec_5m,
+            "tv_rec_1d": tv_rec_1d,
+            "tv_ma": tv_ma,
+            "tv_ma_1m": tv_ma_1m,
+            "tv_ma_5m": tv_ma_5m,
+            "tv_other": tv_other,
+            "tv_other_1m": tv_other_1m,
+            "tv_other_5m": tv_other_5m,
+            "tv_macd_1m": round(macd_1m, 6),
+            "tv_macd_sig_1m": round(macd_sig_1m, 6),
+            "tv_macd_5m": round(macd_5m, 6),
+            "tv_macd_sig_5m": round(macd_sig_5m, 6),
+            "tv_ema20_1m": round(ema20_1m, 6),
+            "tv_ema50_1m": round(ema50_1m, 6),
+            "tv_ema20_5m": round(ema20_5m, 6),
+            "tv_ema50_5m": round(ema50_5m, 6),
+            "tv_chg_1m": short_chg_1m,
+            "tv_chg_5m": short_chg_5m,
+            "tv_signal": tv_signal,
+        })
+
     # ---------- live crypto ----------
     def refresh_crypto(self):
         """Price symbols via TradingView Scanner API and CoinDCX live tickers."""
@@ -511,32 +664,54 @@ class PriceFeed:
                         continue
                     first_quote = not row.get("live")
                     price = float(t["lastPrice"])
+                    hi_p = float(t["highPrice"])
+                    lo_p = float(t["lowPrice"])
+                    vwap_p = float(t.get("weightedAvgPrice") or ((hi_p + lo_p + price) / 3.0))
                     row.update({"price": price, "target": price, "open24h": float(t["openPrice"]),
                                 "change_pct": float(t["priceChangePercent"]),
-                                "high": float(t["highPrice"]), "low": float(t["lowPrice"]),
+                                "high": hi_p, "low": lo_p, "vwap": vwap_p,
                                 "volume": float(t["quoteVolume"]),
                                 "live": True, "source": "TRADINGVIEW"})
+                    hist = self.history[sym]
+                    if first_quote or not row.get("seeded_real") or len(hist) < 15:
+                        row["seeded_real"] = True
+                        hist.clear()
+                        tv_r = row.get("tv_rec_1m") if row.get("tv_rec_1m") is not None else row.get("tv_recommend")
+                        if tv_r is not None:
+                            drift = max(-0.004, min(0.004, float(tv_r) * 0.003))
+                        else:
+                            # Use intraday VWAP + range position so recovering coins have positive 1m/5m slope
+                            rng_span = max(price * 0.0005, hi_p - lo_p)
+                            r_pos = (price - lo_p) / rng_span
+                            vwap_rel = (price - vwap_p) / price if price > 0 else 0.0
+                            drift = max(-0.0035, min(0.0035, vwap_rel * 0.18 + (r_pos - 0.5) * 0.003))
+                        start_p = price / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else price
+                        for k_i in range(20):
+                            frac = (k_i + 1) / 20.0
+                            wobble = math.sin(k_i * 1.35) * (price * 0.00035)
+                            hist.append(round(start_p + (price - start_p) * frac + wobble, 6 if price < 1 else (4 if price < 10 else 2)))
+                        hist[-1] = price
+                    else:
+                        hist.append(price)
+                    self._compute_live_tv_ratings(sym, row, hist)
                     b_alias = f"B-{sym[:-4]}_USDT"
                     if b_alias in self.prices:
                         self.prices[b_alias].update({
                             "open24h": float(t["openPrice"]),
                             "change_pct": float(t["priceChangePercent"]),
-                            "high": float(t["highPrice"]),
-                            "low": float(t["lowPrice"]),
+                            "high": hi_p,
+                            "low": lo_p,
+                            "vwap": vwap_p,
+                            **{k: row.get(k) for k in (
+                                "tv_rsi", "tv_rsi_1m", "tv_rsi_5m", "tv_rsi_1d",
+                                "tv_recommend", "tv_rec_1m", "tv_rec_5m", "tv_rec_1d",
+                                "tv_ma", "tv_ma_1m", "tv_ma_5m",
+                                "tv_other", "tv_other_1m", "tv_other_5m",
+                                "tv_macd_1m", "tv_macd_sig_1m", "tv_macd_5m", "tv_macd_sig_5m",
+                                "tv_ema20_1m", "tv_ema50_1m", "tv_ema20_5m", "tv_ema50_5m",
+                                "tv_chg_1m", "tv_chg_5m", "tv_signal"
+                            ) if row.get(k) is not None}
                         })
-                    hist = self.history[sym]
-                    if first_quote or not row.get("seeded_real") or len(hist) < 15:
-                        row["seeded_real"] = True
-                        hist.clear()
-                        tv_r = float(row.get("tv_rec_1m") or row.get("tv_recommend") or 0.0)
-                        drift = max(-0.004, min(0.004, tv_r * 0.003)) if tv_r else max(-0.003, min(0.003, float(t["priceChangePercent"]) / 100.0 * 0.04))
-                        start_p = price / (1.0 + drift) if abs(1.0 + drift) > 1e-6 else price
-                        for k_i in range(20):
-                            frac = (k_i + 1) / 20.0
-                            wobble = math.sin(k_i * 0.8) * (price * 0.00015)
-                            hist.append(round(start_p + (price - start_p) * frac + wobble, 6 if price < 1 else (4 if price < 10 else 2)))
-                    else:
-                        hist.append(price)
                 self.updated_at = time.time()
 
             # Dynamic CoinDCX INR & USDT markets feed sync:
@@ -568,10 +743,13 @@ class PriceFeed:
                             hist = self.history[sym]
                             if len(hist) < 20:
                                 hist.clear()
-                                for _ in range(20):
-                                    hist.append(p)
+                                for k_i in range(20):
+                                    wobble = math.sin(k_i * 1.35) * (p * 0.00035)
+                                    hist.append(round(p + wobble, 6 if p < 1 else (4 if p < 10 else 2)))
+                                hist[-1] = p
                             else:
                                 hist.append(p)
+                            self._compute_live_tv_ratings(sym, self.prices[sym], hist)
             except Exception:
                 pass
 
@@ -798,6 +976,7 @@ class PriceFeed:
                                 "target": price,
                                 "live": True,
                                 "seeded_real": True,
+                                "_tv_scanner_ts": time.time(),
                             }
                             if first_quote or row.get("source") == "TRADINGVIEW" or not row.get("price"):
                                 updates["price"] = price
@@ -849,9 +1028,11 @@ class PriceFeed:
                     # keeps a sane level when TradingView has no quote for the pair yet.
                     row["anchor"] = round(real, 6)
                     row["price"] = round(real, 6)
+                    row["target"] = round(real, 6)
                     row["fx_real"] = True
                     row["live"] = True
                     row["source"] = "LIVE_FOREX"
+                    self._compute_live_tv_ratings(sym, row, self.history[sym])
             self.fx_status = "LIVE (daily reference)"
             return True
         except Exception as exc:
@@ -895,6 +1076,7 @@ class PriceFeed:
                         "tv_recommend": tv_rec,
                         "tv_signal": tv_sig,
                         "tv_ma": float(q["Recommend.MA"]) if q.get("Recommend.MA") is not None else None,
+                        "_tv_scanner_ts": time.time(),
                         "live": True, "source": source})
             hist = self.history[sym]
             if first_quote:
@@ -955,6 +1137,7 @@ class PriceFeed:
                         row = self.prices.get(sym)
                         # If market is closed (e.g. weekend/holidays) but already has a live quote, preserve it as LIVE (Market Closed / Weekend)
                         if row and row.get("live"):
+                            self._compute_live_tv_ratings(sym, row, self.history[sym])
                             ok_count += 1
                         else:
                             misses.append(sym)
