@@ -952,33 +952,23 @@ class Bot:
 
         if tv_rec is not None:
             tf_note = f"1m:{float(tv_rec_1m):+.2f}/5m:{float(tv_rec_5m):+.2f}" if (tv_rec_1m is not None and tv_rec_5m is not None) else f"{tv_rec:+.2f}"
-            if tv_rec > 0.05:
+            if tv_rec >= 0.08:
                 side = "LONG"
-                tv_label = "STRONG_BUY" if tv_rec >= 0.45 else "BUY" if tv_rec >= 0.08 else "BULLISH_SCAN"
-                parts.insert(0, ("TRADINGVIEW", round(max(0.14, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
-            elif tv_rec < -0.05:
+                tv_label = "STRONG_BUY" if tv_rec >= 0.45 else "BUY"
+                parts.insert(0, ("TRADINGVIEW", round(max(0.16, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
+            elif tv_rec <= -0.08:
                 side = "SHORT"
-                tv_label = "STRONG_SELL" if tv_rec <= -0.45 else "SELL" if tv_rec <= -0.08 else "BEARISH_SCAN"
-                parts.insert(0, ("TRADINGVIEW", round(max(0.14, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
+                tv_label = "STRONG_SELL" if tv_rec <= -0.45 else "SELL"
+                parts.insert(0, ("TRADINGVIEW", round(max(0.16, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
             else:
-                # Neutral TradingView consensus: ONLY allow trade if 1m slope_z is decisively trending (never guess from 24h change!)
-                if slope_z > 0.06 and r14 >= 40 and r14 <= 74:
-                    side = "LONG"
-                    tv_label = "BULLISH_CONTINUATION"
-                    parts.insert(0, ("MOMENTUM_SCAN", 0.20, f"BULLISH CONTINUATION (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-                elif slope_z < -0.06 and r14 <= 60 and r14 >= 26:
-                    side = "SHORT"
-                    tv_label = "BEARISH_BREAKDOWN"
-                    parts.insert(0, ("MOMENTUM_SCAN", 0.20, f"BEARISH BREAKDOWN (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-                else:
-                    return None
+                return None
         else:
             # No TradingView rating yet: require decisive 1m slope_z momentum (never guess from 24h change!)
-            if slope_z > 0.06 and r14 >= 40 and r14 <= 74:
+            if slope_z > 0.15 and r14 >= 45 and r14 <= 70:
                 side = "LONG"
                 tv_label = "BULLISH_MOMENTUM"
                 parts.insert(0, ("MOMENTUM_SCAN", 0.22, f"BULLISH MOMENTUM (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-            elif slope_z < -0.06 and r14 <= 60 and r14 >= 26:
+            elif slope_z < -0.15 and r14 <= 55 and r14 >= 30:
                 side = "SHORT"
                 tv_label = "BEARISH_MOMENTUM"
                 parts.insert(0, ("MOMENTUM_SCAN", 0.22, f"BEARISH BREAKDOWN (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
@@ -992,33 +982,34 @@ class Bot:
 
         if side == "SHORT":
             # TradingView 1m/5m Chart Protection: Never open SHORT if 1m or 5m TradingView chart is bullish (BUY)
-            if tv_rec_1m is not None and float(tv_rec_1m) > 0.02:
+            if tv_rec_1m is not None and float(tv_rec_1m) > -0.02:
                 return None
-            if tv_rec_5m is not None and float(tv_rec_5m) > 0.05:
+            if tv_rec_5m is not None and float(tv_rec_5m) > 0.02:
                 return None
-            if tv_ma_1m is not None and float(tv_ma_1m) > 0.05:
+            if tv_ma_1m is not None and float(tv_ma_1m) > 0.02:
                 return None
             if tv_ema20_1m and tv_ema50_1m and price > float(tv_ema20_1m) > float(tv_ema50_1m):
                 return None
-            # Strict 1m Chart & Tick Direction Gate: Never open SHORT if 1m slope or recent ticks are rising (▲)
-            if slope_z > 0.04 or (slope_z >= 0.0 and (tv_rec is None or float(tv_rec) > -0.10)):
+            # Strict 1s & 1m Chart Direction Gate: Never open SHORT if 1s ticks or 1m slope are bouncing UP (▲)
+            if slope_z >= -0.02:
                 return None
-            if micro["recent_tick_pct"] > 0.025 or micro["last_body_pct"] > 0.035:
+            if micro["above_fast"] or micro["recent_tick_pct"] > 0.005 or micro["micro_step_ups"] >= 2:
                 return None
-            # Anti-green-bounce veto: block SHORT entries when live 1m candles or micro-ticks are bouncing upward
-            if micro["last_3_green"] or (micro["last_2_green"] and micro["above_fast"] and micro["recent_tick_pct"] > 0.008):
+            if micro["last_body_pct"] > 0.015:
                 return None
-            if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_bouncing_up") and not (slope_z < -0.25 and micro["below_fast"] and micro["recent_tick_pct"] < -0.05):
+            if micro["last_3_green"] or micro["last_2_green"]:
                 return None
-            if change <= -4.0 and range_pos <= 0.25 and (micro["recent_tick_pct"] > 0.015 or slope_z > 0.0):
+            if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_bouncing_up") and not (slope_z < -0.35 and micro["below_fast"] and micro["recent_tick_pct"] < -0.05):
                 return None
-            if cat == "CRYPTO" and r14 >= 70.0 and slope_z > -0.10:
+            if change <= -8.0 and range_pos <= 0.15:
+                return None
+            if cat == "CRYPTO" and r14 >= 68.0 and slope_z > -0.15:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
                 recent_ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                if recent_ups >= 0.625 and not ob_bearish and slope_z > -0.35:
+                if recent_ups >= 0.50 and not ob_bearish:
                     return None
-            if cat == "CRYPTO" and not (slope_z < -0.02 or (tv_rec is not None and float(tv_rec) <= -0.08) or micro["recent_tick_pct"] < -0.01 or micro["last_body_pct"] < -0.01 or sq_mom < 0 or ob_bearish):
+            if cat == "CRYPTO" and not (slope_z < -0.05 or micro["recent_tick_pct"] < -0.01 or micro["last_body_pct"] < -0.01 or sq_mom < 0 or ob_bearish):
                 return None
 
             directional_tags = {"TREND", "24H", "1m CANDLES", "ORDER BLOCK", "TV_EMA_1m", "TV_MACD_1m"}
@@ -1041,33 +1032,34 @@ class Bot:
                 parts.append(("BEAR_IMPULSE", 0.08, f"Breakdown Velocity ({change:+.2f}%)"))
         else:
             # TradingView 1m/5m Chart Protection: Never open LONG if 1m or 5m TradingView chart is bearish (SELL)
-            if tv_rec_1m is not None and float(tv_rec_1m) < -0.02:
+            if tv_rec_1m is not None and float(tv_rec_1m) < 0.02:
                 return None
-            if tv_rec_5m is not None and float(tv_rec_5m) < -0.05:
+            if tv_rec_5m is not None and float(tv_rec_5m) < -0.02:
                 return None
-            if tv_ma_1m is not None and float(tv_ma_1m) < -0.05:
+            if tv_ma_1m is not None and float(tv_ma_1m) < -0.02:
                 return None
             if tv_ema20_1m and tv_ema50_1m and price < float(tv_ema20_1m) < float(tv_ema50_1m):
                 return None
-            # Strict 1m Chart & Tick Direction Gate: Never open LONG if 1m slope or recent ticks are falling (▼)
-            if slope_z < -0.04 or (slope_z <= 0.0 and (tv_rec is None or float(tv_rec) < 0.10)):
+            # Strict 1s & 1m Chart Direction Gate: Never open LONG if 1s ticks or 1m slope are dropping DOWN (▼)
+            if slope_z <= 0.02:
                 return None
-            if micro["recent_tick_pct"] < -0.025 or micro["last_body_pct"] < -0.035:
+            if micro["below_fast"] or micro["recent_tick_pct"] < -0.005 or micro["micro_step_downs"] >= 2:
                 return None
-            # Anti-red-waterfall veto: block LONG entries when live 1m candles or micro-ticks are dropping sharply
-            if micro["last_3_red"] or (micro["last_2_red"] and micro["below_fast"] and micro["recent_tick_pct"] < -0.008):
+            if micro["last_body_pct"] < -0.015:
                 return None
-            if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_dumping_down") and not (slope_z > 0.25 and micro["above_fast"] and micro["recent_tick_pct"] > 0.05):
+            if micro["last_3_red"] or micro["last_2_red"]:
                 return None
-            if change >= 6.0 and range_pos >= 0.85 and (micro["recent_tick_pct"] < -0.015 or slope_z < 0.0):
+            if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_dumping_down") and not (slope_z > 0.35 and micro["above_fast"] and micro["recent_tick_pct"] > 0.05):
                 return None
-            if cat == "CRYPTO" and r14 >= 78.0:
+            if change >= 12.0 and range_pos >= 0.88:
+                return None
+            if cat == "CRYPTO" and r14 >= 75.0:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
                 recent_ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                if recent_ups <= 0.375 and not ob_bullish and slope_z < 0.35:
+                if recent_ups <= 0.50 and not ob_bullish:
                     return None
-            if cat == "CRYPTO" and not (slope_z > 0.02 or (tv_rec is not None and float(tv_rec) >= 0.08) or micro["recent_tick_pct"] > 0.01 or micro["last_body_pct"] > 0.01 or sq_mom > 0 or ob_bullish):
+            if cat == "CRYPTO" and not (slope_z > 0.05 or micro["recent_tick_pct"] > 0.01 or micro["last_body_pct"] > 0.01 or sq_mom > 0 or ob_bullish):
                 return None
             score = sum(p[1] for p in parts)
         if score <= -0.20:
@@ -2088,11 +2080,20 @@ class Bot:
                     return 2
 
                 def _tv_verified_tier(cand_obj):
-                    # Prioritize candidates backed by live TradingView BUY/SELL ratings over neutral fallbacks
+                    # Prioritize candidates backed by aligned 1s + 1m + 5m TradingView BUY/SELL + Qualified SMC/DNA
                     tv_r = cand_obj.get("tv_recommend")
-                    if tv_r is not None and abs(float(tv_r)) >= 0.08:
+                    tv_ok = tv_r is not None and abs(float(tv_r)) >= 0.15
+                    smc_ok = str(cand_obj.get("smc_dna_status") or "") in ("QUALIFIED_BULLISH", "QUALIFIED_BEARISH")
+                    s_up = str(cand_obj.get("side") or "").upper()
+                    d1s = str(cand_obj.get("tv_1s_dir") or "NEUTRAL").upper()
+                    t1s_ok = (s_up in ("LONG", "BUY") and d1s == "BUY") or (s_up in ("SHORT", "SELL") and d1s == "SELL")
+                    if tv_ok and smc_ok and t1s_ok:
                         return 0
-                    return 1
+                    if tv_ok and t1s_ok:
+                        return 1
+                    if tv_ok:
+                        return 2
+                    return 3
 
                 if bot_dir == "SHORT":
                     pool = [x for x in pool if x.get("side") in ("SHORT", "SELL")]
