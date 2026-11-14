@@ -6319,82 +6319,225 @@ const NOTE_QUOTE = "Live last price, day open/high/low and volume come from the 
 const NOTE_SIM = "No free live quote exists for this symbol: price and candles are a simulated walk. " +
   "Orders on it are paper fills.";
 
+let cdxLwChart = null, cdxCandleSeries = null, cdxVolSeries = null, cdxEma20Series = null, cdxEma50Series = null;
+let cdxLwKey = "", cdxPriceLines = [], cdxLwResizeObs = null;
+
+function _calcEmaSeries(bars, period) {
+  if (!bars || !bars.length) return [];
+  const k = 2 / (period + 1);
+  let ema = bars[0].close;
+  return bars.map((b, i) => {
+    ema = i === 0 ? b.close : (b.close * k + ema * (1 - k));
+    return { time: b.time, value: ema };
+  });
+}
+
+function _normalizeLwBars(candles) {
+  if (!candles || !candles.length) return [];
+  const sorted = candles
+    .map(c => ({
+      time: Math.floor(Number(c.t > 1e12 ? c.t / 1000 : c.t)),
+      open: Number(c.o),
+      high: Number(c.h),
+      low: Number(c.l),
+      close: Number(c.c),
+      volume: Number(c.v || 0),
+    }))
+    .filter(c => Number.isFinite(c.time) && c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
+    .sort((a, b) => a.time - b.time);
+  const dedup = [];
+  for (const bar of sorted) {
+    if (dedup.length && dedup[dedup.length - 1].time === bar.time) {
+      dedup[dedup.length - 1] = bar;
+    } else {
+      dedup.push(bar);
+    }
+  }
+  return dedup;
+}
+
+function _syncCdxPriceLines() {
+  if (!cdxCandleSeries) return;
+  while (cdxPriceLines.length) {
+    try { cdxCandleSeries.removePriceLine(cdxPriceLines.pop()); } catch (_) { break; }
+  }
+  const sym = (S.symbol || "").toUpperCase();
+  const posList = (S.positions || []).filter(p => (p.symbol || "").toUpperCase() === sym);
+  posList.forEach(p => {
+    const entry = Number(p.entry_price || 0);
+    const tp = Number(p.take_profit || 0);
+    const sl = Number(p.stop_loss || 0);
+    if (entry > 0) {
+      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+        price: entry, color: "#38bdf8", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        title: `${p.side || "POS"} ENTRY`,
+      }));
+    }
+    if (tp > 0) {
+      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+        price: tp, color: "#10b981", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        title: "TP +$1.00",
+      }));
+    }
+    if (sl > 0) {
+      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+        price: sl, color: "#f43f5e", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        title: "SL",
+      }));
+    }
+  });
+}
+
+function renderCoinDcxLightweightChart(candles) {
+  if (!window.LightweightCharts) return false;
+  const host = $("tv_chart"), local = $("chart");
+  if (!host) return false;
+  const bars = _normalizeLwBars(candles);
+  if (!bars.length) return false;
+
+  if (local) local.classList.add("hide");
+  host.classList.remove("hide");
+
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  const lastClose = bars[bars.length - 1].close;
+  const prec = lastClose < 0.001 ? 7 : lastClose < 0.01 ? 6 : lastClose < 1 ? 5 : lastClose < 10 ? 4 : 2;
+  const minMove = Number((1 / Math.pow(10, prec)).toFixed(prec));
+  const chartKey = `${S.symbol}|${S.tf}|${isLight ? "L" : "D"}`;
+
+  if (!cdxLwChart || cdxLwKey !== chartKey) {
+    if (cdxLwChart) {
+      try { cdxLwChart.remove(); } catch (_) {}
+      cdxLwChart = null;
+    }
+    host.innerHTML = "";
+    host.style.position = "relative";
+
+    const legend = document.createElement("div");
+    legend.id = "cdx_tv_legend";
+    legend.style.cssText = "position:absolute;top:8px;left:12px;z-index:12;pointer-events:none;font-family:var(--mono,monospace);font-size:11px;line-height:1.45;background:rgba(15,23,42,0.55);padding:4px 8px;border-radius:6px;backdrop-filter:blur(4px);color:" + (isLight ? "#0f172a" : "#e2e8f0");
+    host.appendChild(legend);
+
+    cdxLwChart = window.LightweightCharts.createChart(host, {
+      width: host.clientWidth || 720,
+      height: host.clientHeight || 430,
+      layout: {
+        background: { type: "solid", color: isLight ? "#FFFFFF" : "#111317" },
+        textColor: isLight ? "#475569" : "#94a3b8",
+        fontFamily: "'Inter', sans-serif",
+      },
+      grid: {
+        vertLines: { color: isLight ? "#EAEEF4" : "#1E232C" },
+        horzLines: { color: isLight ? "#EAEEF4" : "#1E232C" },
+      },
+      crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: isLight ? "#DBE2EC" : "#262B36",
+        scaleMargins: { top: 0.10, bottom: 0.22 },
+      },
+      timeScale: {
+        borderColor: isLight ? "#DBE2EC" : "#262B36",
+        timeVisible: true,
+        secondsVisible: S.tf === "1m",
+      },
+      localization: {
+        timeFormatter: ts => new Date(ts * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      },
+    });
+
+    cdxCandleSeries = cdxLwChart.addCandlestickSeries({
+      upColor: "#0ecb81",
+      downColor: "#f6465d",
+      borderUpColor: "#0ecb81",
+      borderDownColor: "#f6465d",
+      wickUpColor: "#0ecb81",
+      wickDownColor: "#f6465d",
+      priceFormat: { type: "price", precision: prec, minMove },
+    });
+
+    cdxVolSeries = cdxLwChart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "",
+    });
+    cdxVolSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0.0 } });
+
+    cdxEma20Series = cdxLwChart.addLineSeries({ color: "#38bdf8", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    cdxEma50Series = cdxLwChart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+
+    const updateLegend = (bar) => {
+      if (!bar) return;
+      const up = bar.close >= bar.open;
+      const col = up ? "#0ecb81" : "#f6465d";
+      legend.innerHTML = `<b style="color:${isLight ? "#0f172a" : "#fff"}">${S.symbol} · ${S.tf} · COINDCX FUTURES</b> &nbsp;` +
+        `<span style="color:${col}">O ${bar.open.toFixed(prec)} · H ${bar.high.toFixed(prec)} · L ${bar.low.toFixed(prec)} · C ${bar.close.toFixed(prec)}</span>` +
+        ` &nbsp;<span style="color:#38bdf8">EMA20</span> · <span style="color:#f59e0b">EMA50</span>`;
+    };
+
+    cdxLwChart.subscribeCrosshairMove(param => {
+      const b = param && param.seriesData ? param.seriesData.get(cdxCandleSeries) : null;
+      if (b) updateLegend(b);
+      else if (bars.length) updateLegend(bars[bars.length - 1]);
+    });
+
+    if (cdxLwResizeObs) { try { cdxLwResizeObs.disconnect(); } catch (_) {} }
+    if (window.ResizeObserver) {
+      cdxLwResizeObs = new ResizeObserver(() => {
+        if (cdxLwChart && host.clientWidth > 100) {
+          cdxLwChart.applyOptions({ width: host.clientWidth, height: host.clientHeight || 430 });
+        }
+      });
+      cdxLwResizeObs.observe(host);
+    }
+
+    cdxCandleSeries.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    cdxVolSeries.setData(bars.map(b => ({
+      time: b.time,
+      value: b.volume,
+      color: b.close >= b.open ? "rgba(14,203,129,0.28)" : "rgba(246,70,93,0.28)",
+    })));
+    cdxEma20Series.setData(_calcEmaSeries(bars, 20));
+    cdxEma50Series.setData(_calcEmaSeries(bars, 50));
+    cdxLwChart.timeScale().fitContent();
+    updateLegend(bars[bars.length - 1]);
+    _syncCdxPriceLines();
+    cdxLwKey = chartKey;
+  } else {
+    const last = bars[bars.length - 1];
+    cdxCandleSeries.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
+    cdxVolSeries.update({
+      time: last.time,
+      value: last.volume,
+      color: last.close >= last.open ? "rgba(14,203,129,0.28)" : "rgba(246,70,93,0.28)",
+    });
+    const legend = $("cdx_tv_legend");
+    if (legend) {
+      const col = last.close >= last.open ? "#0ecb81" : "#f6465d";
+      legend.innerHTML = `<b style="color:${isLight ? "#0f172a" : "#fff"}">${S.symbol} · ${S.tf} · COINDCX FUTURES</b> &nbsp;` +
+        `<span style="color:${col}">O ${last.open.toFixed(prec)} · H ${last.high.toFixed(prec)} · L ${last.low.toFixed(prec)} · C ${last.close.toFixed(prec)}</span>` +
+        ` &nbsp;<span style="color:#38bdf8">EMA20</span> · <span style="color:#f59e0b">EMA50</span>`;
+    }
+    _syncCdxPriceLines();
+  }
+  return true;
+}
+
 async function showChart(tvSymbol, candles) {
   const seq = ++chartSeq;
   const host = $("tv_chart"), local = $("chart"), note = $("chart_note");
-  const useTV = S.chartMode === "tv" && !!tvSymbol;
-  
-  // Always render canvas first so user immediately sees live candles and never a blank void
-  if (candles && candles.length) {
-    drawChart(candles);
+  const cList = candles || S.candles;
+  if (note) {
+    note.textContent = "CoinDCX Futures Live Chart (" + S.symbol + " · " + S.tf + " candles) — 100% synced with CoinDCX execution & signals. " + NOTE_LIVE;
   }
-
-  const ready = useTV && await ensureTVScript();
+  if (cList && cList.length && renderCoinDcxLightweightChart(cList)) {
+    return;
+  }
   if (seq !== chartSeq) return;
-  if (!useTV || !ready) {
-    if (host) host.classList.add("hide");
-    if (local) local.classList.remove("hide");
-    if (!tvSymbol || S.chartMode === "local") {
-      note.textContent = "CoinDCX Futures Live Chart (" + S.symbol + " · " + S.tf + " candles) — 100% synced with CoinDCX execution & signals. " + NOTE_LIVE;
-    } else if (useTV && !ready) {
-      note.textContent = "Connecting to live stream... " + NOTE_LIVE;
-    } else {
-      note.textContent = NOTE_LIVE;
-    }
-    drawChart(candles || S.candles);
-    return;
-  }
-
-  const key = tvSymbol + "|" + S.tf;
-  if (key === S.tvKey) {
-    if (host) host.classList.remove("hide");
-    if (local) local.classList.add("hide");
-    return;
-  }
-  S.tvKey = key;
-  note.textContent = "TradingView charts " + tvSymbol + " on " + S.tf +
-    " candles; our feed holds the same live quote used for fills. " + NOTE_LIVE;
-  
-  const isLight = document.documentElement.getAttribute("data-theme") === "light";
-  try {
-    host.innerHTML = "";
-    new TradingView.widget({
-      container_id: "tv_chart",
-      autosize: true,
-      symbol: tvSymbol,
-      interval: TV_TF[S.tf] || "1",
-      timezone: "Asia/Kolkata",
-      theme: isLight ? "light" : "dark",
-      style: "1",
-      locale: "en",
-      toolbar_bg: isLight ? "#FFFFFF" : "#151821",
-      backgroundColor: isLight ? "#FFFFFF" : "#111317",
-      gridColor: isLight ? "#EAEEF4" : "#1E232C",
-      hide_top_toolbar: false,
-      enable_publishing: false,
-      allow_symbol_change: false,
-      save_image: false,
-      withdateranges: true,
-      hide_side_toolbar: false,
-      details: false,
-      studies: ["RSI@tv-basicstudies"]
-    });
-    // Smooth transition from canvas to TV widget once initialized
-    setTimeout(() => {
-      if (seq === chartSeq && host && host.children.length > 0) {
-        if (local) local.classList.add("hide");
-        host.classList.remove("hide");
-      }
-    }, 400);
-  } catch (err) {
-    console.warn("TradingView widget init error, falling back to canvas feed:", err);
-    if (host) host.classList.add("hide");
-    if (local) local.classList.remove("hide");
-    drawChart(candles || S.candles);
-  }
+  if (host) host.classList.add("hide");
+  if (local) local.classList.remove("hide");
+  drawChart(cList);
 }
 
 function drawChart(candles) {
+  if (candles && candles.length && window.LightweightCharts && renderCoinDcxLightweightChart(candles)) return;
   const cv = $("chart"), dpr = devicePixelRatio || 1;
   if (!cv) return;
   const clientW = cv.clientWidth || cv.parentElement?.clientWidth || 700;

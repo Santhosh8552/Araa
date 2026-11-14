@@ -533,8 +533,9 @@ class PriceFeed:
             has_real_intraday = len(c1) >= 12
         else:
             ticks = [float(x) for x in hist if x and float(x) > 0]
+            real_ticks = int(row.get("_real_ticks", 0))
             distinct_recent = len(set(round(x, 8) for x in ticks[-15:]))
-            has_real_intraday = len(ticks) >= 6 and distinct_recent >= 3
+            has_real_intraday = real_ticks >= 12 and len(ticks) >= 12 and distinct_recent >= 4
             c1 = ticks if len(ticks) >= 12 else ([price] * 12)
             c5 = [c1[i] for i in range(0, len(c1), 3)]
             if not c5 or c5[-1] != price:
@@ -796,14 +797,14 @@ class PriceFeed:
             return [dict(c) for c in parsed[-int(limit):]]
         return []
 
-    def refresh_active_crypto_klines(self, max_symbols=40):
-        """Continuously warm 1m real klines and 1m/5m TV ratings in parallel for top liquid & volatile crypto pairs."""
+    def refresh_active_crypto_klines(self, max_symbols=100):
+        """Continuously warm 1m real CoinDCX Futures klines and 1m/5m ratings in parallel for top liquid crypto pairs."""
         try:
             import concurrent.futures
             priority = [
                 "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "NEARUSDT", "BNBUSDT",
                 "TRXUSDT", "TIAUSDT", "ORCAUSDT", "USUALUSDT", "ZECUSDT", "SUIUSDT", "AVAXUSDT",
-                "LINKUSDT", "ADAUSDT", "DOTUSDT", "APTUSDT", "ARBUSDT", "OPUSDT"
+                "LINKUSDT", "ADAUSDT", "DOTUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "SOPHUSDT"
             ]
             with self.lock:
                 live_cryptos = [
@@ -823,9 +824,9 @@ class PriceFeed:
 
             def _warm_one(sym_name):
                 if not self._stop.is_set():
-                    self._fetch_real_klines(sym_name, interval="1m", limit=60)
+                    self._fetch_real_klines(sym_name, interval="1m", limit=100)
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
                 list(pool.map(_warm_one, ordered))
         except Exception:
             pass
@@ -879,6 +880,7 @@ class PriceFeed:
                         decimals = 8 if price < 0.01 else (6 if price < 1 else (4 if price < 10 else 2))
                         if first_quote or not row.get("seeded_real") or len(hist) < 15:
                             row["seeded_real"] = True
+                            row["_real_ticks"] = 0
                             hist.clear()
                             ema50_1m = row.get("tv_ema50_1m")
                             chg_5m = row.get("tv_chg_5m")
@@ -896,6 +898,7 @@ class PriceFeed:
                                 hist.append(round(start_p + (price - start_p) * frac, decimals))
                         elif not hist or abs(hist[-1] - price) > price * 1e-7:
                             hist.append(price)
+                            row["_real_ticks"] = int(row.get("_real_ticks", 0)) + 1
                         self._compute_live_tv_ratings(target_k, row, hist)
                 self.updated_at = time.time()
 
