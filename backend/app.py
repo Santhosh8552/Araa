@@ -1924,12 +1924,19 @@ def bot_config():
     enabled = 1 if data.get("enabled") else 0
     raw_pos = int(data.get("max_positions") or u.get("bot_max_positions") or 5)
     max_pos = 999 if (raw_pos >= 999 or raw_pos <= 0) else max(1, min(100, raw_pos))
-    risk = max(0.5, min(20.0, float(data.get("risk_pct") or 2)))
-    mode = data.get("mode") if data.get("mode") in ("PURE_CRYPTO", "BOOST", "CONTINUOUS", "CONSERVATIVE", "SCALP", "AGGRESSIVE", "SWING", "MOMENTUM") else "PURE_CRYPTO"
+    risk = max(0.5, min(25.0, float(data.get("risk_pct") or 2)))
+    allowed_modes = ("SQUEEZE_5M", "PURE_CRYPTO", "BOOST", "CONTINUOUS", "CONSERVATIVE", "SCALP", "AGGRESSIVE", "SWING", "MOMENTUM")
+    mode = data.get("mode") if data.get("mode") in allowed_modes else "PURE_CRYPTO"
     leverage = max(1.0, min(500.0, float(data.get("leverage") or u.get("bot_leverage") or 500.0)))
     trade_dir = str(data.get("trade_direction") or u.get("bot_trade_direction") or "BOTH").strip().upper()
     if trade_dir not in ("BOTH", "SHORT", "LONG"):
         trade_dir = "BOTH"
+    market_focus = str(data.get("market_focus") or u.get("bot_market_focus") or "FUTURES_USD").strip().upper()
+    if market_focus not in ("FUTURES_USD", "ALL", "CRYPTO", "FOREX", "METALS"):
+        market_focus = "FUTURES_USD"
+    tp_pct = max(0.2, min(100.0, float(data.get("take_profit_pct") or 2.5)))
+    sl_pct = max(0.2, min(50.0, float(data.get("stop_loss_pct") or 1.5)))
+    daily_loss = max(5.0, min(50000.0, float(data.get("max_daily_loss") or 250.0)))
     flush_pnl = 0.0
     closed_count = 0
     if enabled and not bot.is_running:
@@ -1975,22 +1982,35 @@ def bot_config():
     now = time.time()
     # No warmup delay — continuous slot refill starts immediately when bot is turned ON
     bot_act_at = 0  # Setting to 0 bypasses any warmup check
-    write("UPDATE users SET bot_enabled=?, bot_max_positions=?, bot_risk_pct=?, bot_mode=?, bot_leverage=?, bot_activated_at=?, bot_trade_direction=? WHERE id=?",
-          (enabled, max_pos, risk, mode, leverage, bot_act_at, trade_dir, u["id"]))
+    write("UPDATE users SET bot_enabled=?, bot_max_positions=?, bot_risk_pct=?, bot_mode=?, bot_leverage=?, bot_activated_at=?, bot_trade_direction=?, bot_market_focus=? WHERE id=?",
+          (enabled, max_pos, risk, mode, leverage, bot_act_at, trade_dir, market_focus, u["id"]))
     write("""
-        INSERT INTO real_bot_configs(user_id, provider_id, max_positions, bot_status, emergency_shutdown, created_at, updated_at)
-        VALUES (?, 'COINDCX', ?, ?, 0, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET max_positions=?, bot_status=?, emergency_shutdown=0, updated_at=?
-    """, (u["id"], max_pos, "RUNNING" if enabled else "PAUSED", now, now, max_pos, "RUNNING" if enabled else "PAUSED", now))
-    bot._log(u["id"], "CONFIG", f"bot_enabled={enabled} max_positions={max_pos} risk={risk}% mode={mode} leverage={leverage:.0f}x direction={trade_dir}" +
-             (" (Continuous Slot Refill Active — 10 Slots × ∞ Rotation)" if (enabled and not u["bot_enabled"]) else "") +
-             (f" (Liquidated {closed_count} open positions, Net P&L: Rs {flush_pnl:+.2f})" if closed_count else ""))
+        INSERT INTO real_bot_configs(user_id, provider_id, max_positions, strategy_mode, max_leverage, stop_loss_pct, take_profit_pct, max_daily_loss, bot_status, emergency_shutdown, created_at, updated_at)
+        VALUES (?, 'COINDCX', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET max_positions=?, strategy_mode=?, max_leverage=?, stop_loss_pct=?, take_profit_pct=?, max_daily_loss=?, bot_status=?, emergency_shutdown=0, updated_at=?
+    """, (u["id"], max_pos, mode, leverage, sl_pct, tp_pct, daily_loss, "RUNNING" if enabled else "PAUSED", now, now,
+          max_pos, mode, leverage, sl_pct, tp_pct, daily_loss, "RUNNING" if enabled else "PAUSED", now))
+    try:
+        write("UPDATE broker_connections SET leverage=?, max_positions=?, market_focus=? WHERE user_id=?",
+              (leverage, max_pos, market_focus, u["id"]))
+    except Exception:
+        pass
+    bot._log(u["id"], "CONFIG", f"bot_enabled={enabled} max_positions={max_pos} risk={risk}% mode={mode} leverage={leverage:.0f}x direction={trade_dir} focus={market_focus}" +
+             (" (Continuous Slot Refill Active)" if (enabled and not u["bot_enabled"]) else "") +
+             (f" (Liquidated {closed_count} open positions, Net P&L: ${flush_pnl:+.2f})" if closed_count else ""))
     
     # If user just turned bot ON, trigger immediate cycle in a thread so positions open right away
     if enabled and bot.is_running:
         threading.Thread(target=bot.cycle, daemon=True).start()
     
+    rb_row = query_one(
+        "SELECT provider_id, broker_account_id, market_segments, strategy_mode, max_order_size, max_daily_loss, "
+        "max_exposure_limit, max_leverage, stop_loss_pct, take_profit_pct, bot_status, emergency_shutdown "
+        "FROM real_bot_configs WHERE user_id=?",
+        (u["id"],),
+    )
     return ok(user=user_public(u["id"]), portfolio=portfolio(u["id"]), wallet=wallet_of(u["id"]),
+              real_bot_config=dict(rb_row) if rb_row else None,
               global_running=bot.is_running,
               flushed_positions=closed_count,
               flushed_pnl=flush_pnl,

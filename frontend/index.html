@@ -2678,14 +2678,14 @@
     </div>
     <label class="check"><input id="b_enabled" type="checkbox"> Enable bot for my account</label>
     <div class="field"><span>MAX POSITIONS (ACTIVE SLOTS)</span><b id="b_max_lbl">20</b></div>
-    <input id="b_max" type="range" min="1" max="100" value="20">
+    <input id="b_max" type="range" min="1" max="100" value="20" oninput="window._bMaxUnlimited=false">
     <div style="display:flex; gap:6px; margin:4px 0 10px; flex-wrap:wrap;">
-      <button type="button" class="btn sm ghost" onclick="$('b_max').value=5; $('b_max_lbl').textContent=5; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">5</button>
-      <button type="button" class="btn sm ghost" onclick="$('b_max').value=10; $('b_max_lbl').textContent=10; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">10</button>
-      <button type="button" class="btn sm ghost" onclick="$('b_max').value=20; $('b_max_lbl').textContent=20; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">20</button>
-      <button type="button" class="btn sm ghost" onclick="$('b_max').value=50; $('b_max_lbl').textContent=50; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">50</button>
-      <button type="button" class="btn sm ghost" onclick="$('b_max').value=100; $('b_max_lbl').textContent=100; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">100</button>
-      <button type="button" class="btn sm primary" onclick="$('b_max').value=999; $('b_max_lbl').textContent='∞ Unlimited'; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px; background:#10b981; color:#0f172a; font-weight:700;">⚡ Unlimited (∞)</button>
+      <button type="button" class="btn sm ghost" onclick="window._bMaxUnlimited=false; $('b_max').value=5; $('b_max_lbl').textContent=5; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">5</button>
+      <button type="button" class="btn sm ghost" onclick="window._bMaxUnlimited=false; $('b_max').value=10; $('b_max_lbl').textContent=10; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">10</button>
+      <button type="button" class="btn sm ghost" onclick="window._bMaxUnlimited=false; $('b_max').value=20; $('b_max_lbl').textContent=20; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">20</button>
+      <button type="button" class="btn sm ghost" onclick="window._bMaxUnlimited=false; $('b_max').value=50; $('b_max_lbl').textContent=50; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">50</button>
+      <button type="button" class="btn sm ghost" onclick="window._bMaxUnlimited=false; $('b_max').value=100; $('b_max_lbl').textContent=100; $('b_max').dispatchEvent(new Event('input'))" style="padding:2px 8px; font-size:11px;">100</button>
+      <button type="button" class="btn sm primary" onclick="window._bMaxUnlimited=true; $('b_max').value=100; $('b_max_lbl').textContent='∞ Unlimited'; $('b_msg').className='msg'; $('b_msg').textContent='Not saved yet — press Save bot settings to hand these numbers to the bot.'" style="padding:2px 8px; font-size:11px; background:#10b981; color:#0f172a; font-weight:700;">⚡ Unlimited (∞)</button>
     </div>
     <div class="field"><span>RISK PER TRADE</span><b id="b_risk_lbl">5%</b></div>
     <input id="b_risk" type="range" min="1" max="25" step="1" value="5">
@@ -2698,6 +2698,38 @@
       <button type="button" class="btn sm ghost lev_preset_btn" data-lev="100" style="padding:3px 8px; font-size:11px; font-weight:700;">100x</button>
       <button type="button" class="btn sm ghost lev_preset_btn" data-lev="200" style="padding:3px 8px; font-size:11px; font-weight:700;">200x</button>
       <button type="button" class="btn sm primary lev_preset_btn" data-lev="500" style="padding:3px 8px; font-size:11px; font-weight:700; background:#10b981; border-color:#10b981; color:#0f172a;">⚡ 500x Max</button>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+      <div>
+        <div class="field" style="margin-bottom:4px;"><span>TRADE DIRECTION</span></div>
+        <select id="b_dir" style="width:100%; border-radius:8px; padding:7px 8px; font-weight:600; font-size:11.5px;">
+          <option value="BOTH">↕ BOTH (Long + Short)</option>
+          <option value="LONG">📈 LONG ONLY (Buy)</option>
+          <option value="SHORT">📉 SHORT ONLY (Sell)</option>
+        </select>
+      </div>
+      <div>
+        <div class="field" style="margin-bottom:4px;"><span>MARKET FOCUS</span></div>
+        <select id="b_focus" style="width:100%; border-radius:8px; padding:7px 8px; font-weight:600; font-size:11.5px;">
+          <option value="FUTURES_USD">⚡ CoinDCX Futures (USDT)</option>
+          <option value="CRYPTO">🪙 All Crypto (24/7)</option>
+          <option value="ALL">🌐 All Global Markets</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px;">
+      <div>
+        <div class="field" style="margin-bottom:4px;"><span>TAKE PROFIT %</span></div>
+        <input id="b_tp_pct" type="number" min="0.2" max="100" step="0.1" value="2.5" style="width:100%; border-radius:8px; padding:6px 8px; font-weight:700; font-size:12px;">
+      </div>
+      <div>
+        <div class="field" style="margin-bottom:4px;"><span>STOP LOSS %</span></div>
+        <input id="b_sl_pct" type="number" min="0.2" max="50" step="0.1" value="1.5" style="width:100%; border-radius:8px; padding:6px 8px; font-weight:700; font-size:12px;">
+      </div>
+      <div>
+        <div class="field" style="margin-bottom:4px;"><span>DAILY CAP ($)</span></div>
+        <input id="b_daily_loss" type="number" min="5" max="50000" step="5" value="250" style="width:100%; border-radius:8px; padding:6px 8px; font-weight:700; font-size:12px;">
+      </div>
     </div>
     <div class="field"><span>STRATEGY &amp; AI RISK PROFILE</span></div>
     <select id="b_mode" style="border-radius:8px; padding:8px 10px; font-weight:600;">
@@ -2723,8 +2755,6 @@
     <div id="b_positions" class="list" style="overflow-x:auto; width:100%;"></div>
     <div class="k">A-Z MARKET ANALYSIS <span id="az_stamp" class="tiny"></span></div>
     <div id="az_panel" class="az"></div>
-    <div class="k">BOT LOG</div>
-    <div id="b_logs" class="logs"></div>
   </div>
 </div>
 
@@ -5844,6 +5874,6 @@
   border-top-color: rgba(130, 180, 0, 0.25) !important;
 }
 </style>
-<script src="app.js?v=20261114_coindcx_instant_v15"></script>
+<script src="app.js?v=20261114_coindcx_instant_v16"></script>
 </body>
 </html>

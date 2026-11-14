@@ -7626,7 +7626,7 @@ function beingEdited(el) {
 }
 function put(el, value) { if (!beingEdited(el)) el.value = value; }
 /* Every field the poller owns freezes the moment the user touches it. */
-["b_max", "b_risk", "b_lev", "b_mode", "b_enabled", "goal_target"].forEach(id => {
+["b_max", "b_risk", "b_lev", "b_mode", "b_enabled", "b_dir", "b_focus", "b_tp_pct", "b_sl_pct", "b_daily_loss", "goal_target"].forEach(id => {
   const el = $(id);
   if (!el) return;
   el.addEventListener("input", () => { el.dataset.dirty = "1"; });
@@ -7635,24 +7635,34 @@ function put(el, value) { if (!beingEdited(el)) el.value = value; }
 function clearEdits(...els) { els.forEach(el => { if (el) delete el.dataset.dirty; }); }
 
 async function renderBot(d) {
-  d = d || await call("/api/account");
+  d = d || S.acct || await call("/api/account").catch(() => null);
+  if (!d || !d.user) return;
   const h = await fetch(API + "/api/health").then(r => r.json()).catch(() => ({}));
   S.running = !!h.bot_running;
-  $("b_global").textContent = S.running ? "GLOBAL BOT ON" : "GLOBAL BOT OFF (admin controls it)";
-  $("b_global").className = "tag " + (S.running ? "long" : "sim");
-  $("b_state").className = "ai_dot" + (S.running && d.user.bot_enabled ? " on" : "");
-  $("b_enabled").checked = beingEdited($("b_enabled")) ? $("b_enabled").checked : !!d.user.bot_enabled;
-  put($("b_max"), d.user.bot_max_positions);
+  if ($("b_global")) {
+    $("b_global").textContent = S.running ? "GLOBAL BOT ON" : "GLOBAL BOT OFF (admin controls it)";
+    $("b_global").className = "tag " + (S.running ? "long" : "sim");
+  }
+  if ($("b_state")) $("b_state").className = "ai_dot" + (S.running && d.user.bot_enabled ? " on" : "");
+  if ($("b_enabled")) $("b_enabled").checked = beingEdited($("b_enabled")) ? $("b_enabled").checked : !!d.user.bot_enabled;
+  const rawMax = Number(d.user.bot_max_positions || 20);
+  if (!beingEdited($("b_max"))) {
+    window._bMaxUnlimited = (rawMax >= 999 || rawMax <= 0);
+    if ($("b_max")) $("b_max").value = window._bMaxUnlimited ? 100 : Math.max(1, Math.min(100, rawMax));
+    if ($("b_max_lbl")) $("b_max_lbl").textContent = window._bMaxUnlimited ? "∞ Unlimited" : rawMax;
+  }
   put($("b_risk"), d.user.bot_risk_pct);
   if ($("b_lev")) put($("b_lev"), d.user.bot_leverage || 500);
   put($("b_mode"), d.user.bot_mode);
-  if (!beingEdited($("b_max"))) {
-    const rawMax = Number(d.user.bot_max_positions || 20);
-    $("b_max_lbl").textContent = (rawMax >= 999 || rawMax <= 0) ? "∞ Unlimited" : rawMax;
-  }
-  if (!beingEdited($("b_risk"))) $("b_risk_lbl").textContent = d.user.bot_risk_pct + "%";
+  if ($("b_dir")) put($("b_dir"), d.user.bot_trade_direction || "BOTH");
+  if ($("b_focus")) put($("b_focus"), d.user.bot_market_focus || "FUTURES_USD");
+  const rbc = d.real_bot_config || (S.acct && S.acct.real_bot_config) || {};
+  if ($("b_tp_pct")) put($("b_tp_pct"), rbc.take_profit_pct || 2.5);
+  if ($("b_sl_pct")) put($("b_sl_pct"), rbc.stop_loss_pct || 1.5);
+  if ($("b_daily_loss")) put($("b_daily_loss"), rbc.max_daily_loss || 250);
+  if (!beingEdited($("b_risk")) && $("b_risk_lbl")) $("b_risk_lbl").textContent = (d.user.bot_risk_pct || 2) + "%";
   if ($("b_lev") && !beingEdited($("b_lev"))) {
-    $("b_lev_lbl").textContent = (d.user.bot_leverage || 500) + "x Multiplier";
+    if ($("b_lev_lbl")) $("b_lev_lbl").textContent = (d.user.bot_leverage || 500) + "x Multiplier";
     updateLevPresets(d.user.bot_leverage || 500);
   }
   const isLive = S.broker && S.broker.is_live;
@@ -7673,17 +7683,15 @@ async function renderBot(d) {
   }
   if ($("b_mode_desc")) {
     $("b_mode_desc").textContent = isLive
-      ? "🔴 LIVE BOT ACTIVE: Executing real broker orders with dedicated live funds. Paper trading balances are completely isolated and excluded."
+      ? `🔴 REAL BOT ACTIVE (${S.broker.profile_name || S.broker.account_name || "CoinDCX"}): All rules below directly control your live CoinDCX execution.`
       : "🟢 PAPER BOT ACTIVE: Operating on free virtual capital with live real-time market prices. Switch to LIVE MODE to trade fresh broker capital.";
   }
-  const botOpen = d.portfolio.open_positions.filter(p => p.source === "BOT" || p.source === "COINDCX LIVE");
-  $("b_positions").innerHTML = posTable(botOpen);
-  $("b_open").textContent = botOpen.length;
-  $("b_unreal").textContent = signed(botOpen.reduce((s, p) => s + Number(p.unrealized_pnl), 0));
-  $("b_ticks").textContent = (h.uptime_seconds || 0) + "s up";
-  $("b_logs").innerHTML = (d.logs || []).slice(0, 40).map(l => `<div><span class="${
-      l.level === "WIN" ? "up" : l.level === "LOSS" ? "down" : l.level === "FILL" ? "green" : ""}">[${l.level}]</span> ${
-      hhmm(l.at)} — ${l.message}</div>`).join("") || '<div>No bot activity yet.</div>';
+  const opens = (d.portfolio && d.portfolio.open_positions) ? d.portfolio.open_positions : [];
+  const botOpen = opens.filter(p => p.source === "BOT" || p.source === "COINDCX LIVE" || p.source === "COINDCX_API");
+  if ($("b_positions")) $("b_positions").innerHTML = posTable(botOpen);
+  if ($("b_open")) $("b_open").textContent = botOpen.length;
+  if ($("b_unreal")) $("b_unreal").textContent = signed(botOpen.reduce((s, p) => s + Number(p.unrealized_pnl || 0), 0));
+  if ($("b_ticks")) $("b_ticks").textContent = (h.uptime_seconds || 0) + "s up";
   if (window.loadBotTrainingState) window.loadBotTrainingState(true);
 }
 $("b_max").oninput = () => {
@@ -7727,11 +7735,13 @@ document.querySelectorAll(".lev_preset_btn").forEach(btn => {
 
 /* A released slider keeps its value until Save, but the drawer must not silently disagree with
    the server about what the bot is running on, so say so in the message line. */
-["b_max", "b_risk", "b_lev", "b_mode", "b_enabled"].forEach(id => {
+["b_max", "b_risk", "b_lev", "b_mode", "b_enabled", "b_dir", "b_focus", "b_tp_pct", "b_sl_pct", "b_daily_loss"].forEach(id => {
   const el = $(id);
   if (el) el.onchange = () => {
-    $("b_msg").className = "msg";
-    $("b_msg").textContent = "Not saved yet — press Save bot settings to hand these numbers to the bot.";
+    if ($("b_msg")) {
+      $("b_msg").className = "msg";
+      $("b_msg").textContent = "Not saved yet — press Save bot settings to hand these numbers to the bot.";
+    }
   };
 });
 
@@ -8053,22 +8063,45 @@ setTimeout(checkGeminiStatus, 1500);
 
 $("b_save").onclick = async () => {
   try {
-    const want = $("b_enabled").checked;
-    const levVal = $("b_lev") ? Number($("b_lev").value) : 10;
-    const selectedMode = $("b_mode").value;
+    const want = $("b_enabled") ? $("b_enabled").checked : true;
+    const maxPosVal = window._bMaxUnlimited ? 999 : Number($("b_max") ? $("b_max").value : 20);
+    const riskVal = Number($("b_risk") ? $("b_risk").value : 2);
+    const levVal = $("b_lev") ? Number($("b_lev").value) : 100;
+    const selectedMode = $("b_mode") ? $("b_mode").value : "PURE_CRYPTO";
+    const tradeDir = $("b_dir") ? $("b_dir").value : "BOTH";
+    const marketFocus = $("b_focus") ? $("b_focus").value : "FUTURES_USD";
+    const tpPct = $("b_tp_pct") ? Number($("b_tp_pct").value) : 2.5;
+    const slPct = $("b_sl_pct") ? Number($("b_sl_pct").value) : 1.5;
+    const dailyLoss = $("b_daily_loss") ? Number($("b_daily_loss").value) : 250;
     const modeSelectEl = $("b_mode");
     const modeText = (modeSelectEl && modeSelectEl.options[modeSelectEl.selectedIndex]) 
       ? modeSelectEl.options[modeSelectEl.selectedIndex].text.split("·")[0].trim() 
       : selectedMode;
 
-    const d = await call("/api/bot/config", {method: "POST", body: {enabled: want,
-      max_positions: Number($("b_max").value), risk_pct: Number($("b_risk").value), mode: selectedMode, leverage: levVal}});
+    const d = await call("/api/bot/config", {method: "POST", body: {
+      enabled: want,
+      max_positions: maxPosVal,
+      risk_pct: riskVal,
+      mode: selectedMode,
+      leverage: levVal,
+      trade_direction: tradeDir,
+      market_focus: marketFocus,
+      take_profit_pct: tpPct,
+      stop_loss_pct: slPct,
+      max_daily_loss: dailyLoss
+    }});
     const wasEnabled = Boolean(S.user && S.user.bot_enabled);
     S.user = d.user;
-    $("b_msg").className = "msg green";
-    $("b_msg").textContent = `✓ Active Strategy: ${modeText} (${levVal}x Leverage). Saved & Activated!`;
-    toast(`✓ Strategy Applied: ${modeText} (${levVal}x)`, "green");
-    clearEdits($("b_max"), $("b_risk"), $("b_lev"), $("b_mode"), $("b_enabled"));
+    if (S.acct) {
+      S.acct.user = d.user;
+      if (d.real_bot_config) S.acct.real_bot_config = d.real_bot_config;
+    }
+    if ($("b_msg")) {
+      $("b_msg").className = "msg green";
+      $("b_msg").textContent = `✓ Real Bot Rules Saved: ${modeText} · ${levVal}x · ${tradeDir} · TP ${tpPct}% / SL ${slPct}%!`;
+    }
+    toast(`✓ Bot Rules Saved & Active: ${modeText} (${levVal}x · ${tradeDir})`, "green");
+    clearEdits($("b_max"), $("b_risk"), $("b_lev"), $("b_mode"), $("b_enabled"), $("b_dir"), $("b_focus"), $("b_tp_pct"), $("b_sl_pct"), $("b_daily_loss"));
     if (want && !wasEnabled) {
       showAiScanner();
     } else if (!want) {
@@ -8078,11 +8111,15 @@ $("b_save").onclick = async () => {
       }
     }
     renderTopbar();
-    renderBot(); refreshAccount();
+    if (typeof renderConnectedApiAndRules === "function") renderConnectedApiAndRules(S.acct || { user: S.user, broker: S.broker });
+    renderBot(S.acct || { user: S.user, portfolio: S.pf, real_bot_config: d.real_bot_config });
+    refreshAccount();
   } catch (e) {
-    $("b_msg").className = "msg red";
-    $("b_msg").textContent = "⚠️ " + e.message;
-    renderBot();
+    if ($("b_msg")) {
+      $("b_msg").className = "msg red";
+      $("b_msg").textContent = "⚠️ " + e.message;
+    }
+    toast(e.message || "Failed to save bot settings", "red");
   }
 };
 
@@ -8090,9 +8127,10 @@ $("b_stop_all").onclick = async () => {
   const btn = $("b_stop_all");
   btn.disabled = true;
   try {
-    const levVal = $("b_lev") ? Number($("b_lev").value) : 10;
+    const maxPosVal = window._bMaxUnlimited ? 999 : Number($("b_max") ? $("b_max").value : 20);
+    const levVal = $("b_lev") ? Number($("b_lev").value) : 100;
     const d = await call("/api/bot/config", {method: "POST", body: {enabled: false,
-      max_positions: Number($("b_max").value), risk_pct: Number($("b_risk").value), mode: $("b_mode").value, leverage: levVal}});
+      max_positions: maxPosVal, risk_pct: Number($("b_risk").value), mode: $("b_mode").value, leverage: levVal}});
     S.user = d.user;
     $("b_enabled").checked = false;
     clearEdits($("b_enabled"));
