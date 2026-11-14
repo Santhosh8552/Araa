@@ -300,7 +300,7 @@ CNBC_CODES = {"XAGUSD": "XAG=", "XPTUSD": "@PL.1", "XPDUSD": "@PA.1", "XCOPPER":
 
 
 def _get(path, timeout=1.5):
-    for base in (BINANCE, BINANCE_FALLBACK, BINANCE_US, BINANCE_FUTURES):
+    for base in (BINANCE_FALLBACK, BINANCE, BINANCE_US, BINANCE_FUTURES):
         try:
             req = urllib.request.Request(base + path, headers=BROWSER_HEADERS)
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -565,10 +565,6 @@ class PriceFeed:
                 "tv_macd_sig_1m": 0.0,
                 "tv_macd_5m": 0.0,
                 "tv_macd_sig_5m": 0.0,
-                "tv_ema20_1m": round(price, 6),
-                "tv_ema50_1m": round(price, 6),
-                "tv_ema20_5m": round(price, 6),
-                "tv_ema50_5m": round(price, 6),
                 "tv_chg_1m": 0.0,
                 "tv_chg_5m": 0.0,
                 "tv_signal": "NEUTRAL",
@@ -742,7 +738,7 @@ class PriceFeed:
         now = time.time()
         if not hasattr(self, "_kline_cache"):
             self._kline_cache = {}
-        ttl = 8.0 if interval == "1m" else 20.0
+        ttl = 25.0 if interval == "1m" else 60.0
         cached = self._kline_cache.get((clean_sym, interval))
         if cached and (now - cached[0]) < ttl and len(cached[1]) >= min(int(limit), 15):
             out = [dict(c) for c in cached[1][-int(limit):]]
@@ -757,7 +753,7 @@ class PriceFeed:
         req_limit = max(int(limit), 60 if interval == "1m" else 30)
         parsed = []
         try:
-            raw = _get(f"/api/v3/klines?symbol={clean_sym}&interval={interval}&limit={req_limit}", timeout=2.2)
+            raw = _get(f"/api/v3/klines?symbol={clean_sym}&interval={interval}&limit={req_limit}", timeout=1.5)
             if isinstance(raw, list) and len(raw) >= 10:
                 for k in raw:
                     if isinstance(k, (list, tuple)) and len(k) >= 6:
@@ -777,7 +773,7 @@ class PriceFeed:
                 base_coin = clean_sym[:-4]
                 cdx_url = f"https://public.coindcx.com/market_data/candles?pair=B-{base_coin}_USDT&interval={interval}&limit={req_limit}"
                 req = urllib.request.Request(cdx_url, headers=BROWSER_HEADERS)
-                with urllib.request.urlopen(req, timeout=2.5) as r:
+                with urllib.request.urlopen(req, timeout=1.8) as r:
                     cdx_raw = json.loads(r.read().decode())
                 if isinstance(cdx_raw, list) and len(cdx_raw) >= 10:
                     # CoinDCX returns newest-first; sort oldest-first
@@ -818,9 +814,10 @@ class PriceFeed:
             return [dict(c) for c in parsed[-int(limit):]]
         return []
 
-    def refresh_active_crypto_klines(self, max_symbols=36):
-        """Continuously warm 1m real klines and 1m/5m TV ratings for top liquid & volatile crypto pairs."""
+    def refresh_active_crypto_klines(self, max_symbols=40):
+        """Continuously warm 1m real klines and 1m/5m TV ratings in parallel for top liquid & volatile crypto pairs."""
         try:
+            import concurrent.futures
             priority = [
                 "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "NEARUSDT", "BNBUSDT",
                 "TRXUSDT", "TIAUSDT", "ORCAUSDT", "USUALUSDT", "ZECUSDT", "SUIUSDT", "AVAXUSDT",
@@ -841,10 +838,13 @@ class PriceFeed:
                     ordered.append(s)
                 if len(ordered) >= max_symbols:
                     break
-            for sym in ordered:
-                if self._stop.is_set():
-                    break
-                self._fetch_real_klines(sym, interval="1m", limit=60)
+
+            def _warm_one(sym_name):
+                if not self._stop.is_set():
+                    self._fetch_real_klines(sym_name, interval="1m", limit=60)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(_warm_one, ordered))
         except Exception:
             pass
 
@@ -879,13 +879,25 @@ class PriceFeed:
                                 "volume": float(t["quoteVolume"]),
                                 "live": True, "source": "TRADINGVIEW"})
                     hist = self.history[sym]
+                    decimals = 8 if price < 0.01 else (6 if price < 1 else (4 if price < 10 else 2))
                     if first_quote or not row.get("seeded_real") or len(hist) < 15:
                         row["seeded_real"] = True
                         hist.clear()
-                        # Seed flat at current live price (NEVER seed fake 24h-drifted ticks that invert 1m signals!)
-                        for _ in range(20):
-                            hist.append(price)
-                    else:
+                        ema50_1m = row.get("tv_ema50_1m")
+                        chg_5m = row.get("tv_chg_5m")
+                        tv_rec = row.get("tv_rec_1m") if row.get("tv_rec_1m") is not None else row.get("tv_recommend")
+                        if ema50_1m and float(ema50_1m) > 0 and abs(price - float(ema50_1m)) / price <= 0.04:
+                            start_p = float(ema50_1m)
+                        elif chg_5m is not None and abs(float(chg_5m)) <= 5.0 and abs(float(chg_5m)) > 0.005:
+                            start_p = price / (1.0 + float(chg_5m) / 100.0)
+                        elif tv_rec is not None and abs(float(tv_rec)) >= 0.05:
+                            start_p = price / (1.0 + float(tv_rec) * 0.003)
+                        else:
+                            start_p = price
+                        for k_i in range(20):
+                            frac = (k_i + 1) / 20.0
+                            hist.append(round(start_p + (price - start_p) * frac, decimals))
+                    elif not hist or abs(hist[-1] - price) > price * 1e-7:
                         hist.append(price)
                     self._compute_live_tv_ratings(sym, row, hist)
                     b_alias = f"B-{sym[:-4]}_USDT"
@@ -1184,20 +1196,21 @@ class PriceFeed:
                                     updates["source"] = "TRADINGVIEW"
                                 row.update(updates)
                                 hist = self.history[target_key]
-                                if first_quote or len(hist) < 15:
+                                decimals = 8 if price < 0.01 else (6 if price < 1 else (4 if price < 10 else 2))
+                                if first_quote or len(hist) < 15 or len(set(round(float(x), 8) for x in list(hist)[-15:])) <= 2:
                                     hist.clear()
                                     if ema50_1m and ema50_1m > 0 and abs(price - ema50_1m) / price <= 0.04:
                                         start_p = float(ema50_1m)
-                                    elif chg_5m is not None and abs(float(chg_5m)) <= 5.0:
+                                    elif chg_5m is not None and abs(float(chg_5m)) <= 5.0 and abs(float(chg_5m)) > 0.005:
                                         start_p = price / (1.0 + float(chg_5m) / 100.0)
-                                    elif tv_recommend is not None:
+                                    elif tv_recommend is not None and abs(float(tv_recommend)) >= 0.05:
                                         start_p = price / (1.0 + float(tv_recommend) * 0.003)
                                     else:
                                         start_p = price
                                     for k_i in range(20):
                                         frac = (k_i + 1) / 20.0
-                                        hist.append(round(start_p + (price - start_p) * frac, 6 if price < 1 else (4 if price < 10 else 2)))
-                                else:
+                                        hist.append(round(start_p + (price - start_p) * frac, decimals))
+                                elif not hist or abs(hist[-1] - price) > price * 1e-7:
                                     hist.append(price)
                             updated_any = True
                         except Exception:
@@ -1686,15 +1699,27 @@ class PriceFeed:
         return result
 
     # ---------- chart + book ----------
-    def candles(self, symbol, interval="1m", limit=120):
-        # For live CRYPTO symbols, fetch real Binance/CoinDCX OHLCV klines first so 1m/5m charts & bot signals match 100%
+    def candles(self, symbol, interval="1m", limit=120, allow_network=False):
+        # Fast non-blocking check of cached real Binance/CoinDCX klines first (warmed by background thread)
         with self.lock:
             row = self.prices.get(symbol) or {}
             is_live_crypto = row.get("category", "CRYPTO") == "CRYPTO" and bool(row.get("live"))
         if is_live_crypto and interval in ("1m", "3m", "5m", "15m", "30m", "1h"):
-            real_kl = self._fetch_real_klines(symbol, interval=interval, limit=limit)
-            if real_kl and len(real_kl) >= 10:
-                return real_kl
+            clean_sym = self._clean_crypto_symbol(symbol)
+            cached = getattr(self, "_kline_cache", {}).get((clean_sym, interval))
+            if cached and (time.time() - cached[0]) < 180.0 and len(cached[1]) >= 10:
+                out = [dict(c) for c in cached[1][-int(limit):]]
+                live_p = self.price(symbol)
+                if out and live_p and float(live_p) > 0:
+                    lp = float(live_p)
+                    out[-1]["c"] = lp
+                    out[-1]["h"] = max(float(out[-1]["h"]), lp)
+                    out[-1]["l"] = min(float(out[-1]["l"]), lp)
+                return out
+            if allow_network:
+                real_kl = self._fetch_real_klines(symbol, interval=interval, limit=limit)
+                if real_kl and len(real_kl) >= 10:
+                    return real_kl
         return self._synthetic_candles(symbol, interval, limit)
 
     def _synthetic_candles(self, symbol, interval, limit):
@@ -1719,18 +1744,18 @@ class PriceFeed:
             ema20 = row.get("tv_ema20_1m") if mins <= 3 else row.get("tv_ema20_5m")
             tv_rec_short = row.get("tv_rec_1m") if row.get("tv_rec_1m") is not None else row.get("tv_recommend")
             chg_5m = row.get("tv_chg_5m")
-            if ema50 and float(ema50) > 0:
+            if ema50 and float(ema50) > 0 and abs(float(ema50) - float(last)) / max(float(last), 1e-9) > 0.0001:
                 start = float(ema50)
-            elif ema20 and float(ema20) > 0:
+            elif ema20 and float(ema20) > 0 and abs(float(ema20) - float(last)) / max(float(last), 1e-9) > 0.0001:
                 start = float(ema20)
-            elif chg_5m is not None:
+            elif chg_5m is not None and abs(float(chg_5m)) > 0.001:
                 window_chg_pct = float(chg_5m) * min(3.0, (limit * mins) / 5.0) * 0.35
                 start = float(last) / (1.0 + (window_chg_pct / 100.0))
             elif tv_rec_short is not None and abs(float(tv_rec_short)) >= 0.05:
                 # Align short window drift with live TradingView technical rating (-1..+1)
                 est_move_pct = float(tv_rec_short) * 0.45 * min(2.0, (limit * mins) / 30.0)
                 start = float(last) / (1.0 + (est_move_pct / 100.0))
-            elif len(hist_ticks) >= 10 and float(hist_ticks[0]) > 0:
+            elif len(hist_ticks) >= 10 and float(hist_ticks[0]) > 0 and abs(float(hist_ticks[0]) - float(last)) / max(float(last), 1e-9) > 0.0001:
                 start = float(hist_ticks[0])
 
         if start is None or start <= 0:
@@ -1749,18 +1774,23 @@ class PriceFeed:
         hi_real = float(row.get("high")) if (live and row.get("high") and float(row.get("high") or 0) > 0) else None
         lo_real = float(row.get("low")) if (live and row.get("low") and float(row.get("low") or 0) > 0) else None
         bounded = bool(hi_real and lo_real and hi_real > lo_real > 0)
-        drift = ((last / start) ** (1.0 / max(limit, 1)) - 1.0) if start and start > 0 else 0.0
         step = mins * 60000
         now = time.time() * 1000
         out, p = [], start
+        span = last - start
+        step_mag = max(abs(span) / max(limit, 1), last * 0.00015)
         for i in range(limit):
             o = p if p is not None else start
-            c = o * (1.0 + drift + rng.uniform(-jitter * 0.45, jitter * 0.45))
+            frac = (i + 1) / max(limit, 1)
+            target_c = start + span * frac
+            wobble = rng.uniform(-step_mag * 0.32, step_mag * 0.32) if i < limit - 1 else 0.0
+            c = target_c + wobble
             if bounded:
                 c = min(max(c, lo_real), hi_real)
+            w_wick = max(abs(c - o) * 0.35, last * 0.0001)
             out.append({"t": now - (limit - i) * step, "o": o,
-                        "h": min(max(o, c) * (1 + jitter / 2), hi_real if bounded else 1e18),
-                        "l": max(min(o, c) * (1 - jitter / 2), lo_real if bounded else 0.0),
+                        "h": min(max(o, c) + w_wick, hi_real if bounded else 1e18),
+                        "l": max(min(o, c) - w_wick, lo_real if bounded else 0.0),
                         "c": c, "v": rng.uniform(1e4, 9e5)})
             p = c
         if out:

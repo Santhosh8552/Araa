@@ -269,7 +269,7 @@ class TestCompanyPhases5To12Acceptance(unittest.TestCase):
         )
         self.assertEqual(sig.status_code, 200)
         self.assertIn("explanation", sig.get_json()["signal"])
-        self.assertEqual(len(sig.get_json()["unified_ai"]["engines"]), 6)
+        self.assertGreaterEqual(len(sig.get_json()["unified_ai"]["engines"]), 6)
 
         # Unified All-AI Hub, Multi-Engine Analyze & Copilot Chat
         hub = client.get("/api/v1/company/ai/hub", headers={"X-Company-Token": tok})

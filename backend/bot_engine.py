@@ -542,15 +542,25 @@ class Bot:
                         })
                         with self.feed.lock:
                             hist = self.feed.history[sym]
-                            if len(hist) < 20:
+                            decimals = 8 if p < 0.01 else (6 if p < 1 else (4 if p < 10 else 2))
+                            if len(hist) < 20 or len(set(round(float(x), 8) for x in list(hist)[-15:])) <= 2:
                                 src_hist = list(self.feed.history.get(clean_s) or [])
                                 hist.clear()
-                                if len(src_hist) >= 15:
+                                if len(src_hist) >= 15 and len(set(round(float(x), 8) for x in src_hist[-15:])) >= 3:
                                     for h_v in src_hist[-20:]:
                                         hist.append(h_v)
                                 else:
-                                    for _ in range(20):
-                                        hist.append(p)
+                                    tv_rec_seed = merged_row.get("tv_rec_1m") if merged_row.get("tv_rec_1m") is not None else merged_row.get("tv_recommend")
+                                    ema50_seed = merged_row.get("tv_ema50_1m")
+                                    if ema50_seed and float(ema50_seed) > 0 and abs(p - float(ema50_seed)) / p <= 0.04:
+                                        start_p = float(ema50_seed)
+                                    elif tv_rec_seed is not None and abs(float(tv_rec_seed)) >= 0.05:
+                                        start_p = p / (1.0 + float(tv_rec_seed) * 0.003)
+                                    else:
+                                        start_p = p
+                                    for k_i in range(20):
+                                        frac = (k_i + 1) / 20.0
+                                        hist.append(round(start_p + (p - start_p) * frac, decimals))
                             if hasattr(self.feed, "_compute_live_tv_ratings"):
                                 self.feed._compute_live_tv_ratings(sym, merged_row, hist)
                             if sym not in self.feed.prices:
@@ -586,10 +596,17 @@ class Bot:
                         })
                         with self.feed.lock:
                             hist = self.feed.history[sym]
-                            if len(hist) < 20:
+                            decimals = 8 if p < 0.01 else (6 if p < 1 else (4 if p < 10 else 2))
+                            if len(hist) < 20 or len(set(round(float(x), 8) for x in list(hist)[-15:])) <= 2:
                                 hist.clear()
-                                for _ in range(20):
-                                    hist.append(p)
+                                tv_rec_seed = merged_row.get("tv_rec_1m") if merged_row.get("tv_rec_1m") is not None else merged_row.get("tv_recommend")
+                                if tv_rec_seed is not None and abs(float(tv_rec_seed)) >= 0.05:
+                                    start_p = p / (1.0 + float(tv_rec_seed) * 0.003)
+                                else:
+                                    start_p = p
+                                for k_i in range(20):
+                                    frac = (k_i + 1) / 20.0
+                                    hist.append(round(start_p + (p - start_p) * frac, decimals))
                             if hasattr(self.feed, "_compute_live_tv_ratings"):
                                 self.feed._compute_live_tv_ratings(sym, merged_row, hist)
                             if sym not in self.feed.prices:
@@ -599,6 +616,15 @@ class Bot:
                         universe.append((sym, merged_row))
                         self.by_category.setdefault("CRYPTO", []).append(sym)
                         existing_syms.add(sym)
+                if hasattr(self.feed, "refresh_crypto_tradingview"):
+                    now_ts = time.time()
+                    if now_ts - getattr(self.feed, "_last_tv_crypto_scan", 0.0) >= 8.0 or any(r.get("tv_rec_1m") is None for _, r in universe[:25] if r.get("category") == "CRYPTO"):
+                        self.feed.refresh_crypto_tradingview(force=True)
+                        with self.feed.lock:
+                            for idx_u, (u_sym, u_row) in enumerate(universe):
+                                live_r = self.feed.prices.get(u_sym)
+                                if live_r:
+                                    u_row.update(live_r)
         except Exception:
             pass
 
@@ -606,13 +632,14 @@ class Bot:
         return universe
 
     # ---------- analysis ----------
-    def _candles(self, symbol, interval="1m", limit=14, ttl=120.0):
-        """Cached Binance klines. candles() is a blocking HTTP call, and the loop would
-        otherwise re-fetch every crypto candidate every 3 seconds."""
-        clean_sym = symbol
+    def _candles(self, symbol, interval="1m", limit=14, ttl=30.0):
+        """Non-blocking cached 1m klines from feed memory cache."""
+        clean_sym = str(symbol or "").upper().strip()
+        if clean_sym.startswith("B-"):
+            clean_sym = clean_sym[2:]
+        clean_sym = clean_sym.replace("_", "").replace("-", "")
         if clean_sym.endswith("INR"):
-            base = clean_sym.replace("INR", "")
-            clean_sym = f"{base}USDT"
+            clean_sym = f"{clean_sym[:-3]}USDT"
         key = (clean_sym, interval, limit)
         if not hasattr(self, "_candle_cache"):
             self._candle_cache = {}
@@ -622,7 +649,7 @@ class Bot:
             return hit[1]
         found = self.feed.candles(clean_sym, interval, limit)
         self._candle_cache[key] = (now, found)
-        if len(self._candle_cache) > 400:
+        if len(self._candle_cache) > 600:
             self._candle_cache.clear()
         return found
 
@@ -730,7 +757,7 @@ class Bot:
             return None
         candles_1m = []
         if cat == "CRYPTO":
-            candles_1m = self._candles(symbol, "1m", limit=35, ttl=12.0)
+            candles_1m = self._candles(symbol, "1m", limit=35, ttl=25.0)
             if hasattr(self.feed, "prices") and hasattr(self.feed, "lock"):
                 with self.feed.lock:
                     live_row = self.feed.prices.get(symbol) or {}
@@ -745,6 +772,10 @@ class Bot:
                         if live_row.get(k) is not None and (row.get(k) is None or row.get("tv_signal") == "NEUTRAL"):
                             row[k] = live_row[k]
         ticks = self.feed.ticks(symbol, 90)
+        if len(candles_1m) >= 12 and (len(ticks) < MIN_TICKS or len(set(round(float(x), 8) for x in ticks[-15:])) <= 2):
+            c_closes = [float(c["c"]) for c in candles_1m if float(c.get("c") or 0) > 0]
+            if len(c_closes) >= MIN_TICKS:
+                ticks = c_closes
         if len(ticks) < MIN_TICKS:
             return None            # no measured history yet - refuse to guess a direction
         rets = [(ticks[i] - ticks[i - 1]) / ticks[i - 1] * 100.0
@@ -931,11 +962,11 @@ class Bot:
                 parts.insert(0, ("TRADINGVIEW", round(max(0.14, abs(tv_rec) * 0.42), 2), f"{tv_label} ({tf_note})"))
             else:
                 # Neutral TradingView consensus: ONLY allow trade if 1m slope_z is decisively trending (never guess from 24h change!)
-                if slope_z > 0.12 and r14 >= 42 and r14 <= 74:
+                if slope_z > 0.06 and r14 >= 40 and r14 <= 74:
                     side = "LONG"
                     tv_label = "BULLISH_CONTINUATION"
                     parts.insert(0, ("MOMENTUM_SCAN", 0.20, f"BULLISH CONTINUATION (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-                elif slope_z < -0.12 and r14 <= 58 and r14 >= 26:
+                elif slope_z < -0.06 and r14 <= 60 and r14 >= 26:
                     side = "SHORT"
                     tv_label = "BEARISH_BREAKDOWN"
                     parts.insert(0, ("MOMENTUM_SCAN", 0.20, f"BEARISH BREAKDOWN (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
@@ -943,11 +974,11 @@ class Bot:
                     return None
         else:
             # No TradingView rating yet: require decisive 1m slope_z momentum (never guess from 24h change!)
-            if slope_z > 0.12 and r14 >= 42 and r14 <= 74:
+            if slope_z > 0.06 and r14 >= 40 and r14 <= 74:
                 side = "LONG"
                 tv_label = "BULLISH_MOMENTUM"
                 parts.insert(0, ("MOMENTUM_SCAN", 0.22, f"BULLISH MOMENTUM (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
-            elif slope_z < -0.12 and r14 <= 58 and r14 >= 26:
+            elif slope_z < -0.06 and r14 <= 60 and r14 >= 26:
                 side = "SHORT"
                 tv_label = "BEARISH_MOMENTUM"
                 parts.insert(0, ("MOMENTUM_SCAN", 0.22, f"BEARISH BREAKDOWN (RSI {r14:.0f} · Slope {slope_z:+.2f}sd)"))
@@ -970,26 +1001,24 @@ class Bot:
             if tv_ema20_1m and tv_ema50_1m and price > float(tv_ema20_1m) > float(tv_ema50_1m):
                 return None
             # Strict 1m Chart & Tick Direction Gate: Never open SHORT if 1m slope or recent ticks are rising (▲)
-            if slope_z >= -0.02:
+            if slope_z > 0.04 or (slope_z >= 0.0 and (tv_rec is None or float(tv_rec) > -0.10)):
                 return None
-            if micro["above_fast"] or micro["recent_tick_pct"] > 0.01:
-                return None
-            if micro["last_body_pct"] > 0.02:
+            if micro["recent_tick_pct"] > 0.025 or micro["last_body_pct"] > 0.035:
                 return None
             # Anti-green-bounce veto: block SHORT entries when live 1m candles or micro-ticks are bouncing upward
-            if micro["last_3_green"] or micro["last_2_green"]:
+            if micro["last_3_green"] or (micro["last_2_green"] and micro["above_fast"] and micro["recent_tick_pct"] > 0.008):
                 return None
             if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_bouncing_up") and not (slope_z < -0.25 and micro["below_fast"] and micro["recent_tick_pct"] < -0.05):
                 return None
-            if change <= -4.0 and range_pos <= 0.25 and (micro["above_fast"] or micro["recent_tick_pct"] > -0.01 or slope_z > -0.10):
+            if change <= -4.0 and range_pos <= 0.25 and (micro["recent_tick_pct"] > 0.015 or slope_z > 0.0):
                 return None
-            if cat == "CRYPTO" and r14 >= 68.0 and slope_z > -0.15:
+            if cat == "CRYPTO" and r14 >= 70.0 and slope_z > -0.10:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
                 recent_ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                if recent_ups >= 0.50 and not ob_bearish and slope_z > -0.35:
+                if recent_ups >= 0.625 and not ob_bearish and slope_z > -0.35:
                     return None
-            if cat == "CRYPTO" and not (slope_z < -0.05 or micro["recent_tick_pct"] < -0.02 or micro["last_body_pct"] < -0.02 or sq_mom < 0 or ob_bearish):
+            if cat == "CRYPTO" and not (slope_z < -0.02 or (tv_rec is not None and float(tv_rec) <= -0.08) or micro["recent_tick_pct"] < -0.01 or micro["last_body_pct"] < -0.01 or sq_mom < 0 or ob_bearish):
                 return None
 
             directional_tags = {"TREND", "24H", "1m CANDLES", "ORDER BLOCK", "TV_EMA_1m", "TV_MACD_1m"}
@@ -1021,26 +1050,24 @@ class Bot:
             if tv_ema20_1m and tv_ema50_1m and price < float(tv_ema20_1m) < float(tv_ema50_1m):
                 return None
             # Strict 1m Chart & Tick Direction Gate: Never open LONG if 1m slope or recent ticks are falling (▼)
-            if slope_z <= 0.02:
+            if slope_z < -0.04 or (slope_z <= 0.0 and (tv_rec is None or float(tv_rec) < 0.10)):
                 return None
-            if micro["below_fast"] or micro["recent_tick_pct"] < -0.01:
-                return None
-            if micro["last_body_pct"] < -0.02:
+            if micro["recent_tick_pct"] < -0.025 or micro["last_body_pct"] < -0.035:
                 return None
             # Anti-red-waterfall veto: block LONG entries when live 1m candles or micro-ticks are dropping sharply
-            if micro["last_3_red"] or micro["last_2_red"]:
+            if micro["last_3_red"] or (micro["last_2_red"] and micro["below_fast"] and micro["recent_tick_pct"] < -0.008):
                 return None
             if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_dumping_down") and not (slope_z > 0.25 and micro["above_fast"] and micro["recent_tick_pct"] > 0.05):
                 return None
-            if change >= 6.0 and range_pos >= 0.85 and (micro["below_fast"] or micro["recent_tick_pct"] < 0.01 or slope_z < 0.10):
+            if change >= 6.0 and range_pos >= 0.85 and (micro["recent_tick_pct"] < -0.015 or slope_z < 0.0):
                 return None
             if cat == "CRYPTO" and r14 >= 78.0:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
                 recent_ups = sum(1 for c in candles_1m[-8:] if c["c"] >= c["o"]) / 8.0
-                if recent_ups <= 0.50 and not ob_bullish and slope_z < 0.35:
+                if recent_ups <= 0.375 and not ob_bullish and slope_z < 0.35:
                     return None
-            if cat == "CRYPTO" and not (slope_z > 0.05 or micro["recent_tick_pct"] > 0.02 or micro["last_body_pct"] > 0.02 or sq_mom > 0 or ob_bullish):
+            if cat == "CRYPTO" and not (slope_z > 0.02 or (tv_rec is not None and float(tv_rec) >= 0.08) or micro["recent_tick_pct"] > 0.01 or micro["last_body_pct"] > 0.01 or sq_mom > 0 or ob_bullish):
                 return None
             score = sum(p[1] for p in parts)
         if score <= -0.20:
@@ -1953,7 +1980,7 @@ class Bot:
         # =========================================================================
         # Zero-delay instant execution: start analyzing and opening high-probability positions immediately
         activated_at = float(user.get("bot_activated_at") or 0.0)
-        calib_window = 3.0
+        calib_window = 0.0
         if activated_at > 0 and len(open_list) == 0:
             elapsed_sec = now - activated_at
             if elapsed_sec < calib_window:
@@ -2095,9 +2122,9 @@ class Bot:
                         tv_r5m = cand.get("tv_rec_5m") if cand.get("tv_rec_5m") is not None else cand_q.get("tv_rec_5m")
                         c_side = str(cand.get("side") or "").upper()
                         if tv_r is not None:
-                            if c_side in ("LONG", "BUY") and float(tv_r) < 0.05:
+                            if c_side in ("LONG", "BUY") and float(tv_r) < -0.03:
                                 continue
-                            if c_side in ("SHORT", "SELL") and float(tv_r) > -0.05:
+                            if c_side in ("SHORT", "SELL") and float(tv_r) > 0.03:
                                 continue
                         if tv_r1m is not None:
                             if c_side in ("LONG", "BUY") and float(tv_r1m) < -0.05:
@@ -2619,19 +2646,24 @@ class Bot:
                 wallet["deposit_balance"] = round(dep_avail - dep_deduct, 2)
                 wallet["profit_balance"] = round(max(0.0, float(wallet.get("profit_balance") or 0) - prof_deduct), 2)
             free -= margin
-            # Dispatch notification to Slack & Telegram
-            try:
-                from slack_service import send_trade_notification
-                send_trade_notification(trade_type="OPEN", symbol=picked["symbol"], side=picked["side"], price=picked["price"],
-                                        details=f"Margin ${margin:.2f} · {lev:.0f}x Leverage · Exposure ${margin*lev:,.0f} · Win Prob {ai_prob}%")
-            except Exception:
-                pass
-            try:
-                from telegram_notifier import notify_order_opened
-                notify_order_opened(symbol=picked["symbol"], side=picked["side"], price=picked["price"],
-                                    qty=qty, leverage=lev, win_prob=ai_prob, source=src_val, user_id=user["id"])
-            except Exception:
-                pass
+            # Dispatch notification to Slack & Telegram asynchronously so cycle() never blocks
+            _n_sym, _n_side, _n_px, _n_margin, _n_lev, _n_prob, _n_qty, _n_src, _n_uid = (
+                picked["symbol"], picked["side"], picked["price"], margin, lev, ai_prob, qty, src_val, user["id"]
+            )
+            def _bg_notify():
+                try:
+                    from slack_service import send_trade_notification
+                    send_trade_notification(trade_type="OPEN", symbol=_n_sym, side=_n_side, price=_n_px,
+                                            details=f"Margin ${_n_margin:.2f} · {_n_lev:.0f}x Leverage · Exposure ${_n_margin*_n_lev:,.0f} · Win Prob {_n_prob}%")
+                except Exception:
+                    pass
+                try:
+                    from telegram_notifier import notify_order_opened
+                    notify_order_opened(symbol=_n_sym, side=_n_side, price=_n_px,
+                                        qty=_n_qty, leverage=_n_lev, win_prob=_n_prob, source=_n_src, user_id=_n_uid)
+                except Exception:
+                    pass
+            threading.Thread(target=_bg_notify, daemon=True).start()
             self._log(user["id"], "OPEN",
                       f"{picked['side']} {picked['symbol']} [{picked['category']}] @ {picked['price']} "
                       f"conf {picked['confidence']} margin ${margin:.2f} ({lev:.0f}x Lev · Exposure ${margin*lev:,.0f}) "
@@ -2683,6 +2715,16 @@ class Bot:
 
     # ---------- loop ----------
     def cycle(self):
+        if not hasattr(self, "_cycle_lock"):
+            self._cycle_lock = threading.Lock()
+        if not self._cycle_lock.acquire(blocking=False):
+            return
+        try:
+            self._cycle_locked()
+        finally:
+            self._cycle_lock.release()
+
+    def _cycle_locked(self):
         t0 = time.time()
         self.scan()
         # Users may run different modes, so analyse once per mode actually in use.

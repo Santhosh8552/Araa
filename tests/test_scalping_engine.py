@@ -276,6 +276,39 @@ class TestScalpingEngine(unittest.TestCase):
         self.assertLess(usual_row["tv_recommend"], 0.0)
         self.assertIn(usual_row["tv_signal"], ("SELL", "STRONG_SELL"))
 
+    def test_non_blocking_candles_and_flat_tick_fallback_opens_entry(self):
+        from price_feed import PriceFeed
+        pf = PriceFeed()
+        pf.prime([{"symbol": "XRPUSDT", "category": "CRYPTO", "ref_price": 0.99}])
+        pf.prices["XRPUSDT"].update({
+            "live": True,
+            "price": 0.9920,
+            "high": 1.0100,
+            "low": 0.9750,
+            "change_pct": -1.5,
+            "volume": 95_000_000,
+            "tv_rec_1m": 0.45,
+            "tv_rec_5m": 0.32,
+            "tv_recommend": 0.39,
+            "tv_ma_1m": 0.50,
+            "tv_ma_5m": 0.35,
+            "tv_rsi_1m": 58.0,
+            "tv_ema20_1m": 0.9890,
+            "tv_ema50_1m": 0.9860,
+        })
+        # Even if history is a flat 20-tick seed [0.9920]*20, non-blocking candles() + 1m fallback must qualify LONG
+        pf.history["XRPUSDT"].clear()
+        for _ in range(20):
+            pf.history["XRPUSDT"].append(0.9920)
+        t0 = time.time()
+        cs = pf.candles("XRPUSDT", "1m", 35)
+        self.assertLess(time.time() - t0, 0.05)
+        self.assertEqual(len(cs), 35)
+        bot = Bot(pf)
+        setup = bot.analyse("XRPUSDT", dict(pf.prices["XRPUSDT"]), mode="SCALP")
+        self.assertIsNotNone(setup)
+        self.assertEqual(setup["side"], "LONG")
+
 
 if __name__ == "__main__":
     unittest.main()

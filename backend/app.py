@@ -1216,7 +1216,7 @@ def market(symbol):
             logger.warning(f"Failed to check CoinDCX market for {symbol}: {e}")
         return fail(f"Unknown pair {symbol}", 404)
     interval = request.args.get("interval", "1m")
-    candles = feed.candles(symbol, interval, int(request.args.get("candles", 90)))
+    candles = feed.candles(symbol, interval, int(request.args.get("candles", 90)), allow_network=True)
     book = feed.order_book(symbol)
     closes = [c["c"] for c in candles]
     volumes = [c["v"] for c in candles]
@@ -6856,6 +6856,10 @@ def boot_data():
             feed.prime(all_rows)
             feed.refresh_forex()
             feed.refresh_crypto()
+            try:
+                feed.refresh_active_crypto_klines(max_symbols=30)
+            except Exception:
+                pass
             try:
                 bot.scan()
                 bot.analyse_universe("SCALP")
