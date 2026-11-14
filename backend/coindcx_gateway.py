@@ -430,6 +430,16 @@ def verify_coindcx_credentials(api_key: str, api_secret: str) -> Tuple[bool, str
     if "***" in clean_secret or clean_secret.startswith("*"):
         return False, "Secret contains asterisks (***). Do not copy from the CoinDCX key list; paste the real Secret shown in the one-time popup.", {}
 
+    if os.environ.get("ARAA_E2E_MOCK_COINDCX") == "1" and clean_key.startswith("e2e_"):
+        return True, "CoinDCX E2E Mock Connected Successfully!", {
+            "inr_free": 0.0, "inr_locked": 0.0, "inr_total": 0.0,
+            "usdt_free": 50.0, "usdt_locked": 0.0, "usdt_total": 50.0,
+            "total_portfolio_inr": 4500.0, "total_portfolio_usd": 50.0,
+            "usdt_inr_rate": 90.0, "holdings": [],
+            "verified_online": True, "profile_name": "E2E Verified Trader",
+            "account_email": "e2e@araabot.in", "futures_eligible": True,
+        }
+
     logger.info(f"Verifying CoinDCX credentials: key_len={len(clean_key)}, sec_len={len(clean_secret)}")
 
     rate = _get_live_usdt_inr_rate()
@@ -633,7 +643,7 @@ class CoinDCXSpotAdapter:
         if self.is_offline:
             conn = query_one("SELECT live_balance, free_margin FROM broker_connections WHERE user_id=?", (self.user_id,))
             wallet = query_one("SELECT deposit_balance, starting_balance FROM wallets WHERE user_id=?", (self.user_id,))
-            default_bal = float(wallet["deposit_balance"] if (wallet and wallet.get("deposit_balance")) else (wallet["starting_balance"] if (wallet and wallet.get("starting_balance")) else 1000.0))
+            default_bal = float(wallet["deposit_balance"] if (wallet and wallet.get("deposit_balance")) else (wallet["starting_balance"] if (wallet and wallet.get("starting_balance")) else 0.0))
             bal_val = float(conn.get("live_balance") if (conn and conn.get("live_balance") is not None) else default_bal)
             if bal_val > 15000.0:
                 bal_val = round(bal_val / 90.0, 2)
@@ -1128,7 +1138,7 @@ class CoinDCXFuturesAdapter:
         """Retrieves dedicated futures wallet balance and margin from CoinDCX."""
         if self.is_offline:
             conn = query_one("SELECT live_balance, free_margin FROM broker_connections WHERE user_id=?", (self.user_id,))
-            bal = float(conn.get("live_balance") or 10000.0) if conn else 10000.0
+            bal = float(conn.get("live_balance") or 0.0) if conn else 0.0
             return True, {
                 "balance_inr": bal,
                 "free_margin_inr": bal,
@@ -2403,7 +2413,7 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
     ).strip()
 
     wallet = query_one("SELECT deposit_balance, starting_balance FROM wallets WHERE user_id=?", (user_id,))
-    default_bal = float(wallet["deposit_balance"] if (wallet and wallet.get("deposit_balance")) else (wallet["starting_balance"] if (wallet and wallet.get("starting_balance")) else 100.0))
+    default_bal = float(wallet["deposit_balance"] if (wallet and wallet.get("deposit_balance")) else (wallet["starting_balance"] if (wallet and wallet.get("starting_balance")) else 0.0))
     if default_bal > 15000.0:
         default_bal = round(default_bal / 90.0, 2)
     is_verified_live = (not is_offline) and bool(summary.get("verified_online"))
@@ -2412,30 +2422,26 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
     usd_total = float(summary.get("total_portfolio_usd") if summary.get("total_portfolio_usd") is not None else (inr_total / rate))
     if usd_total > 15000.0 and abs(usd_total - inr_total) < 1.0:
         usd_total = round(usd_total / rate, 2)
-    if usd_total <= 0.0:
-        usd_total = round(default_bal if default_bal > 1.5 else 66.86, 2)
     usd_total = round(max(0.0, usd_total), 2)
 
     if is_verified_live:
         usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None else usd_total)
         if usd_free > 15000.0 and abs(usd_free - float(summary.get("inr_free") or 0.0)) < 1.0:
             usd_free = round(usd_free / rate, 2)
-        if usd_free <= 0.0:
+        if usd_free <= 0.0 and usd_total > 0.0:
             usd_free = usd_total
         usd_free = round(max(0.0, usd_free), 2)
     else:
         usd_free = float(summary.get("usdt_free") if summary.get("usdt_free") is not None and summary.get("usdt_free") > 0 else usd_total)
         if usd_free > 15000.0 and abs(usd_free - float(summary.get("inr_free") or 0.0)) < 1.0:
             usd_free = round(usd_free / rate, 2)
-        if usd_free <= 0.0 or usd_free < usd_total * 0.1:
-            usd_free = usd_total
-        usd_free = round(usd_free, 2)
+        usd_free = round(max(0.0, usd_free), 2)
 
     status_str = "CONNECTED_OFFLINE" if is_offline else "CONNECTED"
     masked_key = (api_key[:4] + "..." + api_key[-4:]) if len(api_key) > 8 else "***"
     enc_key, enc_secret = encrypt_secret(api_key), encrypt_secret(api_secret)
 
-    is_live_flag = 1  # Both Online and Offline modes activate live CoinDCX data & execution
+    is_live_flag = 0 if is_offline else 1
 
     u_lev_row = query_one("SELECT bot_leverage FROM users WHERE id=?", (user_id,))
     preserved_lev = max(1.0, min(500.0, float((u_lev_row and u_lev_row.get("bot_leverage")) or 500.0)))

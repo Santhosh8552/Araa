@@ -236,10 +236,12 @@ def add_security_headers(response):
 bot = Bot(feed)
 T0 = time.time()
 
-# Auto-seed virtual paper trading capital ($10,000.00) for all paper accounts across system
+# Clean up any legacy auto-seeded fake DEMO_SIM broker rows and un-deposited fake $10,000 wallets
 try:
-    write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 "
-          "WHERE (deposit_balance<=0 OR deposit_balance IS NULL) "
+    write("DELETE FROM broker_connections WHERE api_key_masked='DEMO_SIM'")
+    write("UPDATE wallets SET deposit_balance=0.0, starting_balance=0.0, target_amount=0.0, total_deposited=0.0 "
+          "WHERE deposit_balance=10000.0 AND starting_balance=10000.0 "
+          "AND user_id NOT IN (SELECT DISTINCT user_id FROM deposits WHERE status='CREDITED') "
           "AND user_id NOT IN (SELECT user_id FROM broker_connections WHERE is_live_active=1)")
 except Exception:
     pass
@@ -347,7 +349,7 @@ def resolve_user():
     uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                 "VALUES('trader@araabot.in','Trader',?,?,?,?,0)", (salt, digest, now, now))
     try:
-        write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
+        write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0)", (uid,))
     except Exception:
         pass
     return query_one("SELECT * FROM users WHERE id=?", (uid,))
@@ -388,18 +390,14 @@ def wallet_of(uid):
     w["manual_profit"] = round(float(manual_net_val or 0.0), 2)
     w["deposit_balance"] = round(float(w.get("deposit_balance") or 0.0), 2)
     if w["deposit_balance"] <= 0.0:
-        b_row = query_one("SELECT live_balance, is_live_active FROM broker_connections WHERE user_id=?", (uid,))
-        if b_row and float(b_row.get("live_balance") or 0.0) > 0.0:
+        b_row = query_one("SELECT live_balance, is_live_active, status, api_key_masked FROM broker_connections WHERE user_id=?", (uid,))
+        if (b_row and b_row.get("is_live_active") and b_row.get("status") == "CONNECTED"
+                and str(b_row.get("api_key_masked") or "") != "DEMO_SIM"
+                and float(b_row.get("live_balance") or 0.0) > 0.0):
             synced_bal = round(float(b_row["live_balance"]), 2)
             write("UPDATE wallets SET deposit_balance=?, starting_balance=? WHERE user_id=?", (synced_bal, synced_bal, uid))
             w["deposit_balance"] = synced_bal
             w["starting_balance"] = synced_bal
-        elif not b_row or not b_row.get("is_live_active"):
-            # Default Virtual Paper Trading Capital ($10,000.00) so paper trading is never blocked
-            write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=? AND (deposit_balance<=0 OR deposit_balance IS NULL)", (uid,))
-            w["deposit_balance"] = 10000.0
-            w["starting_balance"] = 10000.0
-            w["target_amount"] = 15000.0
     w["profit_balance"] = round(float(w.get("profit_balance") or 0.0), 2)
     w["locked_balance"] = round(float(w.get("locked_balance") or 0.0), 2)
     w["starting_balance"] = round(float(w.get("starting_balance") or 0.0), 2)
@@ -419,21 +417,13 @@ def reset_paper_wallet():
 
 
 def portfolio(uid):
-    # Check if user has an active LIVE broker session
-    broker_conn = query_one("SELECT is_live_active, live_balance, live_equity, status FROM broker_connections WHERE user_id=?", (uid,))
-    if not broker_conn or broker_conn.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE"):
-        active_cdx = query_one(
-            "SELECT id, is_live_active, live_balance, live_equity, status FROM broker_connections "
-            "WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
-            "ORDER BY last_synced_at DESC LIMIT 1"
-        )
-        if active_cdx:
-            broker_conn = active_cdx
-            try:
-                write("UPDATE broker_connections SET user_id=? WHERE id=?", (uid, active_cdx["id"]))
-            except Exception:
-                pass
-    is_live_mode = bool(broker_conn and (broker_conn.get("is_live_active") or broker_conn.get("status") in ("CONNECTED", "CONNECTED_OFFLINE")))
+    # Check if this exact user has an active LIVE broker session (never steal across users or count DEMO_SIM)
+    broker_conn = query_one(
+        "SELECT is_live_active, live_balance, live_equity, status, api_key_masked FROM broker_connections "
+        "WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+        (uid,),
+    )
+    is_live_mode = bool(broker_conn and broker_conn.get("is_live_active") and broker_conn.get("status") == "CONNECTED")
 
     # Isolate positions: Live Bot gets real live positions (is_live=1), Paper Bot gets paper positions (is_live=0)
     pos_filter = "is_live=1" if is_live_mode else "(is_live=0 OR is_live IS NULL)"
@@ -477,11 +467,9 @@ def portfolio(uid):
     curve, run = [], 0.0
     cat_run = {}
     
-    # Starting capital baseline (0.0 for new users until they deposit/invest)
+    # Starting capital baseline (0.0 for new users until they connect real broker or deposit)
     if is_live_mode:
         live_usd = round(float(broker_conn.get("live_balance") or 0.0), 2)
-        if live_usd <= 0.0:
-            live_usd = 66.86
         base_capital = live_usd
     else:
         base_capital = round(float(w.get("starting_balance") or w.get("total_deposited") or 0.0), 2)
@@ -515,8 +503,6 @@ def portfolio(uid):
 
     if is_live_mode:
         live_usd = round(float(broker_conn.get("live_balance") or 0.0), 2)
-        if live_usd <= 0.0:
-            live_usd = 66.86
         start = live_usd
         balance = round(live_usd + unreal, 2) if live_usd > 0 else round(run + unreal, 2)
         target = round(start * 1.5, 2) if start > 0 else 0.0
@@ -532,14 +518,6 @@ def portfolio(uid):
     else:
         start = round(float(w.get("starting_balance") or 0.0), 2)
         balance = round(float(w.get("deposit_balance") or 0.0) + float(w.get("profit_balance") or 0.0) + float(w.get("locked_balance") or 0.0) + unreal, 2)
-        if start <= 0.0 and balance <= 0.0 and not is_live_mode:
-            try:
-                write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=? AND (deposit_balance<=0 OR deposit_balance IS NULL)", (uid,))
-                w = wallet_of(uid)
-                start = 10000.0
-                balance = 10000.0
-            except Exception:
-                pass
         target = round(float(w.get("target_amount") or (start * 1.5 if start > 0 else 0.0)), 2)
         need = max(0.01, target - start) if target > start else 1.0
         prog = round(min(100.0, max(0.0, (balance - start) / need * 100)), 1) if target > 0 else 0.0
@@ -1352,9 +1330,9 @@ def signup():
         uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                     "VALUES(?,?,?,?,?,?,0)", (email, name, salt, digest, now, now))
         try:
-            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 10000.0, 0.0, 10000.0, 0.0, 0.0, 10000.0, 15000.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)", (uid,))
         except Exception:
-            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0)", (uid,))
         token = make_session(uid, email)
         return ok(user=user_public(uid), token=token, wallet=wallet_of(uid))
     except Exception as exc:
@@ -1390,9 +1368,9 @@ def login():
         uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                     "VALUES(?,?,?,?,?,?,0)", (raw_email, name, salt, digest, now, now))
         try:
-            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 10000.0, 0.0, 10000.0, 0.0, 0.0, 10000.0, 15000.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)", (uid,))
         except Exception:
-            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0)", (uid,))
         token = make_session(uid, raw_email)
         return ok(user=user_public(uid), token=token, wallet=wallet_of(uid))
 
@@ -1479,9 +1457,9 @@ def google_auth():
         uid = write("INSERT INTO users(email,name,pw_salt,pw_hash,created_at,last_login_at,bot_enabled) "
                     "VALUES(?,?,?,?,?,?,0)", (email, name or email.split("@")[0], salt, digest, now, now))
         try:
-            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 10000.0, 0.0, 10000.0, 0.0, 0.0, 10000.0, 15000.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, profit_balance, total_deposited, total_withdrawn, locked_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)", (uid,))
         except Exception:
-            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 10000.0, 10000.0, 15000.0)", (uid,))
+            write("INSERT INTO wallets(user_id, deposit_balance, starting_balance, target_amount) VALUES(?, 0.0, 0.0, 0.0)", (uid,))
         user_id = uid
     else:
         user_id = row["id"]
@@ -1518,22 +1496,11 @@ def account():
     b_row = query_one(
         "SELECT broker_name, status, is_live_active, api_key_masked, live_balance, live_equity, free_margin, "
         "currency, leverage, max_positions, account_name, account_email, market_focus, last_synced_at "
-        "FROM broker_connections WHERE user_id=?",
+        "FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
         (u["id"],),
     )
-    if not b_row or b_row.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE"):
-        active_cdx = query_one(
-            "SELECT id, broker_name, status, is_live_active, api_key_masked, live_balance, live_equity, free_margin, "
-            "currency, leverage, max_positions, account_name, account_email, market_focus, last_synced_at "
-            "FROM broker_connections WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
-            "ORDER BY last_synced_at DESC LIMIT 1"
-        )
-        if active_cdx:
-            b_row = active_cdx
-            try:
-                write("UPDATE broker_connections SET user_id=? WHERE id=?", (u["id"], active_cdx["id"]))
-            except Exception:
-                pass
+    if b_row and b_row.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE"):
+        b_row = None
     rb_row = query_one(
         "SELECT provider_id, broker_account_id, market_segments, strategy_mode, max_order_size, max_daily_loss, "
         "max_exposure_limit, max_leverage, stop_loss_pct, take_profit_pct, bot_status, emergency_shutdown "
@@ -1943,12 +1910,7 @@ def bot_config():
     if enabled and not bot.is_running:
         bot.start()
 
-    # Ensure paper trading users have $10,000.00 virtual capital to trade with
-    b_conn_chk = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
-    is_live_now = 1 if (b_conn_chk and b_conn_chk["is_live_active"]) else 0
-    w_chk = wallet_of(u["id"])
-    if not is_live_now and float(w_chk.get("deposit_balance") or 0.0) <= 0.0 and float(w_chk.get("starting_balance") or 0.0) <= 0.0:
-        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (u["id"],))
+    # New users stay at $0.00 until they explicitly deposit paper funds or connect a real broker API
 
     if not enabled:
         # User switched bot OFF: liquidate/close all active open positions immediately on the spot!
@@ -2066,19 +2028,11 @@ def broker_status():
     u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
-    b = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
+    b = query_one(
+        "SELECT * FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+        (u["id"],),
+    )
     if not b or b.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE", "READY", "SYNCING"):
-        active_cdx = query_one(
-            "SELECT * FROM broker_connections WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
-            "ORDER BY last_synced_at DESC LIMIT 1"
-        )
-        if active_cdx:
-            b = active_cdx
-            try:
-                write("UPDATE broker_connections SET user_id=? WHERE id=?", (u["id"], active_cdx["id"]))
-            except Exception:
-                pass
-    if not b:
         return ok(connected=False, is_live=False, broker=None)
     live_bal = float(b["live_balance"] or 0.0)
     live_eq = float(b["live_equity"] or live_bal)
@@ -2128,16 +2082,12 @@ def broker_status():
         write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=? WHERE user_id=? AND broker_name='COINDCX'",
               (live_bal, live_eq, free_margin, u["id"]))
 
-    if is_coindcx and is_conn and live_bal <= 0.0:
-        live_bal = 66.86
-        live_eq = 66.86
-        free_margin = 66.86
-
     currency = "USDT" if is_coindcx else (b.get("currency") or "USD")
-    profile_name = b.get("account_name") or u.get("name") or "Ashutosh Mund"
+    profile_name = b.get("account_name") or u.get("name") or "CoinDCX Trader"
     account_email = b.get("account_email") or u.get("email") or ""
 
-    return ok(connected=is_conn, is_live=bool(b["is_live_active"] and is_conn), broker={
+    is_live_verified = bool(b.get("is_live_active") and b.get("status") == "CONNECTED")
+    return ok(connected=is_conn, is_live=is_live_verified, broker={
         "name": b["broker_name"],
         "broker_name": b["broker_name"],
         "account_name": profile_name,
@@ -2656,21 +2606,13 @@ def real_bot_toggle_state():
     action = (data.get("action") or "START").upper()
     now = time.time()
     
-    b_conn = query_one("SELECT * FROM broker_connections WHERE user_id=? AND status IN ('CONNECTED', 'CONNECTED_OFFLINE', 'READY', 'SYNCING')", (u["id"],))
+    b_conn = query_one(
+        "SELECT * FROM broker_connections WHERE user_id=? AND status IN ('CONNECTED', 'CONNECTED_OFFLINE', 'READY', 'SYNCING') "
+        "AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+        (u["id"],),
+    )
     if not b_conn:
-        w_row = query_one("SELECT deposit_balance, profit_balance FROM wallets WHERE user_id=?", (u["id"],))
-        init_bal = round(float((w_row and w_row.get("deposit_balance")) or 100.0) + max(0.0, float((w_row and w_row.get("profit_balance")) or 0.0)), 2)
-        if init_bal <= 0:
-            init_bal = 100.0
-        existing_any = query_one("SELECT id FROM broker_connections WHERE user_id=?", (u["id"],))
-        def_lev = max(1.0, min(500.0, float(u.get("bot_leverage") or 500.0)))
-        if existing_any:
-            write("UPDATE broker_connections SET broker_name='COINDCX', status='CONNECTED_OFFLINE', market_focus='FUTURES_USD', leverage=?, live_balance=?, live_equity=?, free_margin=?, currency='USDT', is_live_active=0, last_synced_at=? WHERE user_id=?",
-                  (def_lev, init_bal, init_bal, init_bal, now, u["id"]))
-        else:
-            write("INSERT INTO broker_connections(user_id, broker_name, market_focus, leverage, api_key_masked, live_balance, live_equity, free_margin, currency, status, is_live_active, live_trading_approved, account_name, account_email, connected_at, last_synced_at) VALUES (?, 'COINDCX', 'FUTURES_USD', ?, 'DEMO_SIM', ?, ?, ?, 'USDT', 'CONNECTED_OFFLINE', 0, 1, ?, ?, ?, ?)",
-                  (u["id"], def_lev, init_bal, init_bal, init_bal, u.get("name") or "CoinDCX Trader", u.get("email") or "", now, now))
-        b_conn = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
+        return fail("Please connect your CoinDCX API Key first to use Real Bot Mode.", 400)
     bot_cfg = query_one("SELECT * FROM real_bot_configs WHERE user_id=?", (u["id"],))
     if not bot_cfg:
         init_max_pos = int(u.get("bot_max_positions") or 5)
@@ -3033,45 +2975,31 @@ def coindcx_state():
     from coindcx_gateway import get_user_coindcx_client
     cdx = get_user_coindcx_client(u["id"])
     
-    conn = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
-    if not conn or conn.get("status") not in ("CONNECTED", "CONNECTED_OFFLINE"):
-        active_cdx = query_one(
-            "SELECT * FROM broker_connections WHERE broker_name='COINDCX' AND status IN ('CONNECTED', 'CONNECTED_OFFLINE') "
-            "ORDER BY last_synced_at DESC LIMIT 1"
-        )
-        if active_cdx:
-            conn = active_cdx
-            try:
-                write("UPDATE broker_connections SET user_id=? WHERE id=?", (u["id"], active_cdx["id"]))
-            except Exception:
-                pass
-            cdx = get_user_coindcx_client(u["id"])
-
-    if not conn:
-        now_init = time.time()
-        w_row = query_one("SELECT deposit_balance, profit_balance FROM wallets WHERE user_id=?", (u["id"],))
-        init_bal = round(float((w_row and w_row.get("deposit_balance")) or 100.0) + max(0.0, float((w_row and w_row.get("profit_balance")) or 0.0)), 2)
-        if init_bal <= 0:
-            init_bal = 100.0
-        write("INSERT INTO broker_connections(user_id, broker_name, market_focus, leverage, api_key_masked, live_balance, live_equity, free_margin, currency, status, is_live_active, live_trading_approved, account_name, account_email, connected_at, last_synced_at) VALUES (?, 'COINDCX', 'FUTURES_USD', 100.0, 'DEMO_SIM', ?, ?, ?, 'USDT', 'CONNECTED_OFFLINE', 0, 1, ?, ?, ?, ?)",
-              (u["id"], init_bal, init_bal, init_bal, u.get("name") or "CoinDCX Trader", u.get("email") or "", now_init, now_init))
-        conn = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
-        cdx = get_user_coindcx_client(u["id"])
+    conn = query_one(
+        "SELECT * FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+        (u["id"],),
+    )
 
     is_connected = bool(conn and conn.get("broker_name") == "COINDCX" and conn.get("status") in ("CONNECTED", "CONNECTED_OFFLINE"))
-    
+
     u_row = query_one("SELECT bot_enabled, bot_max_positions, bot_leverage, bot_trade_direction FROM users WHERE id=?", (u["id"],))
     bot_status = "RUNNING" if (u_row and u_row["bot_enabled"]) else "PAUSED"
     bot_direction = str((u_row and u_row.get("bot_trade_direction")) or "BOTH").upper()
     bot_leverage = float((u_row and u_row.get("bot_leverage")) or 100.0)
-    
+
     if not is_connected:
         return ok(
             connected=False,
+            is_live_mode=False,
+            execution_mode="PAPER",
             status="DISCONNECTED",
             bot_status=bot_status,
             bot_direction=bot_direction,
             bot_leverage=bot_leverage,
+            balances={"total_portfolio_usd": 0.0, "usdt_free": 0.0, "fut_usdt_free": 0.0, "floating_pnl": 0.0},
+            open_positions=[],
+            closed_positions=[],
+            active_orders=[],
             message="CoinDCX API not connected."
         )
 
@@ -3143,11 +3071,6 @@ def coindcx_state():
         base_stored = float(conn.get("live_balance") or 0.0)
         if base_stored > 15000.0:
             base_stored = round(base_stored / 90.0, 2)
-        # If stored balance does not yet reflect cumulative realized profit, add it now
-        if base_stored < cum_realized_pnl or base_stored < 15.0:
-            base_stored = round(max(7.0, base_stored) + cum_realized_pnl, 2)
-            write("UPDATE broker_connections SET live_balance=?, live_equity=?, today_pnl=? WHERE user_id=?",
-                  (base_stored, base_stored, cum_realized_pnl, u["id"]))
 
         cash_balance = base_stored
         total_equity = round(cash_balance + open_float_pnl, 2)
@@ -3317,14 +3240,11 @@ def coindcx_set_mode():
     is_live = 1 if mode == "REAL" else 0
     status_str = "CONNECTED" if is_live else "CONNECTED_OFFLINE"
     now = time.time()
-    existing = query_one("SELECT id FROM broker_connections WHERE user_id=?", (u["id"],))
+    existing = query_one("SELECT id FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'", (u["id"],))
     if existing:
         write("UPDATE broker_connections SET broker_name='COINDCX', is_live_active=?, status=?, last_synced_at=? WHERE user_id=?", (is_live, status_str, now, u["id"]))
     else:
-        w_row = query_one("SELECT deposit_balance, profit_balance FROM wallets WHERE user_id=?", (u["id"],))
-        init_bal = round(float((w_row and w_row.get("deposit_balance")) or 100.0) + max(0.0, float((w_row and w_row.get("profit_balance")) or 0.0)), 2)
-        write("INSERT INTO broker_connections(user_id, broker_name, market_focus, leverage, api_key_masked, live_balance, live_equity, free_margin, currency, status, is_live_active, live_trading_approved, account_name, account_email, connected_at, last_synced_at) VALUES (?, 'COINDCX', 'FUTURES_USD', 100.0, 'COINDCX_KEY', ?, ?, ?, 'USDT', ?, ?, 1, ?, ?, ?, ?)",
-              (u["id"], init_bal, init_bal, init_bal, status_str, is_live, u.get("name") or "CoinDCX Trader", u.get("email") or "", now, now))
+        return fail("Please connect your CoinDCX API Key first before switching execution mode.", 400)
     bot._log(u["id"], "MODE_SWITCH", f"AraaBot execution mode switched to: {'🔴 REAL MONEY' if is_live else '🧪 DEMO PAPER (ZERO RISK)'}")
     return ok(success=True, mode=mode, is_live_mode=bool(is_live), message=f"Switched to {'REAL MONEY' if is_live else 'DEMO (ZERO RISK)'} mode successfully.")
 
@@ -3351,16 +3271,9 @@ def coindcx_connect():
     from coindcx_gateway import verify_coindcx_credentials, save_user_coindcx_connection, get_live_tickers
 
     user_real_bal = float(data.get("real_balance") or data.get("balance") or 0.0)
-    if user_real_bal <= 0:
-        w_row = query_one("SELECT deposit_balance, profit_balance FROM wallets WHERE user_id=?", (u["id"],))
-        b_row = query_one("SELECT live_balance FROM broker_connections WHERE user_id=?", (u["id"],))
-        existing_bal = float((b_row and b_row.get("live_balance")) or 0.0)
-        if existing_bal <= 1.5 and w_row:
-            existing_bal = float(w_row.get("deposit_balance") or 0.0) + max(0.0, float(w_row.get("profit_balance") or 0.0))
-        user_real_bal = existing_bal if existing_bal > 1.5 else 100.0
 
     # Input in #coindcx_inp_real_balance is USD/USDT (only divide by 90 if user typed raw INR > 15,000)
-    usd_bal = round(user_real_bal / 90.0, 2) if user_real_bal > 15000.0 else round(user_real_bal, 2)
+    usd_bal = round(user_real_bal / 90.0, 2) if user_real_bal > 15000.0 else round(max(0.0, user_real_bal), 2)
     inr_bal = round(usd_bal * 90.0, 2)
 
     def _build_default_summary(u_usd: float, u_inr: float) -> dict:
@@ -3388,55 +3301,33 @@ def coindcx_connect():
         pass
 
     if offline_mode:
-        # Offline Mode: Accept key & secret directly without IP whitelisting barrier.
-        # Uses real-time CoinDCX public prices and enables live trading execution.
+        # Offline Simulation Mode: uses explicit balance (or $0.00) and stays in Practice/Demo mode (is_live_active=0)
         summary = _build_default_summary(usd_bal, inr_bal)
         save_user_coindcx_connection(u["id"], api_key, api_secret, summary, is_offline=True, custom_profile_name=custom_profile)
         eff_profile = custom_profile or u.get("name") or "CoinDCX Trader"
-        bot._log(u["id"], "REAL_BOT_COINDCX_OFFLINE", f"🟢 CoinDCX Connected for '{eff_profile}'! Futures Balance: ${usd_bal:,.2f} USDT")
+        bot._log(u["id"], "REAL_BOT_COINDCX_OFFLINE", f"CoinDCX Offline Practice connected for '{eff_profile}'. Balance: ${usd_bal:,.2f} USDT")
         return ok(
             success=True,
             token=auth_tok,
             mode="OFFLINE",
+            is_live=False,
             profile_name=eff_profile,
-            message=f"🟢 CoinDCX Connected for {eff_profile}! Futures Balance: ${usd_bal:,.2f} USDT",
+            message=f"CoinDCX Practice Mode connected for {eff_profile} (${usd_bal:,.2f} USDT)",
             summary=summary
         )
 
-    # Online Mode: Try direct real CoinDCX REST verification first
+    # Online Mode: Require genuine CoinDCX REST verification — never fake live money if CoinDCX rejects the key
     try:
         is_valid, msg, summary = verify_coindcx_credentials(api_key, api_secret)
     except Exception as e:
-        print(f"[COINDCX_CONNECT] Exception during verification: {e}. Falling back to auto-adoption.")
-        is_valid, msg, summary = False, str(e), {}
+        return fail(f"CoinDCX verification failed: {str(e)}", 400)
     if not is_valid:
-        print(f"[COINDCX_CONNECT] Direct REST verification returned: {msg}. Auto-adopting key under AraaBot Full Control.")
-        # Programmatically adopt the API key into AraaBot Autonomous Full Live Control!
-        eff_bal_usd = usd_bal if usd_bal > 1.5 else 66.86
-        eff_bal_inr = round(eff_bal_usd * 90.0, 2)
-        summary = _build_default_summary(eff_bal_usd, eff_bal_inr)
-        summary["adopted_mode"] = True
-        summary["direct_rest_msg"] = msg
-        summary["verified_online"] = True
-        # Save as ONLINE (is_offline=False) so real orders and exits execute on CoinDCX!
-        save_user_coindcx_connection(u["id"], api_key, api_secret, summary, is_offline=False, custom_profile_name=custom_profile)
-        eff_profile = custom_profile or u.get("name") or "Ashutosh Mund"
-        bot._log(u["id"], "REAL_BOT_COINDCX_ADOPTED", f"⚡ CoinDCX Live Account Connected for '{eff_profile}'! Real Futures balance ${eff_bal_usd:,.2f} USDT active.")
-        return ok(
-            success=True,
-            token=auth_tok,
-            mode="ONLINE",
-            profile_name=eff_profile,
-            message=f"CoinDCX Live Account Connected for {eff_profile}! Futures Balance: ${eff_bal_usd:,.2f} USDT",
-            summary=summary
-        )
+        return fail(msg or "CoinDCX rejected the API Key/Secret or Server IP whitelist.", 400)
 
     manual_real_bal = float(data.get("real_balance") or data.get("balance") or 0.0)
     current_port_usd = float(summary.get("total_portfolio_usd") or 0.0)
-    if current_port_usd <= 0.0:
+    if current_port_usd <= 0.0 and manual_real_bal > 0.0:
         manual_usd = round(manual_real_bal / 90.0, 2) if manual_real_bal > 15000.0 else round(manual_real_bal, 2)
-        if manual_usd <= 1.5:
-            manual_usd = 66.86
         manual_inr = round(manual_usd * 90.0, 2)
         summary["usdt_free"] = manual_usd
         summary["usdt_total"] = manual_usd
@@ -3446,14 +3337,15 @@ def coindcx_connect():
         summary["total_portfolio_inr"] = manual_inr
 
     save_user_coindcx_connection(u["id"], api_key, api_secret, summary, is_offline=False, custom_profile_name=custom_profile)
-    eff_profile = custom_profile or summary.get("profile_name") or u.get("name") or "Ashutosh Mund"
-    live_usd_val = float(summary.get("total_portfolio_usd") or 66.86)
+    eff_profile = custom_profile or summary.get("profile_name") or u.get("name") or "CoinDCX Trader"
+    live_usd_val = round(float(summary.get("total_portfolio_usd") or 0.0), 2)
     bot._log(u["id"], "REAL_BOT_COINDCX", f"🟢 CoinDCX Live Account Connected for '{eff_profile}'! Portfolio: ${live_usd_val:,.2f} USDT")
 
     return ok(
         success=True,
         token=auth_tok,
         mode="ONLINE",
+        is_live=True,
         profile_name=eff_profile,
         message=f"CoinDCX Live Account Connected for {eff_profile}! Synced Balance: ${live_usd_val:,.2f} USDT",
         summary=summary
@@ -3488,7 +3380,7 @@ def coindcx_logout():
     """, (u["id"], now, now, now))
     flush_pnl, closed_count = bot.close_all_for(u["id"], reason="COINDCX_ACCOUNT_LOGOUT")
 
-    # 3. Clean up broker connection credentials and reset to DISCONNECTED
+    # 3. Clean up broker connection credentials and reset synced balance to $0.00 if no deposits exist
     write("""
         UPDATE broker_connections 
         SET status='DISCONNECTED', 
@@ -3502,6 +3394,7 @@ def coindcx_logout():
             last_synced_at=? 
         WHERE user_id=?
     """, (now, u["id"]))
+    write("UPDATE wallets SET deposit_balance=0.0, starting_balance=0.0, target_amount=0.0 WHERE user_id=? AND COALESCE(total_deposited, 0) <= 0", (u["id"],))
 
     try:
         from coindcx_gateway import log_audit_event
@@ -5529,12 +5422,8 @@ def manual_trade():
     is_live_flag = 1 if (b_conn and b_conn["is_live_active"]) else 0
 
     w = wallet_of(u["id"])
-    if not is_live_flag and float(w.get("deposit_balance") or 0.0) < margin:
-        # Paper trading virtual capital auto-seed ($10,000.00) so paper trading is never blocked
-        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (u["id"],))
-        w = wallet_of(u["id"])
-    elif is_live_flag and margin > float(w.get("deposit_balance") or 0.0):
-        return fail("Not enough trading capital - deposit first")
+    if float(w.get("deposit_balance") or 0.0) < margin:
+        return fail(f"Not enough trading capital (${float(w.get('deposit_balance') or 0.0):.2f}) - deposit funds or connect CoinDCX first")
 
     price = feed.live_price(symbol) or feed.price(symbol)
     if not price:
@@ -5732,11 +5621,8 @@ def place_order():
     if margin <= 100:
         return fail("Order size must be above Rs 100")
     w = wallet_of(u["id"])
-    if not is_live_flag and float(w.get("deposit_balance") or 0.0) < margin:
-        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (u["id"],))
-        w = wallet_of(u["id"])
-    elif is_live_flag and margin > float(w.get("deposit_balance") or 0.0):
-        return fail(f"Only Rs {w['deposit_balance']:.2f} available for new orders")
+    if margin > float(w.get("deposit_balance") or 0.0):
+        return fail(f"Only ${float(w.get('deposit_balance') or 0.0):.2f} available for new orders")
     oid = write("INSERT INTO orders(user_id,symbol,side,qty,price,margin,status,created_at,leverage,target_pct,stop_pct) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (u["id"], symbol, side, qty, price, margin, "PENDING", time.time(), leverage, target_pct, stop_pct))
@@ -5834,12 +5720,6 @@ def admin_overview():
 @api.route("/api/admin/users")
 def admin_users():
     online_window = time.time() - 120  # Active in last 2 minutes
-    try:
-        write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 "
-              "WHERE (deposit_balance<=0 OR deposit_balance IS NULL) "
-              "AND user_id NOT IN (SELECT user_id FROM broker_connections WHERE is_live_active=1)")
-    except Exception:
-        pass
     rows = query("SELECT u.id, u.email, u.name, u.created_at, u.last_login_at, u.bot_enabled, "
                  "u.bot_max_positions, u.bot_risk_pct, u.bot_mode, u.bot_leverage, "
                  "w.deposit_balance, w.profit_balance, w.total_deposited, w.total_withdrawn, "
@@ -5865,9 +5745,6 @@ def admin_user_bot_toggle(uid):
     cur_state = bool(u.get("bot_enabled"))
     new_state = 1 if data.get("enable", not cur_state) else 0
     if new_state == 1:
-        w = wallet_of(uid)
-        if float(w.get("deposit_balance") or 0.0) <= 0.0:
-            write("UPDATE wallets SET deposit_balance=10000.0, starting_balance=10000.0, target_amount=15000.0 WHERE user_id=?", (uid,))
         write("UPDATE users SET bot_enabled=1, bot_activated_at=? WHERE id=?", (time.time(), uid))
         bot.start()
         threading.Thread(target=bot.cycle, daemon=True).start()

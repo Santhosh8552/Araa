@@ -1492,8 +1492,8 @@ class Bot:
             per_cat[p["category"] or "CRYPTO"] = per_cat.get(p["category"] or "CRYPTO", 0) + 1
         
         # Check if user is in Real Live Broker Mode (CoinDCX / Exness MT4)
-        b_conn = query_one("SELECT is_live_active, market_focus, live_balance, free_margin, broker_name, status, currency FROM broker_connections WHERE user_id=?", (user["id"],))
-        is_live_flag = 1 if (b_conn and b_conn["is_live_active"] and b_conn.get("status") in ("CONNECTED", "CONNECTED_OFFLINE")) else 0
+        b_conn = query_one("SELECT is_live_active, market_focus, live_balance, free_margin, broker_name, status, currency, api_key_masked FROM broker_connections WHERE user_id=?", (user["id"],))
+        is_live_flag = 1 if (b_conn and b_conn["is_live_active"] and b_conn.get("status") == "CONNECTED" and str(b_conn.get("api_key_masked") or "") != "DEMO_SIM") else 0
         broker_name = (b_conn.get("broker_name") or "").upper() if b_conn else ""
         is_coindcx_live = bool(is_live_flag and broker_name == "COINDCX")
         market_focus = (user.get("bot_market_focus") or (b_conn.get("market_focus") if b_conn else None) or "ALL").upper()
@@ -1510,9 +1510,7 @@ class Bot:
         else:
             dep_bal = max(0.0, float(wallet.get("deposit_balance") or 0))
             prof_bal = max(0.0, float(wallet.get("profit_balance") or 0))
-            wallet_cap = round(dep_bal + prof_bal, 2)
-            # In Demo simulation, provide simulated demo margin ($10,000 USDT) if wallet is empty so the bot CAN demo trade!
-            capital = wallet_cap if wallet_cap >= 2.0 else 10000.0
+            capital = round(dep_bal + prof_bal, 2)
 
         min_required_cap = 0.01 if (is_pure_crypto or user_currency == "USD") else (50.0 if broker_name == "COINDCX" else 20.0)
         if capital < min_required_cap:
