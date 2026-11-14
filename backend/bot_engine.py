@@ -981,14 +981,16 @@ class Bot:
         ob_bullish = bool(ob and ob.get("found") and ob.get("bias") == "LONG")
 
         if side == "SHORT":
-            # TradingView 1m/5m Chart Protection: Never open SHORT if 1m or 5m TradingView chart is bullish (BUY)
-            if tv_rec_1m is not None and float(tv_rec_1m) > -0.02:
+            # TradingView 1m/5m Chart Protection: Never open SHORT if 1m or 5m TradingView chart is bullish or neutral-flat
+            if tv_rec_1m is not None and float(tv_rec_1m) > -0.06:
                 return None
-            if tv_rec_5m is not None and float(tv_rec_5m) > 0.02:
+            if tv_rec_5m is not None and float(tv_rec_5m) > -0.04:
                 return None
             if tv_ma_1m is not None and float(tv_ma_1m) > 0.02:
                 return None
             if tv_ema20_1m and tv_ema50_1m and price > float(tv_ema20_1m) > float(tv_ema50_1m):
+                return None
+            if cat == "CRYPTO" and tv_ema20_1m and price > float(tv_ema20_1m) * 1.0005:
                 return None
             # Strict 1s & 1m Chart Direction Gate: Never open SHORT if 1s ticks or 1m slope are bouncing UP (▲)
             if slope_z >= -0.02:
@@ -1002,6 +1004,8 @@ class Bot:
             if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_bouncing_up") and not (slope_z < -0.35 and micro["below_fast"] and micro["recent_tick_pct"] < -0.05):
                 return None
             if change <= -8.0 and range_pos <= 0.15:
+                return None
+            if cat == "CRYPTO" and change <= -4.0 and r14 <= 36.0 and (tv_rec_5m is None or float(tv_rec_5m) > -0.25) and slope_z > -0.35:
                 return None
             if cat == "CRYPTO" and r14 <= 26.0 and slope_z > -0.25:
                 return None
@@ -1033,14 +1037,16 @@ class Bot:
                 score += 0.08
                 parts.append(("BEAR_IMPULSE", 0.08, f"Breakdown Velocity ({change:+.2f}%)"))
         else:
-            # TradingView 1m/5m Chart Protection: Never open LONG if 1m or 5m TradingView chart is bearish (SELL)
-            if tv_rec_1m is not None and float(tv_rec_1m) < 0.02:
+            # TradingView 1m/5m Chart Protection: Never open LONG if 1m or 5m TradingView chart is bearish or neutral-flat
+            if tv_rec_1m is not None and float(tv_rec_1m) < 0.06:
                 return None
-            if tv_rec_5m is not None and float(tv_rec_5m) < -0.02:
+            if tv_rec_5m is not None and float(tv_rec_5m) < 0.04:
                 return None
             if tv_ma_1m is not None and float(tv_ma_1m) < -0.02:
                 return None
             if tv_ema20_1m and tv_ema50_1m and price < float(tv_ema20_1m) < float(tv_ema50_1m):
+                return None
+            if cat == "CRYPTO" and tv_ema20_1m and price < float(tv_ema20_1m) * 0.9995:
                 return None
             # Strict 1s & 1m Chart Direction Gate: Never open LONG if 1s ticks or 1m slope are dropping DOWN (▼)
             if slope_z <= 0.02:
@@ -1305,8 +1311,8 @@ class Bot:
             if pnl <= round(peak_cash * 0.96, 4) or pnl >= 0.90:
                 return f"SCALP_AUTO_CLOSE_+0.90 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0.5: +$0.10 Profit Lock Ladder (Locks net green profits after fees in Real Mode)
-        min_lock_peak = max(0.10, round(est_fee * 1.35, 4)) if is_live else 0.10
+        # RULE 0.5: +$0.10 Profit Lock Ladder (Locks meaningful net green profits after fees in Real Mode)
+        min_lock_peak = max(0.28, round(est_fee * 2.2, 4)) if is_live else 0.10
         if peak_cash >= min_lock_peak and time_held >= 1.5:
             if peak_cash >= 0.50:
                 lock_floor = 0.35
@@ -1315,7 +1321,7 @@ class Bot:
             else:
                 lock_floor = 0.04
             if is_live and est_fee > 0:
-                lock_floor = max(lock_floor, round(est_fee * 1.15, 4))
+                lock_floor = max(lock_floor, round(est_fee * 1.5, 4), round(peak_cash * 0.62, 4))
             if pnl <= lock_floor and pnl > (est_fee if is_live else 0.0):
                 return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
@@ -1326,15 +1332,16 @@ class Bot:
 
         # RULE 0A: High-Velocity Scalp ROI Harvest (fee-safe across Live & Paper, 1x–500x leverage)
         scalp_roi_goal = 12.0 if pos_lev >= 20.0 else 9.0
-        if (time_held >= 3.0 and move_pct >= 0.18 and roi_pct >= scalp_roi_goal
-                and pnl >= (max(0.15, est_fee * 1.5) if is_live else min_net_profit)):
-            if move_pct >= max(0.32, tp_pct * 0.75) or (peak_cash > 0 and pnl <= round(peak_cash * 0.88, 4)):
+        min_quick_move = 0.25 if is_live else 0.18
+        if (time_held >= 3.0 and move_pct >= min_quick_move and roi_pct >= scalp_roi_goal
+                and pnl >= (max(0.25, est_fee * 2.0) if is_live else min_net_profit)):
+            if move_pct >= max(0.35, tp_pct * 0.75) or (peak_cash > 0 and pnl <= round(peak_cash * 0.88, 4)):
                 return f"SCALP_QUICK_WIN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # Fast Scalp Velocity Lock: harvest net profit if momentum fades after reaching +$0.12+
-        fast_lock_peak = max(0.12, round(est_fee * 1.6, 4)) if is_live else 0.12
-        if time_held >= 10.0 and peak_cash >= fast_lock_peak and pnl > (est_fee if is_live else 0.02):
-            if pnl <= round(peak_cash * 0.82, 4):
+        # Fast Scalp Velocity Lock: harvest net profit if momentum fades after reaching real net gain
+        fast_lock_peak = max(0.30, round(est_fee * 2.2, 4)) if is_live else 0.12
+        if time_held >= 10.0 and peak_cash >= fast_lock_peak and pnl > (round(est_fee * 1.5, 4) if is_live else 0.02):
+            if pnl <= round(peak_cash * 0.78, 4):
                 return f"SCALP_FAST_PROFIT_LOCK (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
         # RULE 0B: Progressive ROI & Fee-Aware Trailing Stop Ladder (works from +10% ROI upward)
@@ -2547,6 +2554,8 @@ class Bot:
                             write("UPDATE ai_predictions SET post_entry_status='RISK_BLOCKED', outcome='CANCELLED' WHERE id=?", (pred_id,))
                         continue
 
+                    # Profit-Only Real Mode: attach exchange-side Take Profit only (no tight 0.36% noise SL on CoinDCX unless user explicitly set >= 1.0%)
+                    exch_stop_loss = sl_price if rbc_sl >= 1.0 else None
                     ad_res = CoinDCXExecutionAdapter.submit_order(
                         user_id=user["id"],
                         strategy_id=strat["strategy_id"],
@@ -2558,7 +2567,7 @@ class Bot:
                         order_type="market_order",
                         price=picked["price"],
                         leverage=float(effective_lev),
-                        stop_loss=sl_price,
+                        stop_loss=exch_stop_loss,
                         take_profit=tp_price,
                         client_order_id=f"araa_ai_{user['id']}_{picked['symbol']}_{int(now)}",
                     )
