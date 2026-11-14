@@ -6410,74 +6410,46 @@ function _normalizeLwBars(candles) {
   return dedup;
 }
 
-function _syncCdxPriceLines() {
+function _syncCdxPriceLines(refPrice) {
   if (!cdxCandleSeries) return;
   while (cdxPriceLines.length) {
     try { cdxCandleSeries.removePriceLine(cdxPriceLines.pop()); } catch (_) { break; }
   }
   const sym = (S.symbol || "").toUpperCase();
   const q = S.quoteBy[sym] || S.quote || {};
+  const validBand = (p) => p > 0 && (!refPrice || (p >= refPrice * 0.5 && p <= refPrice * 2.0));
   const hi24 = Number(q.high || 0);
   const lo24 = Number(q.low || 0);
-  const mp = Number(q.mark_price || 0);
-  if (hi24 > 0) {
+  if (validBand(hi24)) {
     cdxPriceLines.push(cdxCandleSeries.createPriceLine({
       price: hi24, color: "rgba(56,189,248,0.45)", lineWidth: 1, lineStyle: 3, axisLabelVisible: true,
       title: "High",
     }));
   }
-  if (lo24 > 0) {
+  if (validBand(lo24)) {
     cdxPriceLines.push(cdxCandleSeries.createPriceLine({
       price: lo24, color: "rgba(168,85,247,0.45)", lineWidth: 1, lineStyle: 3, axisLabelVisible: true,
       title: "Low",
     }));
-  }
-  if (mp > 0) {
-    cdxPriceLines.push(cdxCandleSeries.createPriceLine({
-      price: mp, color: "rgba(245,158,11,0.55)", lineWidth: 1, lineStyle: 1, axisLabelVisible: false,
-      title: "Mark",
-    }));
-  }
-  if (S.showSmcDna && S.smcDna) {
-    const sig = S.smcDna.bot_signal || {};
-    const dna = S.smcDna.dna || {};
-    if (Number(sig.entry_price || 0) > 0) {
-      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
-        price: Number(sig.entry_price), color: "#38bdf8", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
-        title: `AI ${sig.action || "SIGNAL"}`,
-      }));
-    }
-    if (Number(dna.tp1 || 0) > 0) {
-      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
-        price: Number(dna.tp1), color: "rgba(16,185,129,0.7)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
-        title: "AI TP1",
-      }));
-    }
-    if (Number(dna.sl || 0) > 0) {
-      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
-        price: Number(dna.sl), color: "rgba(244,63,94,0.7)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
-        title: "AI SL",
-      }));
-    }
   }
   const posList = (S.positions || []).filter(p => (p.symbol || "").toUpperCase() === sym);
   posList.forEach(p => {
     const entry = Number(p.entry_price || 0);
     const tp = Number(p.take_profit || 0);
     const sl = Number(p.stop_loss || 0);
-    if (entry > 0) {
+    if (validBand(entry)) {
       cdxPriceLines.push(cdxCandleSeries.createPriceLine({
         price: entry, color: "#38bdf8", lineWidth: 2, lineStyle: 0, axisLabelVisible: true,
         title: `${p.side || "POS"} ENTRY`,
       }));
     }
-    if (tp > 0) {
+    if (validBand(tp)) {
       cdxPriceLines.push(cdxCandleSeries.createPriceLine({
         price: tp, color: "#10b981", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
         title: "TP +$1.00",
       }));
     }
-    if (sl > 0) {
+    if (validBand(sl)) {
       cdxPriceLines.push(cdxCandleSeries.createPriceLine({
         price: sl, color: "#f43f5e", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
         title: "SL",
@@ -6488,34 +6460,20 @@ function _syncCdxPriceLines() {
 
 function _buildCdxLegendHtml(bar, prec, isLight, indOpts) {
   const sym = (S.symbol || "").toUpperCase();
-  const q = S.quoteBy[sym] || S.quote || {};
   const up = bar.close >= bar.open;
   const col = up ? "#0ecb81" : "#f6465d";
-  const mp = Number(q.mark_price || bar.close);
-  const fr = q.funding_rate != null ? `${(Number(q.funding_rate) * 100).toFixed(4)}%` : "—";
-  const tvSig = q.tv_signal || "NEUTRAL";
-  const sigColor = tvSig.includes("BUY") ? "#0ecb81" : (tvSig.includes("SELL") ? "#f6465d" : "#94a3b8");
-  const r1m = q.tv_rec_1m != null ? Number(q.tv_rec_1m).toFixed(2) : "—";
-  const r5m = q.tv_rec_5m != null ? Number(q.tv_rec_5m).toFixed(2) : "—";
   const tags = [
     indOpts.ema ? `<span style="color:#38bdf8">EMA20</span>·<span style="color:#f59e0b">50</span>` : "",
     indOpts.bb ? `<span style="color:#c084fc">BB</span>` : "",
   ].filter(Boolean).join(" ");
-  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
-    `<b style="color:${isLight ? "#0f172a" : "#fff"}">${sym} · ${S.tf} · COINDCX FUTURES</b>` +
-    `<span style="background:rgba(246,70,93,0.18);border:1px solid rgba(246,70,93,0.45);color:#f6465d;padding:1px 6px;border-radius:4px;font-weight:800;">SELL ${bar.close.toFixed(prec)}</span>` +
-    `<span style="background:rgba(14,203,129,0.18);border:1px solid rgba(14,203,129,0.45);color:#0ecb81;padding:1px 6px;border-radius:4px;font-weight:800;">BUY ${bar.close.toFixed(prec)}</span>` +
-    `<span style="color:${sigColor};font-weight:800;">BOT: ${tvSig} (1m:${r1m} 5m:${r5m})</span>` +
-    `</div>` +
-    `<div style="margin-top:2px;font-size:10.5px;">` +
+  return `<b style="color:${isLight ? "#0f172a" : "#fff"}">${sym} · ${S.tf} · COINDCX</b> &nbsp;` +
     `<span style="color:${col}">O ${bar.open.toFixed(prec)} · H ${bar.high.toFixed(prec)} · L ${bar.low.toFixed(prec)} · C ${bar.close.toFixed(prec)}</span>` +
-    ` &nbsp;|&nbsp; <span style="color:#f59e0b">Mark ${mp.toFixed(prec)}</span> · <span style="color:#94a3b8">FR ${fr}</span>` +
-    (tags ? ` &nbsp;|&nbsp; ${tags}` : "") +
-    `</div>`;
+    (tags ? ` &nbsp;${tags}` : "");
 }
 
 function renderCoinDcxLightweightChart(candles) {
   if (!window.LightweightCharts) return false;
+  if (S.candlesSymbol && S.candlesSymbol !== S.symbol) return false;
   const host = $("tv_chart"), rsiHost = $("cdx_rsi_chart"), local = $("chart");
   if (!host) return false;
   const bars = _normalizeLwBars(candles);
@@ -6687,7 +6645,7 @@ function renderCoinDcxLightweightChart(candles) {
 
     _applyAllSeriesData(true);
     updateLegend(lastBar);
-    _syncCdxPriceLines();
+    _syncCdxPriceLines(lastBar.close);
     cdxLwKey = chartKey;
   } else {
     try {
@@ -6731,7 +6689,7 @@ function renderCoinDcxLightweightChart(candles) {
     if (legend) {
       legend.innerHTML = _buildCdxLegendHtml(lastBar, prec, isLight, indOpts);
     }
-    _syncCdxPriceLines();
+    _syncCdxPriceLines(lastBar.close);
   }
   return true;
 }
@@ -7277,6 +7235,7 @@ async function loadChart() {
     const d = await call(`/api/market/${symbol}?interval=${tf}&candles=120`);
     if (seq !== chartSeq) return;
     const q = d.quote || {}, ind = d.indicators || {};
+    S.candlesSymbol = symbol;
     S.candles = d.candles; S.live = !!q.live; S.quote = q; S.ind = ind;
     S.smcDna = d.smc_dna || null;
     renderSmcDnaPanel(S.smcDna);
@@ -7728,6 +7687,10 @@ if (btnApplyCopilot && !btnApplyCopilot._bound) {
 function pickPair(symbol, side, preferAiChart) {
   if (!symbol) return;
   S.symbol = symbol;
+  S.candles = [];
+  S.candlesSymbol = "";
+  cdxLwKey = "";
+  cdxLastBarTime = 0;
   S.chartMode = "local";
   S.tvKey = "";
   document.querySelectorAll("#chart_mode [data-mode]").forEach(x => {
