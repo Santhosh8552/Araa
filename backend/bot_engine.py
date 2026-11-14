@@ -1546,9 +1546,11 @@ class Bot:
             "SELECT COALESCE(SUM(realized_pnl), 0.0) as daily_pnl FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at >= ?",
             (user["id"], today_start)
         )
+        rbc_cfg = query_one("SELECT max_daily_loss, stop_loss_pct, take_profit_pct FROM real_bot_configs WHERE user_id=?", (user["id"],))
+        max_daily_loss_lim = abs(float((rbc_cfg and rbc_cfg.get("max_daily_loss")) or 250.0))
         daily_loss = float(daily_pnl_row["daily_pnl"] or 0.0) if daily_pnl_row else 0.0
-        if is_live_flag and daily_loss <= -250.0:
-            write("UPDATE users SET bot_active=0 WHERE id=?", (user["id"],))
+        if is_live_flag and daily_loss <= -max_daily_loss_lim:
+            write("UPDATE users SET bot_enabled=0 WHERE id=?", (user["id"],))
             self._log(user["id"], "DAILY_LOSS_GUARD",
                       f"🛑 MAX DAILY LOSS GUARD TRIGGERED: Today's settled loss (-${abs(daily_loss):.2f}) reached daily limit. Bot paused automatically to preserve remaining capital ${capital:,.2f}.")
             try:
@@ -2107,9 +2109,11 @@ class Bot:
                         self._log(user["id"], "COOLDOWN_SKIP", f"Skipped {picked['symbol']}: recent loss cooldown ({loss_cool}s) active.")
                         continue
 
-                    # Sync SL/TP & Risk% from StrategyEngine + Custom Rules (minimum 0.50% SL / 1.00% TP for 2:1 R:R)
-                    custom_sl = float(tr_custom_rules.get("stop_loss_pct") or 0.0) if tr_custom_rules else 0.0
-                    custom_tp = float(tr_custom_rules.get("target_profit_pct") or 0.0) if tr_custom_rules else 0.0
+                    # Sync SL/TP & Risk% from User Real Bot Config -> Custom Rules -> StrategyEngine (2:1 R:R floor)
+                    rbc_sl = float(rbc_cfg.get("stop_loss_pct") or 0.0) if rbc_cfg else 0.0
+                    rbc_tp = float(rbc_cfg.get("take_profit_pct") or 0.0) if rbc_cfg else 0.0
+                    custom_sl = rbc_sl or (float(tr_custom_rules.get("stop_loss_pct") or 0.0) if tr_custom_rules else 0.0)
+                    custom_tp = rbc_tp or (float(tr_custom_rules.get("target_profit_pct") or 0.0) if tr_custom_rules else 0.0)
                     strat_sl_pct = max(0.50, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                     strat_tp_pct = max(strat_sl_pct * 2.0, custom_tp or float(strat.get("take_profit_pct") or 1.00))
                     risk_pct = max(0.2, min(30.0, float(strat.get("risk_per_trade_pct") or 2.0)))
