@@ -1003,6 +1003,8 @@ class Bot:
                 return None
             if change <= -8.0 and range_pos <= 0.15:
                 return None
+            if cat == "CRYPTO" and r14 <= 26.0 and slope_z > -0.25:
+                return None
             if cat == "CRYPTO" and r14 >= 68.0 and slope_z > -0.15:
                 return None
             if cat == "CRYPTO" and len(candles_1m) >= 8:
@@ -1052,6 +1054,8 @@ class Bot:
             if cat == "CRYPTO" and symbol != "BTCUSDT" and leader.get("btc_dumping_down") and not (slope_z > 0.35 and micro["above_fast"] and micro["recent_tick_pct"] > 0.05):
                 return None
             if change >= 12.0 and range_pos >= 0.88:
+                return None
+            if cat == "CRYPTO" and change <= -5.5 and (tv_rec_5m is None or float(tv_rec_5m) < 0.20) and not ob_bullish:
                 return None
             if cat == "CRYPTO" and r14 >= 75.0:
                 return None
