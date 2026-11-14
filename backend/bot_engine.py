@@ -1136,6 +1136,8 @@ class Bot:
                         smc_dna_bias = "LONG"
         except Exception:
             pass
+        if (side == "SHORT" and smc_dna_status == "QUALIFIED_BULLISH") or (side == "LONG" and smc_dna_status == "QUALIFIED_BEARISH"):
+            return None
 
         reason = " · ".join(f"{name} {value:+.2f} ({note})" for name, value, note in parts)
         return {"symbol": symbol, "tv_symbol": tv_code, "category": cat, "country": row.get("country") or "",

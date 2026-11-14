@@ -6320,7 +6320,20 @@ const NOTE_SIM = "No free live quote exists for this symbol: price and candles a
   "Orders on it are paper fills.";
 
 let cdxLwChart = null, cdxCandleSeries = null, cdxVolSeries = null, cdxEma20Series = null, cdxEma50Series = null;
-let cdxLwKey = "", cdxPriceLines = [], cdxLwResizeObs = null;
+let cdxBbUpSeries = null, cdxBbMidSeries = null, cdxBbLowSeries = null;
+let cdxRsiChart = null, cdxRsiSeries = null;
+let cdxLwKey = "", cdxLastBarTime = 0, cdxPriceLines = [], cdxLwResizeObs = null;
+S.chartIndicators = S.chartIndicators || { ema: true, bb: false, vol: true, rsi: true };
+
+window.toggleChartIndicator = function(indKey, btn) {
+  if (!S.chartIndicators) S.chartIndicators = { ema: true, bb: false, vol: true, rsi: true };
+  S.chartIndicators[indKey] = !S.chartIndicators[indKey];
+  if (btn) btn.classList.toggle("active", !!S.chartIndicators[indKey]);
+  cdxLwKey = "";
+  if (S.candles && S.candles.length) {
+    renderCoinDcxLightweightChart(S.candles);
+  }
+};
 
 function _calcEmaSeries(bars, period) {
   if (!bars || !bars.length) return [];
@@ -6330,6 +6343,47 @@ function _calcEmaSeries(bars, period) {
     ema = i === 0 ? b.close : (b.close * k + ema * (1 - k));
     return { time: b.time, value: ema };
   });
+}
+
+function _calcBollingerSeries(bars, period = 20, mult = 2) {
+  const up = [], mid = [], low = [];
+  if (!bars || bars.length < period) return { up, mid, low };
+  for (let i = period - 1; i < bars.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += bars[j].close;
+    const mean = sum / period;
+    let varSum = 0;
+    for (let j = i - period + 1; j <= i; j++) varSum += Math.pow(bars[j].close - mean, 2);
+    const std = Math.sqrt(varSum / period);
+    const t = bars[i].time;
+    up.push({ time: t, value: mean + mult * std });
+    mid.push({ time: t, value: mean });
+    low.push({ time: t, value: mean - mult * std });
+  }
+  return { up, mid, low };
+}
+
+function _calcRsiSeries(bars, period = 14) {
+  if (!bars || bars.length < period + 2) return [];
+  const out = [];
+  let avgG = 0, avgL = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = bars[i].close - bars[i - 1].close;
+    avgG += Math.max(0, d);
+    avgL += Math.max(0, -d);
+  }
+  avgG /= period;
+  avgL /= period;
+  const firstRs = avgL === 0 ? 100 : avgG / avgL;
+  out.push({ time: bars[period].time, value: avgL === 0 ? 100 : 100 - 100 / (1 + firstRs) });
+  for (let i = period + 1; i < bars.length; i++) {
+    const d = bars[i].close - bars[i - 1].close;
+    avgG = (avgG * (period - 1) + Math.max(0, d)) / period;
+    avgL = (avgL * (period - 1) + Math.max(0, -d)) / period;
+    const val = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+    out.push({ time: bars[i].time, value: Number(val.toFixed(2)) });
+  }
+  return out;
 }
 
 function _normalizeLwBars(candles) {
@@ -6390,7 +6444,7 @@ function _syncCdxPriceLines() {
 
 function renderCoinDcxLightweightChart(candles) {
   if (!window.LightweightCharts) return false;
-  const host = $("tv_chart"), local = $("chart");
+  const host = $("tv_chart"), rsiHost = $("cdx_rsi_chart"), local = $("chart");
   if (!host) return false;
   const bars = _normalizeLwBars(candles);
   if (!bars.length) return false;
@@ -6398,16 +6452,50 @@ function renderCoinDcxLightweightChart(candles) {
   if (local) local.classList.add("hide");
   host.classList.remove("hide");
 
+  const indOpts = S.chartIndicators || { ema: true, bb: false, vol: true, rsi: true };
   const isLight = document.documentElement.getAttribute("data-theme") === "light";
   const lastClose = bars[bars.length - 1].close;
   const prec = lastClose < 0.001 ? 7 : lastClose < 0.01 ? 6 : lastClose < 1 ? 5 : lastClose < 10 ? 4 : 2;
   const minMove = Number((1 / Math.pow(10, prec)).toFixed(prec));
-  const chartKey = `${S.symbol}|${S.tf}|${isLight ? "L" : "D"}`;
+  const chartKey = `${S.symbol}|${S.tf}|${isLight ? "L" : "D"}|${indOpts.ema?1:0}${indOpts.bb?1:0}${indOpts.vol?1:0}${indOpts.rsi?1:0}`;
+  const lastBar = bars[bars.length - 1];
+
+  const _applyAllSeriesData = (fit = false) => {
+    cdxCandleSeries.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    cdxLastBarTime = lastBar.time;
+    if (cdxVolSeries) {
+      cdxVolSeries.setData(indOpts.vol ? bars.map(b => ({
+        time: b.time,
+        value: b.volume,
+        color: b.close >= b.open ? "rgba(14,203,129,0.28)" : "rgba(246,70,93,0.28)",
+      })) : []);
+    }
+    if (cdxEma20Series) cdxEma20Series.setData(indOpts.ema ? _calcEmaSeries(bars, 20) : []);
+    if (cdxEma50Series) cdxEma50Series.setData(indOpts.ema ? _calcEmaSeries(bars, 50) : []);
+    if (cdxBbUpSeries && cdxBbMidSeries && cdxBbLowSeries) {
+      const bb = indOpts.bb ? _calcBollingerSeries(bars, 20, 2) : { up: [], mid: [], low: [] };
+      cdxBbUpSeries.setData(bb.up);
+      cdxBbMidSeries.setData(bb.mid);
+      cdxBbLowSeries.setData(bb.low);
+    }
+    if (cdxRsiSeries && indOpts.rsi) {
+      cdxRsiSeries.setData(_calcRsiSeries(bars, 14));
+    }
+    if (fit) {
+      cdxLwChart.timeScale().fitContent();
+      if (cdxRsiChart && indOpts.rsi) cdxRsiChart.timeScale().fitContent();
+    }
+  };
 
   if (!cdxLwChart || cdxLwKey !== chartKey) {
     if (cdxLwChart) {
       try { cdxLwChart.remove(); } catch (_) {}
       cdxLwChart = null;
+    }
+    if (cdxRsiChart) {
+      try { cdxRsiChart.remove(); } catch (_) {}
+      cdxRsiChart = null;
+      cdxRsiSeries = null;
     }
     host.innerHTML = "";
     host.style.position = "relative";
@@ -6432,7 +6520,7 @@ function renderCoinDcxLightweightChart(candles) {
       crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: {
         borderColor: isLight ? "#DBE2EC" : "#262B36",
-        scaleMargins: { top: 0.10, bottom: 0.22 },
+        scaleMargins: { top: 0.10, bottom: indOpts.vol ? 0.22 : 0.08 },
       },
       timeScale: {
         borderColor: isLight ? "#DBE2EC" : "#262B36",
@@ -6462,20 +6550,64 @@ function renderCoinDcxLightweightChart(candles) {
 
     cdxEma20Series = cdxLwChart.addLineSeries({ color: "#38bdf8", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
     cdxEma50Series = cdxLwChart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    cdxBbUpSeries = cdxLwChart.addLineSeries({ color: "rgba(168,85,247,0.7)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    cdxBbMidSeries = cdxLwChart.addLineSeries({ color: "rgba(168,85,247,0.4)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+    cdxBbLowSeries = cdxLwChart.addLineSeries({ color: "rgba(168,85,247,0.7)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+
+    if (rsiHost) {
+      if (indOpts.rsi) {
+        rsiHost.classList.remove("hide");
+        rsiHost.innerHTML = "";
+        rsiHost.style.position = "relative";
+        const rLbl = document.createElement("div");
+        rLbl.style.cssText = "position:absolute;top:4px;left:12px;z-index:10;pointer-events:none;font-family:var(--mono,monospace);font-size:10px;color:#a78bfa;";
+        rLbl.textContent = "RSI (14) · COINDCX FUTURES";
+        rsiHost.appendChild(rLbl);
+        cdxRsiChart = window.LightweightCharts.createChart(rsiHost, {
+          width: host.clientWidth || 720,
+          height: 110,
+          layout: {
+            background: { type: "solid", color: isLight ? "#FFFFFF" : "#111317" },
+            textColor: isLight ? "#475569" : "#94a3b8",
+            fontFamily: "'Inter', sans-serif",
+          },
+          grid: {
+            vertLines: { color: isLight ? "#EAEEF4" : "#1E232C" },
+            horzLines: { color: isLight ? "#EAEEF4" : "#1E232C" },
+          },
+          rightPriceScale: { borderColor: isLight ? "#DBE2EC" : "#262B36", scaleMargins: { top: 0.1, bottom: 0.1 } },
+          timeScale: { visible: false, borderColor: isLight ? "#DBE2EC" : "#262B36" },
+        });
+        cdxRsiSeries = cdxRsiChart.addLineSeries({ color: "#a78bfa", lineWidth: 1.5, priceLineVisible: false });
+        cdxRsiSeries.createPriceLine({ price: 70, color: "rgba(244,63,94,0.45)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "OB" });
+        cdxRsiSeries.createPriceLine({ price: 30, color: "rgba(16,185,129,0.45)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "OS" });
+        cdxLwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+          if (range && cdxRsiChart) {
+            try { cdxRsiChart.timeScale().setVisibleLogicalRange(range); } catch (_) {}
+          }
+        });
+      } else {
+        rsiHost.classList.add("hide");
+      }
+    }
 
     const updateLegend = (bar) => {
       if (!bar) return;
       const up = bar.close >= bar.open;
       const col = up ? "#0ecb81" : "#f6465d";
+      const tags = [
+        indOpts.ema ? `<span style="color:#38bdf8">EMA20</span> · <span style="color:#f59e0b">EMA50</span>` : "",
+        indOpts.bb ? `<span style="color:#c084fc">BB(20,2)</span>` : "",
+      ].filter(Boolean).join(" · ");
       legend.innerHTML = `<b style="color:${isLight ? "#0f172a" : "#fff"}">${S.symbol} · ${S.tf} · COINDCX FUTURES</b> &nbsp;` +
         `<span style="color:${col}">O ${bar.open.toFixed(prec)} · H ${bar.high.toFixed(prec)} · L ${bar.low.toFixed(prec)} · C ${bar.close.toFixed(prec)}</span>` +
-        ` &nbsp;<span style="color:#38bdf8">EMA20</span> · <span style="color:#f59e0b">EMA50</span>`;
+        (tags ? ` &nbsp;${tags}` : "");
     };
 
     cdxLwChart.subscribeCrosshairMove(param => {
       const b = param && param.seriesData ? param.seriesData.get(cdxCandleSeries) : null;
       if (b) updateLegend(b);
-      else if (bars.length) updateLegend(bars[bars.length - 1]);
+      else updateLegend(lastBar);
     });
 
     if (cdxLwResizeObs) { try { cdxLwResizeObs.disconnect(); } catch (_) {} }
@@ -6483,37 +6615,59 @@ function renderCoinDcxLightweightChart(candles) {
       cdxLwResizeObs = new ResizeObserver(() => {
         if (cdxLwChart && host.clientWidth > 100) {
           cdxLwChart.applyOptions({ width: host.clientWidth, height: host.clientHeight || 430 });
+          if (cdxRsiChart) cdxRsiChart.applyOptions({ width: host.clientWidth, height: 110 });
         }
       });
       cdxLwResizeObs.observe(host);
     }
 
-    cdxCandleSeries.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
-    cdxVolSeries.setData(bars.map(b => ({
-      time: b.time,
-      value: b.volume,
-      color: b.close >= b.open ? "rgba(14,203,129,0.28)" : "rgba(246,70,93,0.28)",
-    })));
-    cdxEma20Series.setData(_calcEmaSeries(bars, 20));
-    cdxEma50Series.setData(_calcEmaSeries(bars, 50));
-    cdxLwChart.timeScale().fitContent();
-    updateLegend(bars[bars.length - 1]);
+    _applyAllSeriesData(true);
+    updateLegend(lastBar);
     _syncCdxPriceLines();
     cdxLwKey = chartKey;
   } else {
-    const last = bars[bars.length - 1];
-    cdxCandleSeries.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
-    cdxVolSeries.update({
-      time: last.time,
-      value: last.volume,
-      color: last.close >= last.open ? "rgba(14,203,129,0.28)" : "rgba(246,70,93,0.28)",
-    });
+    try {
+      if (lastBar.time >= cdxLastBarTime) {
+        cdxCandleSeries.update({ time: lastBar.time, open: lastBar.open, high: lastBar.high, low: lastBar.low, close: lastBar.close });
+        cdxLastBarTime = lastBar.time;
+        if (cdxVolSeries && indOpts.vol) {
+          cdxVolSeries.update({
+            time: lastBar.time,
+            value: lastBar.volume,
+            color: lastBar.close >= lastBar.open ? "rgba(14,203,129,0.28)" : "rgba(246,70,93,0.28)",
+          });
+        }
+        if (cdxEma20Series && indOpts.ema) {
+          const e20 = _calcEmaSeries(bars, 20);
+          if (e20.length) cdxEma20Series.update(e20[e20.length - 1]);
+        }
+        if (cdxEma50Series && indOpts.ema) {
+          const e50 = _calcEmaSeries(bars, 50);
+          if (e50.length) cdxEma50Series.update(e50[e50.length - 1]);
+        }
+        if (cdxBbUpSeries && indOpts.bb) {
+          const bb = _calcBollingerSeries(bars, 20, 2);
+          if (bb.up.length) {
+            cdxBbUpSeries.update(bb.up[bb.up.length - 1]);
+            cdxBbMidSeries.update(bb.mid[bb.mid.length - 1]);
+            cdxBbLowSeries.update(bb.low[bb.low.length - 1]);
+          }
+        }
+        if (cdxRsiSeries && indOpts.rsi) {
+          const rSeries = _calcRsiSeries(bars, 14);
+          if (rSeries.length) cdxRsiSeries.update(rSeries[rSeries.length - 1]);
+        }
+      } else {
+        _applyAllSeriesData(false);
+      }
+    } catch (_) {
+      _applyAllSeriesData(false);
+    }
     const legend = $("cdx_tv_legend");
     if (legend) {
-      const col = last.close >= last.open ? "#0ecb81" : "#f6465d";
+      const col = lastBar.close >= lastBar.open ? "#0ecb81" : "#f6465d";
       legend.innerHTML = `<b style="color:${isLight ? "#0f172a" : "#fff"}">${S.symbol} · ${S.tf} · COINDCX FUTURES</b> &nbsp;` +
-        `<span style="color:${col}">O ${last.open.toFixed(prec)} · H ${last.high.toFixed(prec)} · L ${last.low.toFixed(prec)} · C ${last.close.toFixed(prec)}</span>` +
-        ` &nbsp;<span style="color:#38bdf8">EMA20</span> · <span style="color:#f59e0b">EMA50</span>`;
+        `<span style="color:${col}">O ${lastBar.open.toFixed(prec)} · H ${lastBar.high.toFixed(prec)} · L ${lastBar.low.toFixed(prec)} · C ${lastBar.close.toFixed(prec)}</span>`;
     }
     _syncCdxPriceLines();
   }

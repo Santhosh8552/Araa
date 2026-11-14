@@ -261,12 +261,8 @@ def tv_chart_code(symbol):
     code = CHART_ONLY.get(symbol) or TV_SYMBOL.get(symbol) or DYNAMIC.get(symbol, {}).get("code")
     if code:
         return code
-    if symbol.startswith("B-") and symbol.endswith("_USDT"):
-        return "COINBASE:" + symbol[2:-5] + "USD"
-    if symbol.endswith("USDT"):
-        return "COINBASE:" + symbol[:-4] + "USD"
-    if symbol.endswith("INR"):
-        return "COINDCX:" + symbol
+    if (symbol.startswith("B-") and symbol.endswith("_USDT")) or symbol.endswith("USDT") or symbol.endswith("INR"):
+        return None
     return None
 
 
@@ -684,8 +680,8 @@ class PriceFeed:
         elif short_chg_1m < -0.015 and mom_1m < 0 and tv_rec_1m > 0:
             tv_rec_1m = round(min(0.0, tv_other_1m * 0.5), 4)
 
-        # Pure 1m + 5m TradingView chart consensus (never polluted by 24h tv_rec_1d)
-        if (tv_rec_1m > 0.05 and tv_rec_5m < -0.05) or (tv_rec_1m < -0.05 and tv_rec_5m > 0.05):
+        # Pure 1m + 5m CoinDCX Futures consensus (require both 1m and 5m to agree in direction)
+        if (tv_rec_1m > 0.05 and tv_rec_5m <= 0.0) or (tv_rec_1m < -0.05 and tv_rec_5m >= 0.0):
             tv_recommend = 0.0
         else:
             tv_recommend = round(0.58 * tv_rec_1m + 0.42 * tv_rec_5m, 4)
