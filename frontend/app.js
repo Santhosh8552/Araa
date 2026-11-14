@@ -761,6 +761,20 @@ async function enterApp(pushState = true) {
   if (pushState) {
     history.pushState({view: "app"}, "Live Trading Terminal — Trade Pro", "#terminal");
   }
+  try {
+    const cachedLive = JSON.parse(localStorage.getItem("tp_last_live_broker") || "null");
+    if (cachedLive && cachedLive.is_live && cachedLive.is_coindcx) {
+      S.live = true;
+      isCoinDcx = true;
+      S.broker = cachedLive;
+      const bUsd = Number(cachedLive.live_balance_usd || cachedLive.live_balance || 66.86);
+      S.pf = S.pf || { is_live_mode: true, current_balance: bUsd, starting_balance: bUsd, today_pnl: 0, weekly_pnl: 0, win_rate: 0, win_count: 0, loss_count: 0, profit_factor: 0, open_count: 0, closed_count: 0, open_positions: [], closed_trades: [], goal: { mode: "LIVE", current_balance: bUsd, starting_balance: bUsd, target_amount: +(bUsd * 1.5).toFixed(2), gain: 0, remaining: +(bUsd * 0.5).toFixed(2), progress_pct: 0 } };
+      if (S.user) renderTopbar();
+      if (typeof renderGoal === "function") renderGoal(S.pf);
+      if (typeof renderKpi === "function") renderKpi(S.pf);
+      if (typeof renderConnectedApiAndRules === "function") renderConnectedApiAndRules({ user: S.user, broker: S.broker });
+    }
+  } catch (e) {}
   startPollers();
   const acctPromise = refreshAccount().catch((e) => {
     if (e && e.status === 401) {
@@ -802,8 +816,8 @@ const equity = () => S.wallet ? (Number(S.wallet.deposit_balance || 0) + Number(
 
 async function refreshAccount() {
   const [acctSettled, brokerSettled] = await Promise.allSettled([
-    call("/api/account"),
-    call("/api/broker/status"),
+    call("/api/account", { timeoutMs: 25000 }),
+    call("/api/broker/status", { timeoutMs: 25000 }),
   ]);
   if (acctSettled.status !== "fulfilled") {
     throw acctSettled.reason;
@@ -869,6 +883,13 @@ async function refreshAccount() {
 
   const isCoinDcxConn = Boolean(S.broker && (S.broker.name === "COINDCX" || S.broker.is_coindcx || S.broker.broker_name === "COINDCX"));
   isCoinDcx = isCoinDcxConn;
+  try {
+    if (S.broker && S.broker.is_live && isCoinDcxConn) {
+      localStorage.setItem("tp_last_live_broker", JSON.stringify(S.broker));
+    } else if (bRes && !bRes.connected) {
+      localStorage.removeItem("tp_last_live_broker");
+    }
+  } catch (e) {}
   if (isCoinDcxConn && (!S.symbol || S.symbol === "EURUSD" || S.symbol === "BTCINR") && !window._coindcxAutoSwitched) {
     window._coindcxAutoSwitched = true;
     S.symbol = "BTCUSDT";
@@ -4418,7 +4439,7 @@ function showRealBotDevModal(isFullScreen = false) {
     try { refreshExnessTerminal(); } catch (e) {}
     try { loadCoinDcxPublicIp(); } catch (e) {}
     if (_exnessPollTimer) clearInterval(_exnessPollTimer);
-    _exnessPollTimer = setInterval(refreshExnessTerminal, 1000);
+    _exnessPollTimer = setInterval(refreshExnessTerminal, 3000);
   }
 }
 window.showRealBotDevModal = showRealBotDevModal;
@@ -8956,32 +8977,29 @@ function startPollers() {
     try { await refreshAccount(); }
     catch (e) { if (e && (e.status === 401 || /Not logged in/i.test(e.message))) { localStorage.removeItem("tp_token"); location.reload(); } }
     finally { _acctInFlight = false; }
-  }, 2500);
+  }, 5000);
   // Real-time live tick refresh for Mark, P&L, Move on manual and bot trades
-  setInterval(tickLivePositions, 350);
+  setInterval(tickLivePositions, 1000);
   setInterval(() => {
     if (_watchInFlight || !S.token) return;
     _watchInFlight = true;
     loadWatch().catch(() => {}).finally(() => { _watchInFlight = false; });
-  }, 4000);
+  }, 8000);
   setInterval(() => {
     if (_chartInFlight || !S.token) return;
     _chartInFlight = true;
     loadChart().catch(() => {}).finally(() => { _chartInFlight = false; });
-  }, 10000);
+  }, 15000);
   setInterval(() => { if (S.token) loadTicker().catch(() => {}); }, 25000);
-  // The account poller already repaints an open drawer, so this only carries the slower
-  // A-Z analysis panel. Calling renderBot() here too fetched /api/account and /api/health a
-  // second time per cycle and fought the sliders the user was dragging.
-  setInterval(() => { if (isDrawerOpen("drawer_bot")) renderAnalysis().catch(() => {}); }, 5000);
-  setInterval(() => { if (S.tab === "az_analysis") renderTabAZ().catch(() => {}); }, 8000);
+  setInterval(() => { if (isDrawerOpen("drawer_bot")) renderAnalysis().catch(() => {}); }, 8000);
+  setInterval(() => { if (S.tab === "az_analysis") renderTabAZ().catch(() => {}); }, 10000);
   setInterval(() => {
     if (_pingInFlight || !S.token) return;
     _pingInFlight = true;
     Promise.resolve(pingFeed()).catch(() => {}).finally(() => { _pingInFlight = false; });
-  }, 5000);
+  }, 10000);
   setInterval(tickClock, 1000);
-  withdrawPreview(); pingFeed(); tickClock();
+  withdrawPreview(); setTimeout(() => { pingFeed(); }, 1200); tickClock();
 }
 
 /* ================================ Theme Management (Light / Dark) ================================ */

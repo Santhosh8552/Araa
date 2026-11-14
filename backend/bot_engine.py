@@ -2447,7 +2447,12 @@ class Bot:
                     self.mark_to_market()
                 except Exception:
                     pass
-                self._stop.wait(0.15)  # 150ms ultra-fast exit & flash-profit capture watchdog
+                has_open = False
+                try:
+                    has_open = bool(query_one("SELECT 1 FROM positions WHERE status='OPEN' LIMIT 1"))
+                except Exception:
+                    pass
+                self._stop.wait(0.6 if has_open else 1.5)
 
         def loop():
             while not self._stop.is_set():
@@ -2455,8 +2460,8 @@ class Bot:
                     self.cycle()
                 except Exception as exc:
                     print("[BOT]", exc)
-                # Rapid Continuous Scalping: Wakes up immediately when any trade closes, or max 0.8s
-                self._wake_event.wait(timeout=0.8)
+                # Wakes up immediately when any trade closes, or max 2.0s to prevent CPU/GIL starvation
+                self._wake_event.wait(timeout=2.0)
                 self._wake_event.clear()
 
         self._exit_thread = threading.Thread(target=exit_watchdog, daemon=True)

@@ -1175,6 +1175,7 @@ CREATE INDEX IF NOT EXISTS ix_pos_prot_user ON position_protections(user_id, pro
 
 _wal_initialized = False
 _db_init_lock = threading.Lock()
+_read_tls = threading.local()
 
 def connect():
     global _wal_initialized
@@ -1192,12 +1193,27 @@ def connect():
     return conn
 
 
-def query(sql, params=()):
+def _get_read_conn():
+    conn = getattr(_read_tls, "conn", None)
+    if conn is not None:
+        return conn
     conn = connect()
+    _read_tls.conn = conn
+    return conn
+
+
+def query(sql, params=()):
+    conn = _get_read_conn()
     try:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
-    finally:
-        conn.close()
+    except sqlite3.Error:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _read_tls.conn = None
+        conn = _get_read_conn()
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def query_one(sql, params=()):

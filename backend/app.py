@@ -469,7 +469,8 @@ def portfolio(uid):
 
     # Analytics computed over active mode only (Separate Paper vs Live tracking)
     all_closed = query(f"SELECT realized_pnl, opened_at, closed_at, symbol FROM positions "
-                       f"WHERE user_id=? AND status='CLOSED' AND {pos_filter} ORDER BY closed_at ASC LIMIT 500", (uid,))
+                       f"WHERE user_id=? AND status='CLOSED' AND {pos_filter} ORDER BY closed_at DESC LIMIT 150", (uid,))
+    all_closed.reverse()
     pnls = [c["realized_pnl"] for c in all_closed]
     gross_win = sum(p for p in pnls if p > 0)
     gross_loss = -sum(p for p in pnls if p < 0)
@@ -1543,12 +1544,12 @@ def account():
               broker=dict(b_row) if b_row else None,
               real_bot_config=dict(rb_row) if rb_row else None,
               orders=orders_of(u["id"]),
-              transactions=query("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 50",
+              transactions=query("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 30",
                                  (u["id"],)),
-              withdrawals=query("SELECT * FROM withdrawals WHERE user_id=? ORDER BY id DESC LIMIT 30",
+              withdrawals=query("SELECT * FROM withdrawals WHERE user_id=? ORDER BY id DESC LIMIT 20",
                                 (u["id"],)),
-              deposits=query("SELECT * FROM deposits WHERE user_id=? ORDER BY id DESC LIMIT 200", (u["id"],)),
-              logs=query("SELECT * FROM bot_log WHERE user_id=? OR user_id IS NULL ORDER BY id DESC LIMIT 100",
+              deposits=query("SELECT * FROM deposits WHERE user_id=? ORDER BY id DESC LIMIT 50", (u["id"],)),
+              logs=query("SELECT * FROM bot_log WHERE user_id=? OR user_id IS NULL ORDER BY id DESC LIMIT 30",
                          (u["id"],)))
 
 
