@@ -1254,10 +1254,11 @@ def _seed_company_governance() -> None:
 
     co_id = existing_co["id"]
 
-    # Seed the two strictly independent capital pools with 0 balance (never migrate demo funds)
+    # Seed the three strictly independent capital pools with 0 balance (never migrate demo funds)
     for pool_id, pool_name, scope, provider in (
         ("POOL_INDIA_INR", "India Equities Capital Pool (Zerodha)", "INDIA", "ZERODHA"),
         ("POOL_CRYPTO_SPOT", "Crypto Spot Capital Pool (CoinDCX)", "CRYPTO", "COINDCX"),
+        ("POOL_CRYPTO_FUTURES", "Crypto Derivatives Capital Pool (CoinDCX Futures)", "CRYPTO_FUTURES", "COINDCX_FUTURES"),
     ):
         write(
             "INSERT OR IGNORE INTO company_capital_pools("
@@ -1270,6 +1271,7 @@ def _seed_company_governance() -> None:
     for pol_id, pool_id, win_en in (
         ("POL_INDIA_INR", "POOL_INDIA_INR", 0),
         ("POL_CRYPTO_SPOT", "POOL_CRYPTO_SPOT", 0),
+        ("POL_CRYPTO_FUTURES", "POOL_CRYPTO_FUTURES", 0),
     ):
         write(
             "INSERT OR IGNORE INTO company_risk_policies("

@@ -666,6 +666,16 @@ def company_auth_logout():
     return ok(message="Company session revoked")
 
 
+@v1_api.route("/company/auth/refresh", methods=["POST"])
+@require_company_auth
+def company_auth_refresh():
+    emp = g.company_user
+    tok = emp.get("session_token", "")
+    new_expires = time.time() + 12 * 3600
+    write("UPDATE company_sessions SET expires_at=?, last_seen=? WHERE token=?", (new_expires, time.time(), tok))
+    return ok(token=tok, expires_at=new_expires, message="Session refreshed")
+
+
 @v1_api.route("/company/auth/revoke-all", methods=["POST"])
 @require_company_auth
 def company_auth_revoke_all():
@@ -760,6 +770,49 @@ def company_employees_update(emp_id):
     return ok(**res) if res.get("success") else fail(res.get("error", "Update failed"))
 
 
+@v1_api.route("/company/employees/<int:emp_id>/roles", methods=["POST"])
+@require_permission("employees.manage")
+def company_employees_assign_role(emp_id):
+    data = request.get_json(silent=True) or {}
+    role_code = data.get("role_code", "")
+    res = CompanyAuthService.update_employee(
+        g.company_user["company_id"], emp_id, {"role_code": role_code}, actor=g.company_user, ip_address=request.remote_addr or ""
+    )
+    return ok(**res) if res.get("success") else fail(res.get("error", "Role assignment failed"))
+
+
+@v1_api.route("/company/employees/<int:emp_id>/revoke-sessions", methods=["POST"])
+@require_permission("employees.manage")
+def company_employees_revoke_sessions(emp_id):
+    CompanyAuthService.revoke_all_user_sessions(emp_id)
+    log_company_audit(
+        company_id=g.company_user["company_id"],
+        action="SESSIONS_REVOKED_BY_ADMIN",
+        actor=g.company_user,
+        resource_type="COMPANY_USER",
+        resource_id=str(emp_id),
+        ip_address=request.remote_addr or "",
+    )
+    return ok(message="All sessions revoked for employee")
+
+
+@v1_api.route("/company/permissions", methods=["GET"])
+@require_permission("employees.view")
+def company_permissions_list():
+    perms = query("SELECT * FROM company_permissions ORDER BY module, permission_code")
+    return ok(permissions=perms)
+
+
+@v1_api.route("/company/audit/permissions", methods=["GET"])
+@require_permission("audit.view")
+def company_audit_permissions():
+    logs = query(
+        "SELECT * FROM company_audit_logs WHERE company_id=? AND resource_type IN ('COMPANY_USER','PERMISSION','ROLE') ORDER BY created_at DESC LIMIT 100",
+        (g.company_user["company_id"],),
+    )
+    return ok(audit_logs=logs)
+
+
 @v1_api.route("/company/approvals", methods=["GET"])
 @require_permission("audit.view")
 def company_approvals_list():
@@ -849,6 +902,76 @@ def company_accounts_register():
 def company_capital_pools_list():
     pools = CompanyCapitalManager.list_pools(g.company_user["company_id"])
     return ok(pools=pools, cross_pool_transfers_allowed=False)
+
+
+@v1_api.route("/company/capital-pools/<pool_id>", methods=["GET"])
+@require_permission("capital.view")
+def company_capital_pool_get(pool_id):
+    pools = CompanyCapitalManager.list_pools(g.company_user["company_id"])
+    target = next((p for p in pools if p.get("pool_id") == pool_id), None)
+    if not target:
+        return fail(f"Capital pool '{pool_id}' not found", 404)
+    return ok(pool=target)
+
+
+@v1_api.route("/company/capital-pools/<pool_id>/allocate", methods=["POST"])
+@require_permission("capital.allocate")
+def company_capital_pool_allocate_target(pool_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        res = CompanyCapitalManager.allocate_to_strategy(
+            company_id=g.company_user["company_id"],
+            pool_id=pool_id,
+            strategy_code=data.get("strategy_code", ""),
+            amount_inr=data.get("amount_inr", "0"),
+            actor=g.company_user,
+            ip_address=request.remote_addr or "",
+        )
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    return ok(**res) if res.get("success") else fail(res.get("error", "Allocation failed"))
+
+
+@v1_api.route("/company/capital-pools/<pool_id>/deallocate", methods=["POST"])
+@require_permission("capital.allocate")
+def company_capital_pool_deallocate_target(pool_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        amt = data.get("amount_inr", "0")
+        strat = data.get("strategy_code", "")
+        # Deallocation is a negative allocation release back to pool free funds
+        neg_amt = f"-{amt.lstrip('-')}"
+        res = CompanyCapitalManager.allocate_to_strategy(
+            company_id=g.company_user["company_id"],
+            pool_id=pool_id,
+            strategy_code=strat,
+            amount_inr=neg_amt,
+            actor=g.company_user,
+            ip_address=request.remote_addr or "",
+        )
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    return ok(**res) if res.get("success") else fail(res.get("error", "Deallocation failed"))
+
+
+@v1_api.route("/company/capital-pools/<pool_id>/transactions", methods=["GET"])
+@require_permission("capital.view")
+def company_capital_pool_transactions(pool_id):
+    rows = query(
+        "SELECT * FROM company_capital_movements WHERE company_id=? AND pool_id=? ORDER BY created_at DESC LIMIT 100",
+        (g.company_user["company_id"], pool_id),
+    )
+    return ok(transactions=rows, pool_id=pool_id)
+
+
+@v1_api.route("/company/capital-pools/<pool_id>/reconciliation", methods=["GET"])
+@require_permission("reconciliation.run")
+def company_capital_pool_reconciliation(pool_id):
+    runs = query(
+        "SELECT * FROM reconciliation_runs WHERE company_id=? AND pool_id=? ORDER BY created_at DESC LIMIT 20",
+        (g.company_user["company_id"], pool_id),
+    )
+    return ok(reconciliations=runs, pool_id=pool_id)
 
 
 @v1_api.route("/company/capital-pools", methods=["POST"])

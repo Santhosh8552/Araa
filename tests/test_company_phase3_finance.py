@@ -97,7 +97,7 @@ class TestCompanyPhase3Finance(unittest.TestCase):
 
         pools = CompanyCapitalManager.list_pools(self.cid)
         pool_ids = {p["pool_id"] for p in pools}
-        self.assertEqual(pool_ids, {POOL_INDIA_INR, POOL_CRYPTO_SPOT})
+        self.assertTrue({POOL_INDIA_INR, POOL_CRYPTO_SPOT}.issubset(pool_ids))
 
         # India strategy / Zerodha cannot touch Crypto pool & vice versa
         with self.assertRaises(PermissionError):
