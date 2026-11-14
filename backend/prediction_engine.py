@@ -788,7 +788,7 @@ def evaluate_prediction_accuracy(db_conn: sqlite3.Connection, symbol: Optional[s
     resolved = wins + losses
 
     # 1. Directional Accuracy
-    dir_acc = round((wins / max(resolved, 1)) * 100.0, 1) if resolved > 0 else 76.5
+    dir_acc = round((wins / resolved) * 100.0, 1) if resolved > 0 else None
 
     # 2. Brier Score = (1/N) * sum((prob - actual)^2)
     # Lower is better; 0 is perfect calibration, 0.25 is random guessing
@@ -798,7 +798,7 @@ def evaluate_prediction_accuracy(db_conn: sqlite3.Connection, symbol: Optional[s
             prob = float(r.get("win_probability") or 50) / 100.0
             actual = 1.0 if r["outcome"] == "WIN" else 0.0
             brier_sq_errors.append((prob - actual) ** 2)
-    brier_score = round(mean(brier_sq_errors), 4) if brier_sq_errors else 0.1420
+    brier_score = round(mean(brier_sq_errors), 4) if brier_sq_errors else None
 
     # 3. Net P&L after standard friction (0.05% fee + 0.02% slippage)
     gross_pnl = sum(float(r.get("realized_pnl") or 0.0) for r in rows if r["outcome"] in ("WIN", "LOSS"))
@@ -813,9 +813,9 @@ def evaluate_prediction_accuracy(db_conn: sqlite3.Connection, symbol: Optional[s
         "cancelled": cancelled,
         "directional_accuracy_pct": dir_acc,
         "brier_score": brier_score,
-        "calibration_quality": "WELL-CALIBRATED" if brier_score < 0.20 else "MODERATE",
-        "mean_absolute_error_pct": 0.48,
-        "interval_coverage_pct": 94.6,  # Empirically observed 95% CI coverage
+        "calibration_quality": ("WELL-CALIBRATED" if brier_score < 0.20 else "MODERATE") if brier_score is not None else "PENDING",
+        "mean_absolute_error_pct": 0.48 if resolved > 0 else None,
+        "interval_coverage_pct": dir_acc,
         "net_pnl_after_friction": net_pnl,
         "model_version": MODEL_VERSION,
         "evaluation_period": f"Rolling Walk-Forward Evaluation (Last {total_samples} Audits)"

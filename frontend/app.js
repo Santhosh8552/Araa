@@ -2791,7 +2791,7 @@ async function renderOracleTab() {
     }
     
     if ($("oracle_screened_count")) {
-      $("oracle_screened_count").textContent = a.total_checked || 494;
+      $("oracle_screened_count").textContent = a.total_checked != null ? a.total_checked : (S.markets?.length || 0);
       $("oracle_qualified_sub").textContent = `${a.total_qualified || 0} Setups Passed (Strict Mode Filters)`;
     }
     
@@ -2841,16 +2841,17 @@ async function renderOracleTab() {
       }
 
       if ($("oracle_dir_acc")) {
-        $("oracle_dir_acc").textContent = (acc.directional_accuracy_pct || predRes.metrics?.win_rate || 53.4) + "%";
+        const dirVal = acc.directional_accuracy_pct != null ? acc.directional_accuracy_pct : (predRes.metrics?.resolved ? predRes.metrics?.win_rate : null);
+        $("oracle_dir_acc").textContent = dirVal != null ? `${dirVal}%` : "--%";
       }
       if ($("oracle_brier_score")) {
-        $("oracle_brier_score").textContent = acc.brier_score || "0.1420";
+        $("oracle_brier_score").textContent = acc.brier_score != null ? acc.brier_score : "--";
       }
       if ($("oracle_interval_cov")) {
-        $("oracle_interval_cov").textContent = (acc.interval_coverage_pct || 94.6) + "%";
+        $("oracle_interval_cov").textContent = acc.interval_coverage_pct != null ? `${acc.interval_coverage_pct}%` : "--%";
       }
       if ($("oracle_acc_sub")) {
-        $("oracle_acc_sub").textContent = `Walk-Forward Sample: ${acc.sample_size || 500} Audits`;
+        $("oracle_acc_sub").textContent = `Walk-Forward Sample: ${acc.sample_size ?? 0} Live Audits`;
       }
       
       // On weekends, prioritize and filter decisions to LIVE CRYPTO so user is not cluttered with closed traditional markets
@@ -4262,10 +4263,10 @@ window.renderBotTrainingStateUI = function(tr, isAutoPoll) {
   const genBadge = $("tr_gen_badge");
   if (genBadge) genBadge.textContent = `GEN #${tr.generation || 1}`;
   const winRate = $("tr_win_rate");
-  const wrVal = tr.calibrated_win_rate ?? tr.walk_forward_win_rate ?? 84.6;
-  if (winRate) winRate.textContent = `${Number(wrVal).toFixed(1)}%`;
+  const wrVal = tr.calibrated_win_rate ?? tr.walk_forward_win_rate;
+  if (winRate) winRate.textContent = wrVal != null ? `${Number(wrVal).toFixed(1)}%` : "--%";
   const pfSub = $("tr_pf_sub");
-  if (pfSub) pfSub.textContent = `Profit Factor: ${Number(tr.profit_factor || 2.35).toFixed(2)}`;
+  if (pfSub) pfSub.textContent = `Profit Factor: ${tr.profit_factor != null ? Number(tr.profit_factor).toFixed(2) : "--"}`;
   const candlesCnt = $("tr_candles_cnt");
   if (candlesCnt) candlesCnt.textContent = `${tr.candles_analyzed || 0} Candles`;
   const tradesSub = $("tr_trades_sub");
@@ -4288,7 +4289,7 @@ window.renderBotTrainingStateUI = function(tr, isAutoPoll) {
   const dGen = $("drawer_tr_gen_badge");
   if (dGen) dGen.textContent = `GEN #${tr.generation || 1}`;
   const dWr = $("drawer_tr_wr_badge");
-  if (dWr) dWr.textContent = `${Number(wrVal).toFixed(1)}% WIN RATE · PF ${Number(tr.profit_factor || 2.35).toFixed(2)}`;
+  if (dWr) dWr.textContent = `${wrVal != null ? Number(wrVal).toFixed(1) : "--"}% WIN RATE · PF ${tr.profit_factor != null ? Number(tr.profit_factor).toFixed(2) : "--"}`;
   const dWeights = $("drawer_tr_weights_line");
   if (dWeights) {
     dWeights.textContent = `Weights: EMA ${Math.round((w.w_ema_ribbon || 0.34) * 100)}% · RSI ${Math.round((w.w_rsi_momentum || 0.24) * 100)}% · MACD ${Math.round((w.w_macd_impulse || 0.24) * 100)}% · VOL ${Math.round((w.w_squeeze_vol || 0.18) * 100)}%`;
@@ -8036,13 +8037,13 @@ function showAiScanner() {
               }
             });
           }
-          // Display high-conviction Araa AI setup probability (institutional target: 82% - 94%)
-          const realWin = a.win_rate_pct ? Math.max(78.5, Math.min(94.2, a.win_rate_pct)) : 84.6;
-          const realLoss = (100.0 - realWin).toFixed(1);
-          $("ai_win_rate").textContent = realWin.toFixed(1) + "%";
-          $("ai_win_bar").style.width = realWin.toFixed(1) + "%";
-          $("ai_loss_rate").textContent = realLoss + "%";
-          $("ai_loss_bar").style.width = realLoss + "%";
+          // Display actual live win-rate from backend analysis (no artificial clamping or fake fallback)
+          const realWin = a.win_rate_pct != null ? Number(a.win_rate_pct) : null;
+          const realLoss = realWin != null ? (100.0 - realWin).toFixed(1) : "--";
+          $("ai_win_rate").textContent = realWin != null ? realWin.toFixed(1) + "%" : "--%";
+          $("ai_win_bar").style.width = (realWin != null ? realWin.toFixed(1) : 0) + "%";
+          $("ai_loss_rate").textContent = realWin != null ? realLoss + "%" : "--%";
+          $("ai_loss_bar").style.width = (realWin != null ? realLoss : 0) + "%";
         }
       } catch (e) {}
     }
