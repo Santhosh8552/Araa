@@ -4335,6 +4335,32 @@ def api_coindcx_status():
     )
 
 
+@api.route("/api/coindcx/usd-profit-dashboard", methods=["GET"])
+def api_coindcx_usd_profit_dashboard():
+    """Returns confirmed USD/USDT CoinDCX Futures account equity, P&L, fees, win-rate, and drawdown."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from coindcx_adapter import CoinDCXExecutionAdapter
+    from strategy_engine import StrategyEngine
+    dash = CoinDCXExecutionAdapter.compute_usd_profit_dashboard(u["id"])
+    ctrl = StrategyEngine.get_real_bot_controller_state(u["id"])
+    return ok(dashboard=dash, controller=ctrl, **dash)
+
+
+@api.route("/api/coindcx/real-bot/controller-state", methods=["GET"])
+def api_coindcx_real_bot_controller_state():
+    """Returns 10-state Real Bot Mode controller state and pre-flight validation summary."""
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    ctrl = StrategyEngine.get_real_bot_controller_state(u["id"])
+    preflight = StrategyEngine.validate_real_bot_preflight(u["id"])
+    return ok(controller=ctrl, preflight=preflight, state=ctrl["state"], real_mode=ctrl["real_mode"])
+
+
+
 @api.route("/api/coindcx/real-bot/confirm", methods=["GET"])
 def api_coindcx_real_bot_confirm():
     """Returns pre-flight risk disclosure & authorization confirmation metadata."""

@@ -225,6 +225,55 @@ class StrategyEngine:
         set_state(f"tv_webhook_secret_{user_id}", sec)
         return sec
 
+    REAL_BOT_STATES = (
+        "DISCONNECTED", "CONNECTED", "READY", "STARTING", "RUNNING",
+        "PAUSED", "STOPPING", "STOPPED", "ERROR", "EMERGENCY_STOP",
+    )
+
+    @classmethod
+    def get_real_bot_controller_state(cls, user_id: int) -> Dict[str, Any]:
+        """Return canonical 10-state Real Bot Mode controller state for a user."""
+        bc = query_one("SELECT status, is_live_active, broker_name FROM broker_connections WHERE user_id=?", (user_id,))
+        rb = query_one("SELECT emergency_shutdown, bot_status FROM real_bot_configs WHERE user_id=?", (user_id,))
+        u = query_one("SELECT bot_enabled FROM users WHERE id=?", (user_id,))
+        if rb and int(rb.get("emergency_shutdown") or 0) == 1:
+            return {"state": "EMERGENCY_STOP", "real_mode": True, "reason": "Emergency Stop is active."}
+        if not bc or str(bc.get("status") or "DISCONNECTED").upper() == "DISCONNECTED":
+            return {"state": "DISCONNECTED", "real_mode": False, "reason": "CoinDCX API not connected."}
+        raw_st = str((rb or {}).get("bot_status") or "").upper()
+        if raw_st in ("ERROR", "STARTING", "STOPPING", "STOPPED"):
+            return {"state": raw_st, "real_mode": bool(bc.get("is_live_active")), "reason": f"Bot is {raw_st}."}
+        if int(bc.get("is_live_active") or 0) == 1:
+            if u and int(u.get("bot_enabled") or 0) == 1 and raw_st == "RUNNING":
+                return {"state": "RUNNING", "real_mode": True, "reason": "Real Bot Mode is actively running."}
+            if raw_st == "PAUSED":
+                return {"state": "PAUSED", "real_mode": True, "reason": "Real Bot Mode is paused."}
+            return {"state": "READY", "real_mode": True, "reason": "CoinDCX verified and ready."}
+        return {"state": "CONNECTED", "real_mode": False, "reason": "CoinDCX connected (Paper Mode active)."}
+
+    @classmethod
+    def validate_real_bot_preflight(cls, user_id: int, strategy_id: str = "araa_ai_default") -> Dict[str, Any]:
+        """Execute all pre-flight checks before activating REAL BOT MODE."""
+        checks: Dict[str, Any] = {}
+        ver = CoinDCXExecutionAdapter.verify_connection(user_id)
+        checks["coindcx_connection"] = bool(ver.get("connected"))
+        checks["account_balance_usdt"] = float(ver.get("available_balance_usd") or 0.0)
+        checks["futures_permissions"] = bool((ver.get("permissions") or {}).get("futures"))
+        if not checks["coindcx_connection"]:
+            return {"ready": False, "state": "DISCONNECTED", "checks": checks, "error": ver.get("error") or "CoinDCX not connected."}
+        if not checks["futures_permissions"]:
+            return {"ready": False, "state": "ERROR", "checks": checks, "error": ver.get("error") or "Futures trading permission missing."}
+        strat = cls.get_strategy(user_id, strategy_id)
+        checks["strategy_loaded"] = bool(strat and int(strat.get("enabled") or 0) == 1)
+        if not checks["strategy_loaded"]:
+            return {"ready": False, "state": "ERROR", "checks": checks, "error": f"Strategy '{strategy_id}' is missing or disabled."}
+        rb = query_one("SELECT emergency_shutdown, max_daily_loss, max_positions FROM real_bot_configs WHERE user_id=?", (user_id,))
+        if rb and int(rb.get("emergency_shutdown") or 0) == 1:
+            return {"ready": False, "state": "EMERGENCY_STOP", "checks": checks, "error": "Emergency Stop is active."}
+        recon = CoinDCXExecutionAdapter.reconcile_state(user_id)
+        checks["exchange_sync"] = bool(recon.get("connected"))
+        return {"ready": True, "state": "READY", "checks": checks, "strategy": strat, "reconciliation": recon, "error": ""}
+
     @classmethod
     def is_real_mode_active(cls, user_id: int) -> Tuple[bool, str]:
         """Determine whether the user is explicitly in REAL BOT MODE (no silent fallback)."""
@@ -243,14 +292,23 @@ class StrategyEngine:
         symbol: str,
         side: str,
         ai_signal: Optional[Dict[str, Any]] = None,
+        market_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, str]:
-        """Enforce hard risk controls that Araa AI can NEVER override."""
+        """Enforce hard risk controls that Araa AI and exchange integration can NEVER override."""
         rb = query_one("SELECT emergency_shutdown FROM real_bot_configs WHERE user_id=?", (user_id,))
         if rb and int(rb.get("emergency_shutdown") or 0) == 1:
             return False, "Emergency Stop is active. Reset Emergency Stop before trading."
 
         if not strategy or not int(strategy.get("enabled") or 0):
             return False, f"Strategy '{(strategy or {}).get('strategy_id', 'unknown')}' is disabled."
+
+        entry_rules = {}
+        exit_rules = {}
+        try:
+            entry_rules = json.loads(strategy.get("entry_rules_json") or "{}") if isinstance(strategy.get("entry_rules_json"), str) else (strategy.get("entry_rules") or {})
+            exit_rules = json.loads(strategy.get("exit_rules_json") or "{}") if isinstance(strategy.get("exit_rules_json"), str) else (strategy.get("exit_rules") or {})
+        except Exception:
+            pass
 
         allowed_dir = str(strategy.get("allowed_directions") or "BOTH").upper()
         norm_side = "LONG" if side.upper() in ("BUY", "LONG") else "SHORT"
@@ -261,6 +319,27 @@ class StrategyEngine:
         if str(strategy.get("market_type") or "FUTURES").upper() == "SPOT" and norm_side == "SHORT":
             return False, "Spot market does not permit SHORT selling."
 
+        # Risk/Reward & Liquidation Distance Validation
+        sl_pct = max(0.05, float(strategy.get("stop_loss_pct") or 0.50))
+        tp_pct = max(0.05, float(strategy.get("take_profit_pct") or 1.00))
+        lev = max(1.0, float(strategy.get("leverage") or 20.0))
+        min_rr = float(entry_rules.get("min_risk_reward") or 0.0)
+        if min_rr > 0 and (tp_pct / sl_pct) < min_rr:
+            return False, f"Risk/Reward ratio ({tp_pct / sl_pct:.2f}) below required minimum ({min_rr:.2f})."
+        if str(strategy.get("market_type") or "FUTURES").upper() == "FUTURES" and lev > 1.0:
+            approx_liq_dist_pct = 90.0 / lev
+            if sl_pct >= approx_liq_dist_pct:
+                return False, f"Liquidation risk: stop_loss_pct ({sl_pct:.2f}%) exceeds safe liquidation distance ({approx_liq_dist_pct:.2f}%) at {lev:.0f}x leverage."
+
+        # Market Spread & Volatility Protection
+        m_ctx = market_context or {}
+        max_spread = float(entry_rules.get("max_spread_pct") or 0.35)
+        if float(m_ctx.get("spread_pct") or 0.0) > max_spread:
+            return False, f"Market spread ({float(m_ctx['spread_pct']):.3f}%) exceeds max spread protection ({max_spread:.3f}%)."
+        max_vol = float(entry_rules.get("max_volatility_pct") or 0.0)
+        if max_vol > 0 and float(m_ctx.get("volatility_pct") or 0.0) > max_vol:
+            return False, f"Market volatility ({float(m_ctx['volatility_pct']):.2f}%) exceeds max limit ({max_vol:.2f}%)."
+
         open_cnt_row = query_one(
             "SELECT COUNT(*) AS c FROM positions WHERE user_id=? AND status IN ('OPEN','PENDING_BROKER')",
             (user_id,),
@@ -270,16 +349,23 @@ class StrategyEngine:
         if raw_max < 999 and open_cnt >= raw_max:
             return False, f"Max open positions limit reached ({open_cnt}/{raw_max})."
 
-        # Daily loss limit check (today UTC)
+        # Daily loss limit & Daily profit lock & Max trades per day (today UTC)
         day_start = time.time() - (time.time() % 86400)
         loss_row = query_one(
-            "SELECT COALESCE(SUM(realized_pnl), 0.0) AS pnl FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at>=?",
+            "SELECT COALESCE(SUM(realized_pnl), 0.0) AS pnl, COUNT(*) AS cnt FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at>=?",
             (user_id, day_start),
         )
         today_pnl = float((loss_row or {}).get("pnl") or 0.0)
+        today_trades = int((loss_row or {}).get("cnt") or 0)
         max_daily_loss = float(strategy.get("max_daily_loss_usd") or 250.0)
         if today_pnl <= -abs(max_daily_loss):
             return False, f"Max daily loss limit reached (${today_pnl:.2f} <= -${max_daily_loss:.2f})."
+        max_daily_profit_lock = float(exit_rules.get("max_daily_profit_lock_usd") or 0.0)
+        if max_daily_profit_lock > 0 and today_pnl >= max_daily_profit_lock:
+            return False, f"Daily profit lock reached (+${today_pnl:.2f} >= +${max_daily_profit_lock:.2f})."
+        max_trades_day = int(entry_rules.get("max_trades_per_day") or 0)
+        if max_trades_day > 0 and today_trades >= max_trades_day:
+            return False, f"Max trades per day reached ({today_trades}/{max_trades_day})."
 
         # Cooldown check between trades for this strategy + symbol
         cooldown = float(strategy.get("cooldown_seconds") or 0.0)
@@ -297,6 +383,47 @@ class StrategyEngine:
             return False, str(ai_signal.get("rationale") or "Araa AI flagged negative expectancy setup.")
 
         return True, "APPROVED"
+
+    @classmethod
+    def evaluate_position_profit_management(
+        cls,
+        user_id: int,
+        position: Dict[str, Any],
+        current_price: float,
+        strategy: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate AraaBot Python profit management rules: break-even, partial TP, trailing SL, and max loss."""
+        strat = strategy or cls.get_strategy(user_id, "araa_ai_default") or {}
+        exit_rules = {}
+        try:
+            exit_rules = json.loads(strat.get("exit_rules_json") or "{}") if isinstance(strat.get("exit_rules_json"), str) else (strat.get("exit_rules") or {})
+        except Exception:
+            pass
+        entry = float(position.get("entry_price") or 0.0)
+        if entry <= 0 or current_price <= 0:
+            return {"action": "HOLD", "reason": "Missing price"}
+        side = str(position.get("side") or "LONG").upper()
+        direction = 1.0 if side in ("BUY", "LONG") else -1.0
+        move_pct = ((current_price - entry) / entry) * 100.0 * direction
+        peak_pct = max(move_pct, float(position.get("peak_pnl_pct") or 0.0))
+        tp_pct = float(position.get("target_pct") or strat.get("take_profit_pct") or 1.0)
+        sl_pct = float(position.get("stop_pct") or strat.get("stop_loss_pct") or 0.5)
+        trail_pct = float(position.get("trailing_stop_pct") or strat.get("trailing_stop_pct") or 0.25)
+        be_trigger = float(exit_rules.get("breakeven_trigger_pct") or (tp_pct * 0.5))
+        partial_trigger = float(exit_rules.get("partial_tp_trigger_pct") or (tp_pct * 0.65))
+        partial_booked = int(position.get("partial_tp_booked") or 0) == 1
+
+        if move_pct >= tp_pct:
+            return {"action": "FULL_EXIT", "reason": f"TAKE_PROFIT_HIT (+{move_pct:.2f}% >= +{tp_pct:.2f}%)", "move_pct": round(move_pct, 4)}
+        if not partial_booked and move_pct >= partial_trigger:
+            return {"action": "PARTIAL_EXIT", "partial_ratio": float(exit_rules.get("partial_tp_size_pct") or 0.5), "reason": f"PARTIAL_PROFIT_BOOKING (+{move_pct:.2f}%)", "move_pct": round(move_pct, 4)}
+        if trail_pct > 0 and peak_pct >= be_trigger and (peak_pct - move_pct) >= trail_pct and move_pct > 0.12:
+            return {"action": "TRAILING_EXIT", "reason": f"SMART_TRAILING_STOP (Peak +{peak_pct:.2f}% -> +{move_pct:.2f}%)", "move_pct": round(move_pct, 4)}
+        if peak_pct >= be_trigger and move_pct <= 0.12 and move_pct >= 0.02:
+            return {"action": "BREAKEVEN_PROTECT", "new_sl_price": round(entry * (1.0 + 0.0012 * direction), 8), "reason": "BREAKEVEN_STOP_LOCKED", "move_pct": round(move_pct, 4)}
+        if not bool(position.get("is_live")) and move_pct <= -sl_pct:
+            return {"action": "STOP_LOSS_EXIT", "reason": f"STOP_LOSS_GUARD ({move_pct:.2f}%)", "move_pct": round(move_pct, 4)}
+        return {"action": "HOLD", "move_pct": round(move_pct, 4), "peak_pct": round(peak_pct, 4)}
 
     @classmethod
     def execute_order_intent(

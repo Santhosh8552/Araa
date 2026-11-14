@@ -285,6 +285,46 @@ class TestCoinDCXIntegrationAToF(unittest.TestCase):
         with araa_app.api.test_request_context("/api/auth/me", headers={"X-Token": tok}):
             self.assertIsNone(araa_app.current_user())
 
+    def test_8_real_bot_controller_extended_risk_profit_management_and_usd_dashboard(self):
+        # 1. Controller state & preflight check
+        self._enable_real_mode()
+        fake_cdx = FakeCoinDCXClient(eligible=True, order_ok=True)
+        with patch.object(CoinDCXExecutionAdapter, "_client", return_value=fake_cdx):
+            preflight = StrategyEngine.validate_real_bot_preflight(self.uid)
+            self.assertTrue(preflight["ready"])
+            self.assertEqual(preflight["state"], "READY")
+
+            # Execute a live trade and verify USD profit dashboard
+            strat = StrategyEngine.save_strategy(self.uid, {
+                "strategy_id": "araa_ai_default",
+                "cooldown_seconds": 0.0,
+                "stop_loss_pct": 0.50,
+                "take_profit_pct": 1.20,
+                "entry_rules": {"min_risk_reward": 1.8, "max_spread_pct": 0.25},
+                "exit_rules": {"breakeven_trigger_pct": 0.45, "partial_tp_trigger_pct": 0.75},
+            })
+            # Spread protection rejection
+            ok_sp, msg_sp = StrategyEngine.evaluate_hard_risk(
+                self.uid, strat, "BTCUSDT", "BUY", market_context={"spread_pct": 0.40}
+            )
+            self.assertFalse(ok_sp)
+            self.assertIn("spread", msg_sp.lower())
+
+            # Profit management evaluation (partial TP, trailing, full TP)
+            pos = {"entry_price": 80000.0, "side": "LONG", "target_pct": 1.20, "stop_pct": 0.50, "trailing_stop_pct": 0.20, "peak_pnl_pct": 0.85, "partial_tp_booked": 0, "is_live": 1}
+            pm_part = StrategyEngine.evaluate_position_profit_management(self.uid, pos, 80640.0, strat)
+            self.assertEqual(pm_part["action"], "PARTIAL_EXIT")
+            pos["partial_tp_booked"] = 1
+            pm_trail = StrategyEngine.evaluate_position_profit_management(self.uid, pos, 80450.0, strat)
+            self.assertEqual(pm_trail["action"], "TRAILING_EXIT")
+
+            # USD Profit Dashboard calculation
+            dash = CoinDCXExecutionAdapter.compute_usd_profit_dashboard(self.uid)
+            self.assertEqual(dash["currency"], "USDT")
+            self.assertGreaterEqual(dash["available_balance_usdt"], 50.0)
+            self.assertIn("net_profit_usdt", dash)
+            self.assertIn("total_trading_fees_usdt", dash)
+
 
 if __name__ == "__main__":
     unittest.main()

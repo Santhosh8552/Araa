@@ -648,3 +648,78 @@ class CoinDCXExecutionAdapter:
             reconciled += 1
         return {"connected": snap.get("connected"), "positions_count": len(snap.get("positions", [])), "protections_active": reconciled}
 
+    @classmethod
+    def compute_usd_profit_dashboard(cls, user_id: int) -> Dict[str, Any]:
+        """Compute accurate USDT / USD-equivalent profit metrics from confirmed CoinDCX fills & positions."""
+        now = time.time()
+        day_start = now - (now % 86400)
+        week_start = now - 7 * 86400
+        month_start = now - 30 * 86400
+
+        snap = cls.get_account_snapshot(user_id)
+        avail_usdt = float(snap.get("available_balance_usd") or 0.0)
+        open_rows = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' AND is_live=1 ORDER BY opened_at DESC", (user_id,))
+        closed_rows = query("SELECT * FROM positions WHERE user_id=? AND status='CLOSED' AND is_live=1 ORDER BY closed_at ASC", (user_id,))
+        fee_rows = query("SELECT COALESCE(SUM(fee_usd), 0.0) AS total_fees FROM order_mappings WHERE user_id=? AND mode='REAL' AND status IN ('FILLED','PARTIALLY_FILLED')", (user_id,))
+
+        locked_margin_usdt = round(sum(float(p.get("margin") or 0.0) for p in open_rows), 4)
+        unrealized_pnl_usdt = round(sum(float(p.get("unrealized_pnl") or 0.0) for p in open_rows), 4)
+        realized_pnl_usdt = round(sum(float(p.get("realized_pnl") or 0.0) for p in closed_rows), 4)
+        today_pnl_usdt = round(sum(float(p.get("realized_pnl") or 0.0) for p in closed_rows if float(p.get("closed_at") or 0.0) >= day_start), 4)
+        weekly_pnl_usdt = round(sum(float(p.get("realized_pnl") or 0.0) for p in closed_rows if float(p.get("closed_at") or 0.0) >= week_start), 4)
+        monthly_pnl_usdt = round(sum(float(p.get("realized_pnl") or 0.0) for p in closed_rows if float(p.get("closed_at") or 0.0) >= month_start), 4)
+
+        recorded_fees = float((fee_rows[0] if fee_rows else {}).get("total_fees") or 0.0)
+        closed_est_fees = sum(round(float(p.get("qty") or 0.0) * (float(p.get("entry_price") or 0.0) + float(p.get("exit_price") or p.get("entry_price") or 0.0)) * 0.0005, 6) for p in closed_rows)
+        total_trading_fees_usdt = round(max(recorded_fees, closed_est_fees), 4)
+        funding_fees_usdt = round(sum(float(p.get("funding_fee") or 0.0) for p in closed_rows + open_rows), 4)
+        net_profit_usdt = round(realized_pnl_usdt - total_trading_fees_usdt - funding_fees_usdt, 4)
+
+        wins = [float(p.get("realized_pnl") or 0.0) for p in closed_rows if float(p.get("realized_pnl") or 0.0) > 0]
+        losses = [float(p.get("realized_pnl") or 0.0) for p in closed_rows if float(p.get("realized_pnl") or 0.0) < 0]
+        total_closed = len(closed_rows)
+        win_rate = round((len(wins) / total_closed * 100.0), 2) if total_closed > 0 else 0.0
+        avg_win = round(sum(wins) / len(wins), 4) if wins else 0.0
+        avg_loss = round(sum(losses) / len(losses), 4) if losses else 0.0
+
+        # Max drawdown across closed trade equity curve
+        cum_pnl = 0.0
+        peak_eq = 0.0
+        max_dd_usdt = 0.0
+        for p in closed_rows:
+            cum_pnl += float(p.get("realized_pnl") or 0.0)
+            if cum_pnl > peak_eq:
+                peak_eq = cum_pnl
+            dd = peak_eq - cum_pnl
+            if dd > max_dd_usdt:
+                max_dd_usdt = dd
+
+        total_equity_usdt = round(avail_usdt + locked_margin_usdt + unrealized_pnl_usdt, 4)
+        return {
+            "currency": "USDT",
+            "usd_equivalent_rate": 1.0,
+            "connected": bool(snap.get("connected")),
+            "total_account_equity_usdt": total_equity_usdt,
+            "total_account_equity_usd_equiv": total_equity_usdt,
+            "available_balance_usdt": round(avail_usdt, 4),
+            "locked_margin_usdt": locked_margin_usdt,
+            "unrealized_pnl_usdt": unrealized_pnl_usdt,
+            "realized_pnl_usdt": realized_pnl_usdt,
+            "today_pnl_usdt": today_pnl_usdt,
+            "weekly_pnl_usdt": weekly_pnl_usdt,
+            "monthly_pnl_usdt": monthly_pnl_usdt,
+            "total_trading_fees_usdt": total_trading_fees_usdt,
+            "funding_fees_usdt": funding_fees_usdt,
+            "net_profit_usdt": net_profit_usdt,
+            "total_positions": len(open_rows) + total_closed,
+            "open_positions_count": len(open_rows),
+            "closed_positions_count": total_closed,
+            "winning_trades": len(wins),
+            "losing_trades": len(losses),
+            "win_rate_pct": win_rate,
+            "avg_profit_per_trade_usdt": avg_win,
+            "avg_loss_per_trade_usdt": avg_loss,
+            "max_drawdown_usdt": round(max_dd_usdt, 4),
+        }
+
+
