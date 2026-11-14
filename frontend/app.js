@@ -2811,6 +2811,34 @@ async function renderOracleTab() {
       const predRes = await call("/api/ai/predictions");
       let preds = predRes.predictions || [];
       const acc = (predRes.metrics && predRes.metrics.accuracy) || {};
+      const wf = predRes.workflow || {};
+
+      if ($("oracle_wf_mode_badge")) {
+        const isLiveWf = !!wf.is_live_mode;
+        $("oracle_wf_mode_badge").textContent = wf.execution_mode || (isLiveWf ? "REAL MODE (COINDCX API)" : "PAPER MODE (SIMULATION)");
+        $("oracle_wf_mode_badge").style.background = isLiveWf ? "rgba(16,185,129,0.18)" : "rgba(56,189,248,0.15)";
+        $("oracle_wf_mode_badge").style.borderColor = isLiveWf ? "#10b981" : "#38bdf8";
+        $("oracle_wf_mode_badge").style.color = isLiveWf ? "#10b981" : "#38bdf8";
+      }
+      if ($("oracle_wf_step3_title")) {
+        $("oracle_wf_step3_title").textContent = wf.is_live_mode ? "CoinDCX API Live Gate" : "Paper Mode Engine Gate";
+      }
+      if ($("oracle_wf_live_strip")) {
+        const activePos = wf.active_positions || [];
+        const liveSigs = wf.live_signals || [];
+        const posHtml = activePos.map(ap => {
+          const pCol = ap.pnl >= 0.10 ? "#10b981" : (ap.pnl >= 0 ? "#38bdf8" : "#f87171");
+          return `<span style="background:rgba(15,23,42,0.85); border:1px solid ${pCol}; color:${pCol}; padding:3px 9px; border-radius:8px; font-family:var(--mono);">` +
+            `${ap.symbol} ${ap.side} ${signed(ap.pnl)} · ${ap.lock_state}</span>`;
+        }).join("");
+        const sigHtml = liveSigs.slice(0, 4).map(ls =>
+          `<span style="background:rgba(30,41,59,0.75); border:1px solid rgba(148,163,184,0.3); color:#e2e8f0; padding:3px 9px; border-radius:8px; font-family:var(--mono);">` +
+          `${ls.symbol} <b>${ls.side}</b> · 1s:${ls.tv_1s_dir} 1m:${ls.tv_rec_1m} 5m:${ls.tv_rec_5m} · ${ls.smc_dna_status} (${ls.smc_dna_similarity}%)</span>`
+        ).join("");
+        $("oracle_wf_live_strip").innerHTML = (posHtml || sigHtml)
+          ? `${posHtml}${sigHtml}`
+          : `<span style="color:#94a3b8;">Waiting for aligned TradingView (1s/1m/5m) + SMC/DNA signals...</span>`;
+      }
 
       if ($("oracle_dir_acc")) {
         $("oracle_dir_acc").textContent = (acc.directional_accuracy_pct || predRes.metrics?.win_rate || 53.4) + "%";

@@ -1122,6 +1122,29 @@ class Bot:
                 if tr_rules.get("stop_loss_pct"):
                     sl = round(max(0.15, float(tr_rules["stop_loss_pct"])), 3)
 
+        tv_1s_dir = (
+            "BUY" if (micro["recent_tick_pct"] > 0.005 or micro["micro_step_ups"] >= 2)
+            else ("SELL" if (micro["recent_tick_pct"] < -0.005 or micro["micro_step_downs"] >= 2) else "NEUTRAL")
+        )
+        smc_dna_status = ob.get("type") if (ob and ob.get("found")) else "SMC_STRUCTURE"
+        smc_dna_sim = 86.0 if (ob and ob.get("retest_active")) else 78.0
+        smc_dna_bias = ob.get("bias") if (ob and ob.get("found")) else side
+        try:
+            if cat == "CRYPTO" and len(candles_1m) >= 12:
+                from quantum_engine import SMCDNAEngine
+                _smc_fast = SMCDNAEngine.analyze_candles(symbol, candles_1m[-30:], "1m", price)
+                if _smc_fast:
+                    _dna = _smc_fast.get("dna") or {}
+                    smc_dna_status = str(_dna.get("setup_status") or smc_dna_status)
+                    smc_dna_sim = float(_dna.get("similarity_pct") or smc_dna_sim)
+                    _sig_g = _smc_fast.get("bot_signal") or {}
+                    if _sig_g.get("block_long"):
+                        smc_dna_bias = "SHORT"
+                    elif _sig_g.get("block_short"):
+                        smc_dna_bias = "LONG"
+        except Exception:
+            pass
+
         reason = " · ".join(f"{name} {value:+.2f} ({note})" for name, value, note in parts)
         return {"symbol": symbol, "tv_symbol": tv_code, "category": cat, "country": row.get("country") or "",
                 "side": side, "score": round(score, 4),
@@ -1131,6 +1154,10 @@ class Bot:
                 "tv_signal": tv_label, "tv_recommend": tv_rec, "tv_ma": tv_ma,
                 "tv_rec_1m": tv_rec_1m, "tv_rec_5m": tv_rec_5m,
                 "tv_ma_1m": tv_ma_1m, "tv_ma_5m": tv_ma_5m,
+                "tv_1s_dir": tv_1s_dir,
+                "smc_dna_status": smc_dna_status,
+                "smc_dna_similarity": round(smc_dna_sim, 1),
+                "smc_dna_bias": smc_dna_bias,
                 "slope_z": round(slope_z, 4),
                 "feed": "TRADINGVIEW_LIVE",
                 "order_block": ob,
@@ -1272,7 +1299,32 @@ class Bot:
         tp_pct = max(0.25, float(p.get("target_pct") or 0.60))
         tp_roi = tp_pct * pos_lev
 
-        # RULE 0: Immediate Target-Profit Execution when target hit (no 120s freeze blocking scalps)
+        # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (Both Paper & Real Mode)
+        if pnl >= 1.00 and time_held >= (1.0 if is_live else 0.0):
+            return f"SCALP_TARGET_$1_HIT (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+
+        if peak_cash >= 0.90 and pnl >= 0.85 and time_held >= 2.0:
+            if pnl <= round(peak_cash * 0.96, 4) or pnl >= 0.90:
+                return f"SCALP_AUTO_CLOSE_+0.90 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # RULE 0.5: +$0.10 Profit Lock Ladder (Locks green profits once trade reaches +$0.10)
+        if peak_cash >= 0.10 and time_held >= 1.5:
+            if peak_cash >= 0.50:
+                lock_floor = 0.35
+            elif peak_cash >= 0.25:
+                lock_floor = 0.15
+            else:
+                lock_floor = 0.04
+            if is_live and est_fee > 0 and (est_fee * 1.15) < (peak_cash * 0.80):
+                lock_floor = max(lock_floor, round(est_fee * 1.15, 4))
+            if pnl <= lock_floor and pnl > 0:
+                return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # RULE 0.6: -$0.03 Tight Loss-Cut Stop (Both Paper & Real Mode)
+        if pnl <= -0.03 and time_held >= 1.5:
+            return f"SCALP_MAX_LOSS_CUT_-0.03 (-${abs(pnl):.2f} | {roi_pct:.1f}% ROI)"
+
+        # RULE 1: Immediate Target-Profit Execution when percentage target hit
         min_hold_tp = 2.0 if is_live else 0.0
         if move_pct >= tp_pct and pnl >= min_net_profit and time_held >= min_hold_tp:
             return f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
@@ -2300,11 +2352,22 @@ class Bot:
 
             picked["ai_win_prob"] = win_p
             tv_rec_val = float(picked.get("tv_recommend") or 0.0)
-            tv_sig_str = f"⚡ TV {picked.get('tv_signal', 'BUY')} ({tv_rec_val:+.2f})"
-            picked["reason"] = f"{tv_sig_str} · Araa Gemini AI [{pred['win_probability']}% win | R:R {pred['risk_reward']}:1]: {pred['rationale']}"
+            tv_1m_val = float(picked.get("tv_rec_1m") if picked.get("tv_rec_1m") is not None else tv_rec_val)
+            tv_5m_val = float(picked.get("tv_rec_5m") if picked.get("tv_rec_5m") is not None else tv_rec_val)
+            tv_1s_d = picked.get("tv_1s_dir") or ("BUY" if picked["side"] in ("BUY", "LONG") else "SELL")
+            smc_stat = picked.get("smc_dna_status") or "SMC_OB"
+            smc_sim = picked.get("smc_dna_similarity") or 82.0
+            exec_route = "COINDCX API" if is_coindcx_live else ("MT4 LIVE" if is_live_flag else "PAPER ENGINE")
+            tv_sig_str = (
+                f"⚡ TV[1s:{tv_1s_d}|1m:{tv_1m_val:+.2f}|5m:{tv_5m_val:+.2f}] → "
+                f"SMC+DNA[{smc_stat} {smc_sim:.0f}%] → {exec_route} → "
+                f"SCALP[+$1.00 TP | +$0.10 Lock | -$0.03 SL]"
+            )
+            pred["rationale"] = f"{tv_sig_str} | {pred.get('rationale', '')}"
+            picked["reason"] = f"{tv_sig_str} · Araa AI [{pred['win_probability']}% win | R:R {pred['risk_reward']}:1]"
             if is_live_flag:
                 self._log(user["id"], "AI_ENTRY_APPROVED",
-                          f"🧠 Araa Gemini AI Approved Real Entry: {picked['side']} {picked['symbol']} ({win_p}% Win Prob · R:R {pred['risk_reward']}:1 · Target +{picked['target_pct']}%)")
+                          f"🧠 {tv_sig_str} | {picked['side']} {picked['symbol']} ({win_p}% Win Prob)")
 
             # Record confirmed pre-entry prediction BEFORE real order so Gatekeeper Rule 6 sees it immediately!
             pred_id = write(

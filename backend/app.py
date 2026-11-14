@@ -5486,8 +5486,74 @@ def ai_predictions():
     finally:
         conn.close()
 
+    b_conn = query_one(
+        "SELECT is_live_active, broker_name, status, api_key_masked FROM broker_connections WHERE user_id=?",
+        (u["id"],),
+    )
+    is_live_mode = bool(
+        b_conn and b_conn.get("is_live_active") and b_conn.get("status") == "CONNECTED"
+        and str(b_conn.get("api_key_masked") or "") != "DEMO_SIM"
+    )
+    broker_label = (b_conn.get("broker_name") or "COINDCX").upper() if is_live_mode else "PAPER ENGINE"
+    pos_filter = "is_live=1" if is_live_mode else "(is_live=0 OR is_live IS NULL)"
+    open_pos_rows = query(
+        f"SELECT id, symbol, side, entry_price, current_price, unrealized_pnl, peak_cash_pnl, margin, leverage, is_live, opened_at "
+        f"FROM positions WHERE user_id=? AND status='OPEN' AND {pos_filter} ORDER BY opened_at DESC",
+        (u["id"],),
+    )
+    active_scalps = []
+    for p in open_pos_rows:
+        pnl_v = round(float(p.get("unrealized_pnl") or 0.0), 4)
+        peak_v = round(float(p.get("peak_cash_pnl") or 0.0), 4)
+        if pnl_v >= 0.90 or peak_v >= 0.90:
+            lock_state = "SCALP AUTO-CLOSE (+$0.90 / +$1.00)"
+        elif peak_v >= 0.50:
+            lock_state = "LOCKED +$0.35 FLOOR"
+        elif peak_v >= 0.25:
+            lock_state = "LOCKED +$0.15 FLOOR"
+        elif peak_v >= 0.10:
+            lock_state = "PROFIT LOCK ARMED (+$0.10+)"
+        elif pnl_v <= -0.02:
+            lock_state = "WATCH SL (-$0.03 CUT)"
+        else:
+            lock_state = "SCANNING (1s/1m/5m)"
+        active_scalps.append({
+            "symbol": p["symbol"],
+            "side": p["side"],
+            "pnl": pnl_v,
+            "peak_pnl": peak_v,
+            "lock_state": lock_state,
+            "is_live": bool(p.get("is_live")),
+        })
+
+    live_signals = []
+    for s in (bot.setups or [])[:6]:
+        live_signals.append({
+            "symbol": s.get("symbol"),
+            "side": s.get("side"),
+            "confidence": s.get("confidence"),
+            "tv_1s_dir": s.get("tv_1s_dir") or "NEUTRAL",
+            "tv_rec_1m": round(float(s.get("tv_rec_1m") or 0.0), 2),
+            "tv_rec_5m": round(float(s.get("tv_rec_5m") or 0.0), 2),
+            "smc_dna_status": s.get("smc_dna_status") or "SMC_OB",
+            "smc_dna_similarity": s.get("smc_dna_similarity") or 80.0,
+        })
+
     return ok(
         predictions=rows,
+        workflow={
+            "is_live_mode": is_live_mode,
+            "execution_mode": f"REAL MODE ({broker_label} API)" if is_live_mode else "PAPER MODE (SIMULATION)",
+            "bot_enabled": bool(u.get("bot_enabled")),
+            "rules": {
+                "target_usd": 1.00,
+                "scalp_auto_close_usd": 0.90,
+                "profit_lock_arm_usd": 0.10,
+                "max_loss_cut_usd": -0.03,
+            },
+            "active_positions": active_scalps,
+            "live_signals": live_signals,
+        },
         metrics={
             "total_screened": len(rows),
             "wins": wins,

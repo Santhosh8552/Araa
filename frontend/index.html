@@ -2416,6 +2416,44 @@
             </span>
           </div>
 
+          <!-- 4-Stage TradingView + SMC/DNA -> CoinDCX / Paper Auto-Scalp Workflow Pipeline -->
+          <div id="oracle_workflow_panel" style="background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(6,78,59,0.22)); border:1px solid rgba(16,185,129,0.35); border-radius:12px; padding:14px 16px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size:15px;">⚡</span>
+                <b style="font-size:12.5px; color:#f8fafc; letter-spacing:0.03em;">LIVE RULE-ONLY EXECUTION WORKFLOW (TRADINGVIEW + SMC + DNA → COINDCX / PAPER)</b>
+              </div>
+              <span id="oracle_wf_mode_badge" style="font-size:10.5px; font-weight:800; padding:3px 10px; border-radius:12px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8;">
+                DETECTING MODE...
+              </span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; margin-bottom:12px;">
+              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.35); border-radius:10px; padding:10px 12px;">
+                <div style="font-size:10px; font-weight:800; color:#38bdf8; margin-bottom:4px;">STEP 1 · TRADINGVIEW AI</div>
+                <div style="font-size:12px; font-weight:700; color:#f1f5f9;">1s + 1m + 5m Consensus</div>
+                <div id="oracle_wf_step1" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Real-time 1s tick + 1m/5m TV signals</div>
+              </div>
+              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(168,85,247,0.35); border-radius:10px; padding:10px 12px;">
+                <div style="font-size:10px; font-weight:800; color:#c084fc; margin-bottom:4px;">STEP 2 · SMC + MARKET DNA</div>
+                <div style="font-size:12px; font-weight:700; color:#f1f5f9;">Order Block + Twin Match</div>
+                <div id="oracle_wf_step2" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Institutional OB / FVG &amp; DNA % gate</div>
+              </div>
+              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:10px 12px;">
+                <div style="font-size:10px; font-weight:800; color:#34d399; margin-bottom:4px;">STEP 3 · RULE-ONLY ORDER</div>
+                <div id="oracle_wf_step3_title" style="font-size:12px; font-weight:700; color:#f1f5f9;">CoinDCX API / Paper Gate</div>
+                <div id="oracle_wf_step3" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Executes only when Step 1 &amp; 2 agree</div>
+              </div>
+              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(251,191,36,0.35); border-radius:10px; padding:10px 12px;">
+                <div style="font-size:10px; font-weight:800; color:#fbbf24; margin-bottom:4px;">STEP 4 · AUTO-SCALP EXIT</div>
+                <div style="font-size:12px; font-weight:700; color:#f1f5f9;">+$0.10 Lock → +$0.90 / +$1.00</div>
+                <div id="oracle_wf_step4" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Target +$1.00 · Tight Cut -$0.03</div>
+              </div>
+            </div>
+            <div id="oracle_wf_live_strip" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:11px; color:#cbd5e1;">
+              <span style="color:#94a3b8;">Loading live workflow telemetry...</span>
+            </div>
+          </div>
+
           <!-- Oracle Stat Cards Grid: Real Out-Of-Sample Accuracy Tracking -->
           <div class="oracle_stat_grid">
             <div class="oracle_stat_card">

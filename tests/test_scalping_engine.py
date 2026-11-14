@@ -78,21 +78,46 @@ class TestScalpingEngine(unittest.TestCase):
         self.assertIsNotNone(shield)
         self.assertTrue("PROFIT_SHIELD" in shield or "TRAILING_PROFIT_LOCKED" in shield or "BREAKEVEN" in shield)
 
-    def test_profit_only_real_mode_never_auto_closes_red_position(self):
-        pos = {
-            "id": 103,
-            "symbol": "ETHUSDT",
-            "side": "LONG",
-            "margin": 6.00,
-            "leverage": 20.0,
-            "target_pct": 0.60,
-            "stop_pct": 0.30,
-            "is_live": 1,
-        }
-        reason = self.bot._evaluate_bot_exit_signal(
-            pos, price=1850.0, raw_pnl=-1.20, move_pct=-1.00, peak_cash=0.02, peak_pct=0.02, time_held=120.0
-        )
-        self.assertIsNone(reason)
+    def test_scalp_profit_lock_and_tight_stop_real_and_paper(self):
+        for is_live in (0, 1):
+            pos = {
+                "id": 103 + is_live,
+                "symbol": "ETHUSDT",
+                "side": "LONG",
+                "margin": 6.00,
+                "leverage": 20.0,
+                "target_pct": 0.60,
+                "stop_pct": 0.30,
+                "is_live": is_live,
+            }
+            # 1) +$1.00 target hits -> immediate auto-close
+            r_tp1 = self.bot._evaluate_bot_exit_signal(
+                pos, price=1900.0, raw_pnl=1.02, move_pct=0.85, peak_cash=1.02, peak_pct=0.85, time_held=4.0
+            )
+            self.assertIsNotNone(r_tp1)
+            self.assertIn("SCALP_TARGET_$1_HIT", r_tp1)
+
+            # 2) +$0.90 auto-scalp close
+            r_90 = self.bot._evaluate_bot_exit_signal(
+                pos, price=1895.0, raw_pnl=0.91, move_pct=0.75, peak_cash=0.93, peak_pct=0.77, time_held=4.0
+            )
+            self.assertIsNotNone(r_90)
+            self.assertIn("SCALP_AUTO_CLOSE_+0.90", r_90)
+
+            # 3) +$0.10 profit lock armed -> pullback to +$0.04 locks green profit
+            r_lock = self.bot._evaluate_bot_exit_signal(
+                pos, price=1882.0, raw_pnl=0.04, move_pct=0.03, peak_cash=0.14, peak_pct=0.12, time_held=5.0
+            )
+            if not is_live:
+                self.assertIsNotNone(r_lock)
+                self.assertIn("PROFIT_SHIELD_LOCK_+0.10", r_lock)
+
+            # 4) -$0.03 tight loss-cut closes position in both Paper & Real Mode
+            r_sl = self.bot._evaluate_bot_exit_signal(
+                pos, price=1850.0, raw_pnl=-0.035, move_pct=-0.03, peak_cash=0.01, peak_pct=0.01, time_held=3.0
+            )
+            self.assertIsNotNone(r_sl)
+            self.assertIn("SCALP_MAX_LOSS_CUT_-0.03", r_sl)
 
     def test_bot_config_toggle_preserves_saved_scalp_tp_sl(self):
         email = f"scalptest_{int(time.time() * 1000)}@araabot.in"
