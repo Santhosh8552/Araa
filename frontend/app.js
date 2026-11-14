@@ -6416,6 +6416,50 @@ function _syncCdxPriceLines() {
     try { cdxCandleSeries.removePriceLine(cdxPriceLines.pop()); } catch (_) { break; }
   }
   const sym = (S.symbol || "").toUpperCase();
+  const q = S.quoteBy[sym] || S.quote || {};
+  const hi24 = Number(q.high || 0);
+  const lo24 = Number(q.low || 0);
+  const mp = Number(q.mark_price || 0);
+  if (hi24 > 0) {
+    cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+      price: hi24, color: "rgba(56,189,248,0.45)", lineWidth: 1, lineStyle: 3, axisLabelVisible: true,
+      title: "High",
+    }));
+  }
+  if (lo24 > 0) {
+    cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+      price: lo24, color: "rgba(168,85,247,0.45)", lineWidth: 1, lineStyle: 3, axisLabelVisible: true,
+      title: "Low",
+    }));
+  }
+  if (mp > 0) {
+    cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+      price: mp, color: "rgba(245,158,11,0.55)", lineWidth: 1, lineStyle: 1, axisLabelVisible: false,
+      title: "Mark",
+    }));
+  }
+  if (S.showSmcDna && S.smcDna) {
+    const sig = S.smcDna.bot_signal || {};
+    const dna = S.smcDna.dna || {};
+    if (Number(sig.entry_price || 0) > 0) {
+      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+        price: Number(sig.entry_price), color: "#38bdf8", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        title: `AI ${sig.action || "SIGNAL"}`,
+      }));
+    }
+    if (Number(dna.tp1 || 0) > 0) {
+      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+        price: Number(dna.tp1), color: "rgba(16,185,129,0.7)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        title: "AI TP1",
+      }));
+    }
+    if (Number(dna.sl || 0) > 0) {
+      cdxPriceLines.push(cdxCandleSeries.createPriceLine({
+        price: Number(dna.sl), color: "rgba(244,63,94,0.7)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        title: "AI SL",
+      }));
+    }
+  }
   const posList = (S.positions || []).filter(p => (p.symbol || "").toUpperCase() === sym);
   posList.forEach(p => {
     const entry = Number(p.entry_price || 0);
@@ -6423,7 +6467,7 @@ function _syncCdxPriceLines() {
     const sl = Number(p.stop_loss || 0);
     if (entry > 0) {
       cdxPriceLines.push(cdxCandleSeries.createPriceLine({
-        price: entry, color: "#38bdf8", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+        price: entry, color: "#38bdf8", lineWidth: 2, lineStyle: 0, axisLabelVisible: true,
         title: `${p.side || "POS"} ENTRY`,
       }));
     }
@@ -6440,6 +6484,34 @@ function _syncCdxPriceLines() {
       }));
     }
   });
+}
+
+function _buildCdxLegendHtml(bar, prec, isLight, indOpts) {
+  const sym = (S.symbol || "").toUpperCase();
+  const q = S.quoteBy[sym] || S.quote || {};
+  const up = bar.close >= bar.open;
+  const col = up ? "#0ecb81" : "#f6465d";
+  const mp = Number(q.mark_price || bar.close);
+  const fr = q.funding_rate != null ? `${(Number(q.funding_rate) * 100).toFixed(4)}%` : "—";
+  const tvSig = q.tv_signal || "NEUTRAL";
+  const sigColor = tvSig.includes("BUY") ? "#0ecb81" : (tvSig.includes("SELL") ? "#f6465d" : "#94a3b8");
+  const r1m = q.tv_rec_1m != null ? Number(q.tv_rec_1m).toFixed(2) : "—";
+  const r5m = q.tv_rec_5m != null ? Number(q.tv_rec_5m).toFixed(2) : "—";
+  const tags = [
+    indOpts.ema ? `<span style="color:#38bdf8">EMA20</span>·<span style="color:#f59e0b">50</span>` : "",
+    indOpts.bb ? `<span style="color:#c084fc">BB</span>` : "",
+  ].filter(Boolean).join(" ");
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+    `<b style="color:${isLight ? "#0f172a" : "#fff"}">${sym} · ${S.tf} · COINDCX FUTURES</b>` +
+    `<span style="background:rgba(246,70,93,0.18);border:1px solid rgba(246,70,93,0.45);color:#f6465d;padding:1px 6px;border-radius:4px;font-weight:800;">SELL ${bar.close.toFixed(prec)}</span>` +
+    `<span style="background:rgba(14,203,129,0.18);border:1px solid rgba(14,203,129,0.45);color:#0ecb81;padding:1px 6px;border-radius:4px;font-weight:800;">BUY ${bar.close.toFixed(prec)}</span>` +
+    `<span style="color:${sigColor};font-weight:800;">BOT: ${tvSig} (1m:${r1m} 5m:${r5m})</span>` +
+    `</div>` +
+    `<div style="margin-top:2px;font-size:10.5px;">` +
+    `<span style="color:${col}">O ${bar.open.toFixed(prec)} · H ${bar.high.toFixed(prec)} · L ${bar.low.toFixed(prec)} · C ${bar.close.toFixed(prec)}</span>` +
+    ` &nbsp;|&nbsp; <span style="color:#f59e0b">Mark ${mp.toFixed(prec)}</span> · <span style="color:#94a3b8">FR ${fr}</span>` +
+    (tags ? ` &nbsp;|&nbsp; ${tags}` : "") +
+    `</div>`;
 }
 
 function renderCoinDcxLightweightChart(candles) {
@@ -6593,15 +6665,7 @@ function renderCoinDcxLightweightChart(candles) {
 
     const updateLegend = (bar) => {
       if (!bar) return;
-      const up = bar.close >= bar.open;
-      const col = up ? "#0ecb81" : "#f6465d";
-      const tags = [
-        indOpts.ema ? `<span style="color:#38bdf8">EMA20</span> · <span style="color:#f59e0b">EMA50</span>` : "",
-        indOpts.bb ? `<span style="color:#c084fc">BB(20,2)</span>` : "",
-      ].filter(Boolean).join(" · ");
-      legend.innerHTML = `<b style="color:${isLight ? "#0f172a" : "#fff"}">${S.symbol} · ${S.tf} · COINDCX FUTURES</b> &nbsp;` +
-        `<span style="color:${col}">O ${bar.open.toFixed(prec)} · H ${bar.high.toFixed(prec)} · L ${bar.low.toFixed(prec)} · C ${bar.close.toFixed(prec)}</span>` +
-        (tags ? ` &nbsp;${tags}` : "");
+      legend.innerHTML = _buildCdxLegendHtml(bar, prec, isLight, indOpts);
     };
 
     cdxLwChart.subscribeCrosshairMove(param => {
@@ -6665,9 +6729,7 @@ function renderCoinDcxLightweightChart(candles) {
     }
     const legend = $("cdx_tv_legend");
     if (legend) {
-      const col = lastBar.close >= lastBar.open ? "#0ecb81" : "#f6465d";
-      legend.innerHTML = `<b style="color:${isLight ? "#0f172a" : "#fff"}">${S.symbol} · ${S.tf} · COINDCX FUTURES</b> &nbsp;` +
-        `<span style="color:${col}">O ${lastBar.open.toFixed(prec)} · H ${lastBar.high.toFixed(prec)} · L ${lastBar.low.toFixed(prec)} · C ${lastBar.close.toFixed(prec)}</span>`;
+      legend.innerHTML = _buildCdxLegendHtml(lastBar, prec, isLight, indOpts);
     }
     _syncCdxPriceLines();
   }

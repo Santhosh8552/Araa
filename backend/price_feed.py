@@ -866,6 +866,8 @@ class PriceFeed:
                         vwap_p = (hi_p + lo_p + price) / 3.0
                         row.update({
                             "price": price, "target": price,
+                            "mark_price": float(t.get("mp") or price),
+                            "funding_rate": float(t.get("fr") or 0.0),
                             "open24h": row.get("open24h") or price,
                             "change_pct": chg_p,
                             "high": max(hi_p, price), "low": min(lo_p, price) if lo_p > 0 else price,
@@ -1600,6 +1602,33 @@ class PriceFeed:
         return out
 
     def order_book(self, symbol, depth=12):
+        clean_sym = self._clean_crypto_symbol(symbol)
+        if clean_sym.endswith("USDT"):
+            base_coin = clean_sym[:-4]
+            pair_code = f"B-{base_coin}_USDT"
+            now = time.time()
+            if not hasattr(self, "_ob_cache"):
+                self._ob_cache = {}
+            cached = self._ob_cache.get(pair_code)
+            if cached and (now - cached[0]) < 2.0:
+                return cached[1]
+            try:
+                req = urllib.request.Request(
+                    f"https://public.coindcx.com/market_data/orderbook?pair={pair_code}",
+                    headers=BROWSER_HEADERS,
+                )
+                with urllib.request.urlopen(req, timeout=2.0) as r:
+                    ob = json.loads(r.read().decode())
+                raw_bids = ob.get("bids") or {}
+                raw_asks = ob.get("asks") or {}
+                bids = sorted([[float(p), float(q)] for p, q in raw_bids.items() if float(p) > 0 and float(q) > 0], key=lambda x: -x[0])[:depth]
+                asks = sorted([[float(p), float(q)] for p, q in raw_asks.items() if float(p) > 0 and float(q) > 0], key=lambda x: x[0])[:depth]
+                if bids and asks:
+                    res = {"bids": bids, "asks": asks, "real": True, "source": "COINDCX FUTURES"}
+                    self._ob_cache[pair_code] = (now, res)
+                    return res
+            except Exception:
+                pass
         with self.lock:
             mid = self.prices.get(symbol, {}).get("price", 0)
         mid = mid or 1.0
