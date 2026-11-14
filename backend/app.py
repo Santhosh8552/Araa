@@ -2065,30 +2065,39 @@ def broker_status():
     is_conn = b["status"] in ("CONNECTED", "CONNECTED_OFFLINE", "SYNCING", "READY")
     is_coindcx = (b.get("broker_name") == "COINDCX")
 
-    # Dynamic CoinDCX portfolio balance synchronization (5s cooldown to keep /api/broker/status fast)
-    if is_coindcx and is_conn and b.get("is_live_active") and (time.time() - float(b.get("last_synced_at") or 0.0) >= 5.0):
-        try:
-            from coindcx_gateway import get_user_coindcx_client
-            cdx = get_user_coindcx_client(u["id"])
-            if cdx:
-                ok_bal, balances = cdx.get_balances()
-                if ok_bal and isinstance(balances, dict):
-                    rate = float(balances.get("usdt_inr_rate") or 90.0)
-                    real_tot_inr = float(balances.get("total_portfolio_inr") or balances.get("inr_total") or 0.0)
-                    real_tot_usd = float(balances.get("total_portfolio_usd") or (real_tot_inr / rate))
-                    if real_tot_usd > 15000.0 and abs(real_tot_usd - real_tot_inr) < 1.0:
-                        real_tot_usd = round(real_tot_usd / rate, 2)
-                    real_free_usd = float(balances.get("usdt_free") or (float(balances.get("inr_free") or 0.0) / rate))
-                    if real_free_usd > 15000.0:
-                        real_free_usd = round(real_free_usd / rate, 2)
-                    if real_tot_usd >= 0:
-                        live_bal = round(real_tot_usd, 2)
-                        live_eq = round(real_tot_usd, 2)
-                        free_margin = round(max(0.0, real_free_usd), 2)
-                        write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'",
-                              (live_bal, live_eq, free_margin, time.time(), u["id"]))
-        except Exception:
-            pass
+    # Dynamic CoinDCX portfolio balance synchronization (non-blocking background thread so /api/broker/status is always <10ms)
+    if is_coindcx and is_conn and b.get("is_live_active") and (time.time() - float(b.get("last_synced_at") or 0.0) >= 10.0):
+        _sync_inflight = getattr(broker_status, "_inflight", set())
+        if u["id"] not in _sync_inflight:
+            _sync_inflight.add(u["id"])
+            broker_status._inflight = _sync_inflight
+            def _bg_sync_cdx_bal(uid=u["id"]):
+                try:
+                    from coindcx_gateway import get_user_coindcx_client
+                    cdx = get_user_coindcx_client(uid)
+                    if cdx:
+                        ok_bal, balances = cdx.get_balances()
+                        if ok_bal and isinstance(balances, dict):
+                            rate = float(balances.get("usdt_inr_rate") or 90.0)
+                            real_tot_inr = float(balances.get("total_portfolio_inr") or balances.get("inr_total") or 0.0)
+                            real_tot_usd = float(balances.get("total_portfolio_usd") or (real_tot_inr / rate))
+                            if real_tot_usd > 15000.0 and abs(real_tot_usd - real_tot_inr) < 1.0:
+                                real_tot_usd = round(real_tot_usd / rate, 2)
+                            real_free_usd = float(balances.get("usdt_free") or (float(balances.get("inr_free") or 0.0) / rate))
+                            if real_free_usd > 15000.0:
+                                real_free_usd = round(real_free_usd / rate, 2)
+                            if real_tot_usd > 0:
+                                write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'",
+                                      (round(real_tot_usd, 2), round(real_tot_usd, 2), round(max(0.0, real_free_usd), 2), time.time(), uid))
+                            else:
+                                write("UPDATE broker_connections SET last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'", (time.time(), uid))
+                        else:
+                            write("UPDATE broker_connections SET last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'", (time.time(), uid))
+                except Exception:
+                    pass
+                finally:
+                    _sync_inflight.discard(uid)
+            threading.Thread(target=_bg_sync_cdx_bal, daemon=True).start()
 
     # Normalize if stored balance was raw INR (> 15000)
     if is_coindcx and live_bal > 15000.0:
@@ -2842,11 +2851,32 @@ def _normalize_cdx_pair_to_symbol(pair: str) -> str:
 
 
 def _fetch_live_coindcx_positions_and_trades(cdx, user_id: int) -> Dict[str, Any]:
-    """Fetches & caches (2.5s TTL) real open Futures positions, Spot active orders, and trade history from CoinDCX."""
+    """Non-blocking stale-while-revalidate fetcher for real CoinDCX positions, orders, and trade history."""
     now = time.time()
     cached = _COINDCX_LIVE_STATE_CACHE.get(user_id)
-    if cached and (now - cached[0]) < 2.5:
+    inflight = getattr(_fetch_live_coindcx_positions_and_trades, "_inflight", set())
+    _fetch_live_coindcx_positions_and_trades._inflight = inflight
+
+    if (not cached or (now - cached[0]) >= 5.0) and user_id not in inflight:
+        inflight.add(user_id)
+        def _bg_refresh():
+            try:
+                res = _fetch_live_coindcx_positions_and_trades_sync(cdx, user_id)
+                _COINDCX_LIVE_STATE_CACHE[user_id] = (time.time(), res)
+            except Exception:
+                pass
+            finally:
+                inflight.discard(user_id)
+        threading.Thread(target=_bg_refresh, daemon=True).start()
+
+    if cached:
         return cached[1]
+    return {"positions": [], "active_orders": [], "trades": []}
+
+
+def _fetch_live_coindcx_positions_and_trades_sync(cdx, user_id: int) -> Dict[str, Any]:
+    """Fetches real open Futures positions, Spot active orders, and trade history from CoinDCX."""
+    now = time.time()
 
     live_positions: List[Dict[str, Any]] = []
     active_orders: List[Dict[str, Any]] = []

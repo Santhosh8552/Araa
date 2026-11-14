@@ -4737,8 +4737,14 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
 
   if (!S.pf) S.pf = { goal: {} };
   if (!S.pf.goal) S.pf.goal = {};
+  S.pf.is_live_mode = true;
+  S.pf.current_balance = balUsd;
+  S.pf.starting_balance = balUsd;
+  S.pf.goal.mode = "LIVE";
   S.pf.goal.current_balance = balUsd;
   S.pf.goal.starting_balance = balUsd;
+  S.pf.goal.target_amount = +(balUsd * 1.5).toFixed(2);
+  S.pf.goal.gain = Number(S.pf.goal.gain || 0);
 
   if (S.user) {
     S.user.bot_enabled = 1;
@@ -4758,6 +4764,8 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
 
   // Immediately render topbar, portfolio & rules bar before network calls
   renderTopbar();
+  if (typeof renderGoal === "function") renderGoal(S.pf);
+  if (typeof renderKpi === "function") renderKpi(S.pf);
   if (typeof window.renderPortfolio === "function") window.renderPortfolio();
   if (typeof renderConnectedApiAndRules === "function") renderConnectedApiAndRules();
 
