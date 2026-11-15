@@ -1210,13 +1210,17 @@ function renderGoal(pf) {
     }
   }
 
+  const inrRate = (typeof liveBalINR !== "undefined" && liveBalINR > 0 && liveBalUSD > 0) ? (liveBalINR / liveBalUSD) : 90.0;
+  const inrFmt = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", {maximumFractionDigits: 0});
+  const inrFreeFmt = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
   if ($("g_now")) {
     if (isLive && isCoinDcx) {
       const dispBal = liveBalUSD > 0 ? liveBalUSD : (Number(g.current_balance) || 0.0);
-      $("g_now").textContent = usd(dispBal);
+      $("g_now").innerHTML = `${usd(dispBal)} <span style="font-size:14px; font-weight:600; color:#94a3b8; margin-left:6px;">(${inrFmt(dispBal * inrRate)})</span>`;
     } else if (isCoinDcx) {
       const curBal = Number(g.current_balance) > 0 ? Number(g.current_balance) : (liveBalUSD > 0 ? liveBalUSD : (equity() || 0.0));
-      $("g_now").textContent = usd(curBal);
+      $("g_now").innerHTML = `${usd(curBal)} <span style="font-size:14px; font-weight:600; color:#94a3b8; margin-left:6px;">(${inrFmt(curBal * inrRate)})</span>`;
     } else if (isLive) {
       $("g_now").textContent = usd(liveBalUSD > 0 ? liveBalUSD : (Number(g.current_balance) || 0.0));
     } else {
@@ -1226,17 +1230,21 @@ function renderGoal(pf) {
   }
 
   if ($("g_dep")) {
-    const inrFmt = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", {maximumFractionDigits: 0});
-    const inrFreeFmt = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
     if (isLive && isCoinDcx) {
-      const freeStr = (freeBalUSD > 0) ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span>` : "";
-      $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">$${liveBalUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>${freeStr}`;
+      const initInr = liveBalINR > 0 ? liveBalINR : (liveBalUSD * inrRate);
+      const freeInr = freeBalUSD * inrRate;
+      const freeStr = (freeBalUSD > 0)
+        ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span> <span style="font-size:11px; color:#34d399; font-weight:600;">(${inrFreeFmt(freeInr)})</span>`
+        : "";
+      $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">$${liveBalUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span style="font-size:11px; color:#94a3b8;">(${inrFmt(initInr)})</span>${freeStr}`;
     } else if (isCoinDcx) {
       const actualInit = (liveBalUSD > 0) ? liveBalUSD : ((Number(g.starting_balance) > 0) ? Number(g.starting_balance) : (equity() || 0.0));
-      const actualInitInr = liveBalINR > 0 ? liveBalINR : (actualInit * 90.0);
-      const freeStr = (freeBalUSD > 0) ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span>` : "";
-      $("g_dep").innerHTML = `CoinDCX Capital: <span style="font-family:var(--mono); color:#38bdf8; font-weight:700;">$${actualInit.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>${freeStr} <span style="font-size:10px; color:#94a3b8;">(${inrFmt(actualInitInr)})</span>`;
+      const actualInitInr = liveBalINR > 0 ? liveBalINR : (actualInit * inrRate);
+      const freeInr = freeBalUSD * inrRate;
+      const freeStr = (freeBalUSD > 0)
+        ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span> <span style="font-size:11px; color:#34d399; font-weight:600;">(${inrFreeFmt(freeInr)})</span>`
+        : "";
+      $("g_dep").innerHTML = `CoinDCX Capital: <span style="font-family:var(--mono); color:#38bdf8; font-weight:700;">$${actualInit.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span style="font-size:10px; color:#94a3b8;">(${inrFmt(actualInitInr)})</span>${freeStr}`;
     } else if (isLive) {
       $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">${usd(liveBalUSD)}</span>`;
     } else {
