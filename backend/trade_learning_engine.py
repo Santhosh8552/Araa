@@ -89,11 +89,12 @@ class TradeLearningEngine:
 
         # Record into trade learning audit database
         try:
+            opened_at_val = now - duration_sec if duration_sec else now
             write(
                 """INSERT INTO trades(
-                     user_id, symbol, side, entry_price, exit_price, qty, realized_pnl, fee_total, duration_seconds, exit_reason, strategy_id, closed_at
-                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (user_id, sym, direction.upper(), entry_price, exit_price, quantity, net_pnl, trading_fees + funding_fees, duration_sec, exit_reason, strategy_id, now),
+                     user_id, symbol, side, entry_price, exit_price, qty, realized_pnl, fee_total, duration_seconds, exit_reason, strategy_id, opened_at, closed_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (user_id, sym, direction.upper(), entry_price, exit_price, quantity, net_pnl, trading_fees + funding_fees, duration_sec, exit_reason, strategy_id, opened_at_val, now),
             )
         except Exception as te:
             logger.warning(f"trades table insert fallback: {te}")
