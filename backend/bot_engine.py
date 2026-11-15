@@ -2093,25 +2093,32 @@ class Bot:
                 pool = by_cat.get(cat) or []
                 bot_dir = str(user.get("bot_trade_direction") or "BOTH").upper()
                 # Rank by CoinDCX real leverage tier first (20x-25x > 10x-15x > 5x) so capital generates max profit per move
-                tier1_lev_pairs = {"BNBUSDT", "LTCUSDT", "BTCUSDT", "ETHUSDT", "ATOMUSDT", "FILUSDT", "TRXUSDT"}
-                tier2_lev_pairs = {"NEARUSDT", "XRPUSDT", "DOGEUSDT", "BCHUSDT", "DOTUSDT", "LINKUSDT", "ADAUSDT", "AVAXUSDT", "FETUSDT", "POPCATUSDT"}
+                tier1_lev_pairs = {
+                    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT",
+                    "B-BTC_USDT", "B-ETH_USDT", "B-SOL_USDT", "B-BNB_USDT", "B-XRP_USDT", "B-DOGE_USDT", "B-LTC_USDT"
+                }
+                tier2_lev_pairs = {
+                    "NEARUSDT", "BCHUSDT", "DOTUSDT", "LINKUSDT", "ADAUSDT", "AVAXUSDT", "FETUSDT",
+                    "ATOMUSDT", "FILUSDT", "TRXUSDT", "INJUSDT", "SUIUSDT", "ARBUSDT", "PYTHUSDT",
+                    "1000PEPEUSDT", "ZECUSDT"
+                }
 
                 def _lev_tier(sym_name):
                     s_up = str(sym_name or "").upper()
-                    try:
-                        import coindcx_client
-                        max_l = int(coindcx_client.get_coindcx_max_leverage(s_up) or 0)
-                        if max_l >= 20:
-                            return 0
-                        if max_l >= 10:
-                            return 1
-                    except Exception:
-                        pass
                     if s_up in tier1_lev_pairs:
                         return 0
                     if s_up in tier2_lev_pairs:
                         return 1
-                    return 2
+                    try:
+                        import coindcx_client
+                        max_l = int(coindcx_client.get_coindcx_max_leverage(s_up) or 0)
+                        if max_l >= 20:
+                            return 2
+                        if max_l >= 10:
+                            return 3
+                    except Exception:
+                        pass
+                    return 4
 
                 def _tv_verified_tier(cand_obj):
                     # Prioritize tight-spread, high-liquidity pairs backed by aligned 1s + 1m + 5m + Qualified SMC/DNA
@@ -2137,23 +2144,23 @@ class Bot:
                 if bot_dir == "SHORT":
                     pool = [x for x in pool if x.get("side") in ("SHORT", "SELL")]
                     pool.sort(key=lambda x: (
-                        _tv_verified_tier(x),
                         _lev_tier(x.get("symbol")),
+                        _tv_verified_tier(x),
                         -x.get("confidence", 0.0),
                         -float(x.get("score") or 0.0)
                     ))
                 elif bot_dir == "LONG":
                     pool = [x for x in pool if x.get("side") in ("LONG", "BUY")]
                     pool.sort(key=lambda x: (
-                        _tv_verified_tier(x),
                         _lev_tier(x.get("symbol")),
+                        _tv_verified_tier(x),
                         -x.get("confidence", 0.0),
                         -float(x.get("score") or 0.0)
                     ))
                 else:
                     pool.sort(key=lambda x: (
-                        _tv_verified_tier(x),
                         _lev_tier(x.get("symbol")),
+                        _tv_verified_tier(x),
                         -x.get("confidence", 0.0),
                         -float(x.get("score") or 0.0)
                     ))
