@@ -1709,7 +1709,12 @@ function posTable(rows) {
   const modeBanner = "";
 
   if (!computedRows.length) {
-    return `<div class="empty">No open ${isRealActive ? 'REAL MODE' : 'PAPER MODE'} positions. Use the Order Ticket or switch the AI Bot ON to start trading.</div>`;
+    const isBotOn = Boolean(S.user && S.user.bot_enabled);
+    let emptyMsg = `No open ${isRealActive ? 'REAL MODE' : 'PAPER MODE'} positions. Use the Order Ticket or switch the AI Bot ON to start trading.`;
+    if (isRealActive && isBotOn) {
+      emptyMsg = `⚡ <b>REAL MODE ACTIVE · BOT SCANNING</b><br><span style="font-size:12px; color:#94a3b8;">AI engine is actively scanning CoinDCX Futures (BTC, ETH, SOL, Altcoins) and waiting for high-confluence entry setups. Orders will trigger automatically as soon as exchange criteria and risk rules are met.</span>`;
+    }
+    return `<div class="empty" style="padding:24px 16px; line-height:1.6;">${emptyMsg}</div>`;
   }
 
   return modeBanner + `<table class="tbl compact_pos_tbl" style="width:100%; border-collapse:collapse;"><thead><tr>
