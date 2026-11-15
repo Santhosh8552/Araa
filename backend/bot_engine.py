@@ -1561,7 +1561,7 @@ class Bot:
                     from coindcx_gateway import get_user_coindcx_client
                     cdx = get_user_coindcx_client(p["user_id"])
                     if cdx:
-                        ok_b, b_info = cdx.get_balances()
+                        ok_b, b_info = cdx.get_balances(force=True)
                         if ok_b and isinstance(b_info, dict):
                             rate = float(b_info.get("usdt_inr_rate") or 90.0)
                             real_inr = float(b_info.get("total_portfolio_inr") or b_info.get("inr_total") or 0.0)
@@ -1574,6 +1574,8 @@ class Bot:
                             if real_total_usd > 0:
                                 write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=? WHERE user_id=?",
                                       (round(real_total_usd, 2), round(real_total_usd, 2), round(real_free_usd, 2), p["user_id"]))
+                                write("UPDATE wallets SET deposit_balance=? WHERE user_id=?",
+                                      (round(real_total_usd, 2), p["user_id"]))
             except Exception:
                 pass
         # Dispatch notification to Slack & Telegram
@@ -2146,21 +2148,33 @@ class Bot:
                     "1000PEPEUSDT", "ZECUSDT"
                 }
 
+                _tier_cdx = None
+                try:
+                    from coindcx_gateway import get_user_coindcx_client, CoinDCXFuturesAdapter
+                    _uc = get_user_coindcx_client(user["id"]) if is_coindcx_live else None
+                    _tier_cdx = _uc.futures if (_uc and not _uc.is_offline) else getattr(self, "_pub_cdx_fut", None)
+                    if _tier_cdx is None:
+                        _tier_cdx = CoinDCXFuturesAdapter("", "", is_offline=False)
+                        self._pub_cdx_fut = _tier_cdx
+                except Exception:
+                    _tier_cdx = None
+
                 def _lev_tier(sym_name):
                     s_up = str(sym_name or "").upper()
-                    try:
-                        import coindcx_client
-                        max_l = int(coindcx_client.get_coindcx_max_leverage(s_up) or 0)
-                        if max_l >= 100:
-                            return 0
-                        if max_l >= 50:
-                            return 1
-                        if max_l >= 20:
-                            return 2
-                        if max_l >= 10:
-                            return 3
-                    except Exception:
-                        pass
+                    if _tier_cdx is not None:
+                        try:
+                            max_l = int(_tier_cdx.resolve_leverage(s_up, 100.0, "buy") or 0)
+                            if max_l >= 100:
+                                return 0
+                            if max_l >= 50:
+                                return 1
+                            if max_l >= 20:
+                                return 2
+                            if max_l >= 10:
+                                return 3
+                            return 4
+                        except Exception:
+                            pass
                     if s_up in tier1_lev_pairs:
                         return 0
                     if s_up in tier2_lev_pairs:
@@ -2521,8 +2535,8 @@ class Bot:
                 if effective_lev < 1.0:
                     self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: CoinDCX contract disallows this direction (0x leverage).")
                     continue
-                if lev >= 100.0 and effective_lev < 100.0:
-                    self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: max exchange leverage {effective_lev:.0f}x is below your {lev:.0f}x Bot Rule (100x-only).")
+                if lev >= 20.0 and effective_lev < 20.0:
+                    self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: max exchange leverage {effective_lev:.0f}x is below minimum 20x (20x–100x range for {lev:.0f}x Bot Rule).")
                     continue
                 target_margin = max(base_margin, 8.0) if free >= 20.0 else base_margin
                 margin = round(min(free * 0.25 if free >= 20.0 else free, target_margin), 4)
