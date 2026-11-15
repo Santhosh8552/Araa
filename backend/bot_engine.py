@@ -1376,15 +1376,14 @@ class Bot:
         if trail_floor is not None and pnl <= trail_floor and pnl >= min_net_profit and time_held >= 3.0:
             return f"{trail_label} (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # Stop-Loss Guards apply to Paper mode only (Profit-Only Real Mode never auto-closes red positions)
-        if not is_live:
-            sl = float(p.get("stop_pct") or 0.85)
-            if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
-                return f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)"
-            if roi_pct <= -25.0 or pnl <= -250.0:
-                return f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(pnl):.2f})"
-            if move_pct <= -sl:
-                return f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)"
+        # Mandatory Stop-Loss Protection Guards: Enforce on BOTH Paper and Live modes
+        sl = float(p.get("stop_pct") or 0.85)
+        if (time_held >= 90.0 and (move_pct <= -max(sl * 0.9, 0.55) or roi_pct <= -35.0)) or move_pct <= -max(sl * 1.25, 0.75):
+            return f"SMART_STOP_PROTECT (${pnl:.2f} | {roi_pct:.1f}% ROI)"
+        if roi_pct <= -25.0 or pnl <= -250.0:
+            return f"AUTO_STOP_LOSS_GUARD ({roi_pct:.1f}% ROI | -${abs(pnl):.2f})"
+        if move_pct <= -sl:
+            return f"TECHNICAL_STOP_LOSS (-{abs(move_pct):.2f}%)"
 
         # Parabolic flash spike harvest
         if (pnl >= 250.0 or roi_pct >= 80.0) and pnl >= min_net_profit:
@@ -1672,10 +1671,10 @@ class Bot:
                 self.close(p, price, exit_reason)
                 continue
 
-            # Dynamic line exit check (Real Mode never closes red on STOP_LOSS)
+            # Dynamic line exit check: enforce mandatory stop-loss for BOTH Paper AND Live
             line, why = self._exit_line(p)
             if move_pct <= line:
-                if why == "STOP_LOSS" and not is_live:
+                if why == "STOP_LOSS":
                     self.close(p, price, why)
                     continue
                 if why != "STOP_LOSS" and current_pnl >= (min_live_net if is_live else max(min_take_profit, 0.01)):
@@ -2581,8 +2580,8 @@ class Bot:
                             write("UPDATE ai_predictions SET post_entry_status='RISK_BLOCKED', outcome='CANCELLED' WHERE id=?", (pred_id,))
                         continue
 
-                    # Profit-Only Real Mode: attach exchange-side Take Profit only (no tight 0.36% noise SL on CoinDCX unless user explicitly set >= 1.0%)
-                    exch_stop_loss = sl_price if rbc_sl >= 1.0 else None
+                    # Mandatory exchange-side Stop Loss & Take Profit attachment
+                    exch_stop_loss = sl_price
                     ad_res = CoinDCXExecutionAdapter.submit_order(
                         user_id=user["id"],
                         strategy_id=strat["strategy_id"],

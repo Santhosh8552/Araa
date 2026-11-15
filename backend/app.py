@@ -5267,6 +5267,153 @@ def execution_emergency_stop():
 
 
 # =====================================================================
+# REAL MODE 2.0 API ENDPOINTS (/api/bot/real-mode/*)
+# =====================================================================
+@api.route("/api/bot/real-mode/status", methods=["GET"])
+def api_bot_real_mode_status():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    ctrl = StrategyEngine.get_real_bot_controller_state(u["id"])
+    preflight = StrategyEngine.validate_real_bot_preflight(u["id"])
+    return ok(controller=ctrl, preflight=preflight, state=ctrl["state"], real_mode=ctrl["real_mode"])
+
+
+@api.route("/api/bot/real-mode/preflight", methods=["POST"])
+def api_bot_real_mode_preflight():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    data = request.get_json(silent=True) or {}
+    strat_id = data.get("strategy_id", "araa_ai_default")
+    res = StrategyEngine.validate_real_bot_preflight(u["id"], strategy_id=strat_id)
+    return ok(preflight=res, **res)
+
+
+@api.route("/api/bot/real-mode/activate", methods=["POST"])
+def api_bot_real_mode_activate():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from strategy_engine import StrategyEngine
+    pre = StrategyEngine.validate_real_bot_preflight(u["id"])
+    if not pre.get("ready"):
+        return fail(f"Cannot activate Real Mode: {pre.get('error') or 'Preflight validation failed'}", 400, preflight=pre)
+    now = time.time()
+    write("UPDATE broker_connections SET is_live_active=1, last_synced_at=? WHERE user_id=?", (now, u["id"]))
+    write("UPDATE real_bot_configs SET bot_status='RUNNING', emergency_shutdown=0, updated_at=? WHERE user_id=?", (now, u["id"]))
+    write("UPDATE users SET bot_enabled=1 WHERE id=?", (u["id"],))
+    return ok(success=True, message="Real Mode ACTIVATED successfully", state="READY", real_mode=True)
+
+
+@api.route("/api/bot/real-mode/pause", methods=["POST"])
+def api_bot_real_mode_pause():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    now = time.time()
+    write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=? WHERE user_id=?", (now, u["id"]))
+    write("UPDATE users SET bot_enabled=0 WHERE id=?", (u["id"],))
+    return ok(success=True, message="Real Mode PAUSED", state="PAUSED", real_mode=False)
+
+
+@api.route("/api/bot/real-mode/stop", methods=["POST"])
+def api_bot_real_mode_stop():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    now = time.time()
+    write("UPDATE broker_connections SET is_live_active=0, last_synced_at=? WHERE user_id=?", (now, u["id"]))
+    write("UPDATE real_bot_configs SET bot_status='STOPPED', emergency_shutdown=1, updated_at=? WHERE user_id=?", (now, u["id"]))
+    write("UPDATE users SET bot_enabled=0 WHERE id=?", (u["id"],))
+    from coindcx_gateway import get_user_coindcx_client
+    cdx = get_user_coindcx_client(u["id"])
+    if cdx and not cdx.is_offline:
+        try:
+            cdx.cancel_all_orders()
+        except Exception:
+            pass
+    return ok(success=True, message="Real Mode STOPPED (Emergency Stop Engaged)", state="EMERGENCY_STOP", real_mode=False)
+
+
+@api.route("/api/bot/real-mode/account", methods=["GET"])
+def api_bot_real_mode_account():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from coindcx_adapter import CoinDCXExecutionAdapter
+    snap = CoinDCXExecutionAdapter.get_account_snapshot(u["id"])
+    return ok(account=snap)
+
+
+@api.route("/api/bot/real-mode/positions", methods=["GET"])
+def api_bot_real_mode_positions():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    positions = query("SELECT * FROM positions WHERE user_id=? AND is_live=1 ORDER BY opened_at DESC", (u["id"],))
+    return ok(positions=positions)
+
+
+@api.route("/api/bot/real-mode/orders", methods=["GET"])
+def api_bot_real_mode_orders():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    orders = query("SELECT * FROM order_mappings WHERE user_id=? AND mode='REAL' ORDER BY created_at DESC LIMIT 50", (u["id"],))
+    return ok(orders=orders)
+
+
+@api.route("/api/bot/real-mode/fills", methods=["GET"])
+def api_bot_real_mode_fills():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    fills = query("SELECT * FROM order_mappings WHERE user_id=? AND mode='REAL' AND status IN ('FILLED','PARTIALLY_FILLED') ORDER BY updated_at DESC LIMIT 50", (u["id"],))
+    return ok(fills=fills)
+
+
+@api.route("/api/bot/real-mode/protection", methods=["GET"])
+def api_bot_real_mode_protection():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    prots = query("SELECT * FROM position_protections WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (u["id"],))
+    return ok(protections=prots)
+
+
+@api.route("/api/bot/real-mode/pnl", methods=["GET"])
+def api_bot_real_mode_pnl():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from coindcx_adapter import CoinDCXExecutionAdapter
+    dash = CoinDCXExecutionAdapter.compute_usd_profit_dashboard(u["id"])
+    return ok(pnl=dash, **dash)
+
+
+@api.route("/api/bot/real-mode/reconciliation", methods=["GET"])
+def api_bot_real_mode_reconciliation():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    from coindcx_adapter import CoinDCXExecutionAdapter
+    recon = CoinDCXExecutionAdapter.reconcile_state(u["id"])
+    return ok(reconciliation=recon)
+
+
+@api.route("/api/bot/real-mode/events", methods=["GET"])
+def api_bot_real_mode_events():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    events = query("SELECT * FROM real_bot_audit_logs WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (u["id"],))
+    return ok(events=events)
+
+
+# =====================================================================
 # EXNESS MT4 REAL BOT GATEWAY & TERMINAL ENDPOINTS
 # =====================================================================
 

@@ -372,11 +372,20 @@ class CoinDCXExecutionAdapter:
                 }
 
             ex_id = str((res_ord or {}).get("id") or "")
-            filled_qty = float((res_ord or {}).get("spot_equivalent_quantity") or (res_ord or {}).get("filled_quantity") or (res_ord or {}).get("total_quantity") or (res_ord or {}).get("quantity") or req_qty)
-            avg_px = float((res_ord or {}).get("spot_equivalent_price") or (res_ord or {}).get("avg_price") or (res_ord or {}).get("mark_price") or (res_ord or {}).get("price") or ref_price or 0.0)
+            # Derive confirmed filled quantity from exchange reported fields without assuming requested qty is filled
+            raw_filled = (res_ord or {}).get("spot_equivalent_quantity") or (res_ord or {}).get("filled_quantity") or (res_ord or {}).get("quantity_filled")
+            if raw_filled is not None:
+                filled_qty = float(raw_filled)
+            elif (res_ord or {}).get("status") in ("filled", "closed", "SUCCESS"):
+                filled_qty = float((res_ord or {}).get("total_quantity") or (res_ord or {}).get("quantity") or req_qty)
+            else:
+                filled_qty = 0.0
+
+            raw_px = (res_ord or {}).get("spot_equivalent_price") or (res_ord or {}).get("avg_price") or (res_ord or {}).get("price")
+            avg_px = float(raw_px or ref_price or 0.0)
             fee_usd = float((res_ord or {}).get("fee_amount") or round(filled_qty * avg_px * 0.0005, 6))
             raw_st = str((res_ord or {}).get("status") or "filled").lower()
-            ord_status = "PARTIALLY_FILLED" if ("partial" in raw_st or (0 < filled_qty < req_qty * 0.999)) else "FILLED"
+            ord_status = "PARTIALLY_FILLED" if ("partial" in raw_st or (0 < filled_qty < req_qty * 0.999)) else ("FILLED" if filled_qty > 0 else "SUBMITTED")
             actual_eff_lev = float((res_ord or {}).get("leverage") or eff_lev)
             actual_margin_usd = float((res_ord or {}).get("actual_margin_usd") or 0.0) or (round((filled_qty * avg_px) / max(1.0, actual_eff_lev), 4) if avg_px > 0 else round(float(margin_usd or 0.0), 4))
 
@@ -548,13 +557,15 @@ class CoinDCXExecutionAdapter:
                     sl_price = round_to_increment(sl_price, p_inc)
                     tp_price = round_to_increment(tp_price, p_inc)
                 if pos_uuid:
-                    # Profit-Only Real Mode: attach exchange-side Take Profit only (no forced SL close at a loss)
+                    # Mandatory exchange-side Take Profit AND Stop Loss attachment
+                    tpsl_body = {
+                        "id": pos_uuid,
+                        "take_profit": {"stop_price": str(tp_price), "order_type": "take_profit_market"},
+                        "stop_loss": {"stop_price": str(sl_price), "order_type": "stop_market"},
+                    }
                     ok_tpsl, res_tpsl = cdx.futures._call(
                         "/exchange/v1/derivatives/futures/positions/create_tpsl",
-                        body={
-                            "id": pos_uuid,
-                            "take_profit": {"stop_price": str(tp_price), "order_type": "take_profit_market"},
-                        },
+                        body=tpsl_body,
                         attempts=2,
                     )
                     if ok_tpsl:
@@ -639,14 +650,45 @@ class CoinDCXExecutionAdapter:
         """Restore protection monitoring & reconcile live CoinDCX positions after restart or reconnect."""
         snap = cls.get_account_snapshot(user_id)
         prots = query("SELECT * FROM position_protections WHERE user_id=? AND protection_status IN ('VERIFIED','MONITORED_BACKEND','FAILED')", (user_id,))
-        active_pairs = {p.get("pair") for p in snap.get("positions", [])}
-        reconciled = 0
-        for pr in prots:
-            if not active_pairs and snap.get("connected"):
-                # Live exchange has no matching position; keep paper/local check separate
-                pass
-            reconciled += 1
-        return {"connected": snap.get("connected"), "positions_count": len(snap.get("positions", [])), "protections_active": reconciled}
+        active_positions = snap.get("positions", [])
+        active_pairs = {p.get("pair") for p in active_positions}
+        open_orders = snap.get("open_orders", [])
+        
+        # Check matching internal live positions vs exchange active positions
+        internal_live_opens = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' AND is_live=1", (user_id,))
+        internal_pairs = {p.get("symbol") for p in internal_live_opens}
+        
+        is_matched = True
+        discrepancy = ""
+        # Check for discrepancies when connected
+        if snap.get("connected"):
+            if len(internal_live_opens) > 0 and len(active_positions) == 0:
+                discrepancy = f"Exchange has 0 positions but internal ledger has {len(internal_live_opens)} open live positions."
+                is_matched = False
+            elif len(internal_live_opens) > 0 and len(active_positions) > 0 and len(active_positions) != len(internal_live_opens):
+                discrepancy = f"Exchange positions count ({len(active_positions)}) does not match internal open live positions ({len(internal_live_opens)})."
+                is_matched = False
+            elif len(internal_live_opens) == 0 and len(active_positions) > 0:
+                # If internal has 0 positions but exchange has active positions, check if user has placed any real orders
+                user_orders = query("SELECT id FROM order_mappings WHERE user_id=? AND mode='REAL'", (user_id,))
+                if len(user_orders) > 0:
+                    discrepancy = f"Exchange has {len(active_positions)} active positions not registered in internal positions table."
+                    is_matched = False
+                else:
+                    # New user or clean session with pre-existing account positions outside AraaBot
+                    is_matched = True
+
+        status = "MATCHED" if is_matched else "MISMATCH"
+        reconciled = len(prots)
+        return {
+            "connected": snap.get("connected"),
+            "status": status,
+            "is_matched": is_matched,
+            "discrepancy": discrepancy,
+            "positions_count": len(active_positions),
+            "open_orders_count": len(open_orders),
+            "protections_active": reconciled,
+        }
 
     @classmethod
     def compute_usd_profit_dashboard(cls, user_id: int) -> Dict[str, Any]:
