@@ -559,8 +559,8 @@ input[type=range] { width: 100%; accent-color: var(--green); }
 }
 .ws { font-family: var(--mono); font-size: 10px; color: var(--green); display: flex; align-items: center; gap: 6px; letter-spacing: .4px; }
 .ws_dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
-.tbody { padding: 0 0 8px; max-height: 580px; overflow-x: auto; overflow-y: auto; }
-#tab_positions.tbody { max-height: 720px; }
+.tbody { padding: 0 0 16px; max-height: none; overflow-x: auto; overflow-y: visible; }
+#tab_positions.tbody { max-height: none; }
 .empty {
   color: var(--muted2);
   font-size: 12px;

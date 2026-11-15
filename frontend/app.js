@@ -1712,7 +1712,10 @@ function posTable(rows) {
     const isBotOn = Boolean(S.user && S.user.bot_enabled);
     let emptyMsg = `No open ${isRealActive ? 'REAL MODE' : 'PAPER MODE'} positions. Use the Order Ticket or switch the AI Bot ON to start trading.`;
     if (isRealActive && isBotOn) {
-      emptyMsg = `⚡ <b>REAL MODE ACTIVE · BOT SCANNING</b><br><span style="font-size:12px; color:#94a3b8;">AI engine is actively scanning CoinDCX Futures (BTC, ETH, SOL, Altcoins) and waiting for high-confluence entry setups. Orders will trigger automatically as soon as exchange criteria and risk rules are met.</span>`;
+      const scanInfo = S.latestScanReason
+        ? `<div id="positions_scan_reason" style="margin-top:10px; padding:8px 12px; border-radius:8px; background:rgba(245,158,11,0.10); border:1px solid rgba(245,158,11,0.35); color:#fbbf24; font-family:'JetBrains Mono',monospace; font-size:11px; display:inline-block; max-width:92%;">Latest Entry Status: ${esc(S.latestScanReason)}</div>`
+        : `<div id="positions_scan_reason" style="margin-top:8px; font-size:11px; color:#64748b;">Waiting for next 4s scan cycle result...</div>`;
+      emptyMsg = `⚡ <b>REAL MODE ACTIVE · BOT SCANNING</b><br><span style="font-size:12px; color:#94a3b8;">AI engine is actively scanning CoinDCX Futures (BTC, ETH, SOL, Altcoins) and waiting for high-confluence entry setups. Orders will trigger automatically as soon as exchange criteria and risk rules are met.</span><br>${scanInfo}`;
     }
     return `<div class="empty" style="padding:24px 16px; line-height:1.6;">${emptyMsg}</div>`;
   }
@@ -5010,30 +5013,45 @@ if ($("btn_connect_coindcx_offline")) {
 async function refreshCoinDcxAuditLogs() {
   const container = $("coindcx_audit_logs_list");
   const tabContainer = $("tab_coindcx_audit_logs_list");
+  const liveBadge = $("coindcx_logs_live_status");
   if (!container && !tabContainer) return;
   try {
-    const res = await call("/api/coindcx/audit-logs?limit=40").catch(() => null);
+    const res = await call("/api/coindcx/audit-logs?limit=60").catch(() => null);
+    if (res && typeof res.latest_scan_reason === "string") {
+      S.latestScanReason = res.latest_scan_reason;
+      const reasonEl = $("positions_scan_reason");
+      if (reasonEl && res.latest_scan_reason) {
+        reasonEl.textContent = `Latest Entry Status: ${res.latest_scan_reason}`;
+      }
+    }
+    if (liveBadge) {
+      const ts = new Date().toLocaleTimeString();
+      const cnt = (res && res.logs) ? res.logs.length : 0;
+      liveBadge.textContent = `● LIVE 2S · ${ts} (${cnt})`;
+    }
     if (!res || !res.logs || !res.logs.length) {
-      const emptyHtml = `<div style="text-align:center; padding:16px; color:#64748b;">No audit events recorded yet. Connect API or activate bot to begin logging.</div>`;
+      const emptyHtml = `<div style="text-align:center; padding:16px; color:#64748b;">No audit events recorded yet. Connect API or switch Bot ON to stream live CoinDCX scans &amp; executions.</div>`;
       if (container) container.innerHTML = emptyHtml;
       if (tabContainer) tabContainer.innerHTML = emptyHtml;
       return;
     }
     const html = res.logs.map(log => {
       const timeStr = log.created_at ? new Date(log.created_at * 1000).toLocaleTimeString() : "--:--";
-      const isCritical = log.severity === "CRITICAL" || log.event_type.includes("EMERGENCY") || log.event_type.includes("GUARD");
-      const isWarn = log.severity === "WARNING" || log.event_type.includes("REJECTED") || log.event_type.includes("SKIP") || log.event_type.includes("BLOCK");
-      const isSuccess = log.event_type.includes("ACTIVATED") || log.event_type.includes("CONNECTED") || log.event_type.includes("EXECUTED") || log.event_type.includes("APPROVED") || log.event_type.includes("ADOPTED") || log.event_type === "OPEN";
+      const ev = String(log.event_type || "");
+      const sev = String(log.severity || "INFO");
+      const isCritical = sev === "CRITICAL" || sev === "ERROR" || ev.includes("EMERGENCY") || ev.includes("GUARD") || ev.includes("FAILED");
+      const isWarn = !isCritical && (sev === "WARNING" || ev.includes("REJECTED") || ev.includes("SKIP") || ev.includes("BLOCK") || ev === "SCAN_INFO");
+      const isSuccess = ev.includes("ACTIVATED") || ev.includes("CONNECTED") || ev.includes("EXECUTED") || ev.includes("APPROVED") || ev.includes("ADOPTED") || ev === "OPEN";
       const color = isCritical ? "#ef4444" : isWarn ? "#f59e0b" : isSuccess ? "#10b981" : "#38bdf8";
       const bg = isCritical ? "rgba(239,68,68,0.15)" : isWarn ? "rgba(245,158,11,0.12)" : isSuccess ? "rgba(16,185,129,0.12)" : "rgba(56,189,248,0.08)";
       return `
         <div style="background:${bg}; border-left:3px solid ${color}; padding:8px 12px; border-radius:5px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span style="color:#94a3b8; font-size:10.5px;">${timeStr}</span>
-            <span style="background:${color}; color:#0f172a; font-weight:800; font-size:9.5px; padding:2px 6px; border-radius:3px;">${log.event_type}</span>
-            <span style="color:#e2e8f0; font-size:11.5px;">${log.message}</span>
+            <span style="background:${color}; color:#0f172a; font-weight:800; font-size:9.5px; padding:2px 6px; border-radius:3px;">${esc(ev)}</span>
+            <span style="color:#e2e8f0; font-size:11.5px;">${esc(log.message || "")}</span>
           </div>
-          <span style="color:${color}; font-size:10px; font-weight:700;">${log.severity}</span>
+          <span style="color:${color}; font-size:10px; font-weight:700;">${esc(sev)}</span>
         </div>
       `;
     }).join("");
@@ -5043,6 +5061,7 @@ async function refreshCoinDcxAuditLogs() {
     console.warn("Could not refresh CoinDCX audit logs:", err);
   }
 }
+window.refreshCoinDcxAuditLogs = refreshCoinDcxAuditLogs;
 
 window.promptUpdateCoinDCXBalance = async function() {
   const currentUSD = parseFloat((S.broker && (S.broker.live_balance_usd || S.broker.live_balance)) || 0);
@@ -9364,11 +9383,14 @@ function startPollers() {
   setInterval(() => { if (S.token) loadTicker().catch(() => {}); }, 25000);
   setInterval(() => { if (isDrawerOpen("drawer_bot")) renderAnalysis().catch(() => {}); }, 8000);
   setInterval(() => { if (S.tab === "az_analysis") renderTabAZ().catch(() => {}); }, 10000);
+  let _auditTick = 0;
   setInterval(() => {
+    _auditTick += 1;
+    if (S.tab !== "coindcx_audit" && (_auditTick % 2 !== 0)) return;
     if (typeof refreshCoinDcxAuditLogs === "function") {
       refreshCoinDcxAuditLogs().catch(() => {});
     }
-  }, 4000);
+  }, 2000);
   setInterval(() => {
     if (_pingInFlight || !S.token) return;
     _pingInFlight = true;

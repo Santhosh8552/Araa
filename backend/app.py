@@ -4995,12 +4995,25 @@ def api_coindcx_audit_logs():
     # Fetch real_bot_audit_logs
     audit_rows = query("SELECT id, event_type, severity, message, details_json, created_at FROM real_bot_audit_logs WHERE user_id=? ORDER BY created_at DESC LIMIT ?", (u["id"], limit))
     
-    # Fetch live bot_log events
-    bot_rows = query("SELECT id, level as event_type, CASE WHEN level IN ('CRITICAL','DAILY_LOSS_GUARD') THEN 'CRITICAL' WHEN level IN ('ORDER_RETRY','RISK_BLOCK','MARGIN_SKIP') THEN 'WARNING' ELSE 'INFO' END as severity, message, NULL as details_json, at as created_at FROM bot_log WHERE user_id=? ORDER BY at DESC LIMIT ?", (u["id"], limit))
-    
+    # Fetch live bot_log events (includes COMMITTEE_SCAN, COMMITTEE_SKIP, RISK_BLOCK, AI_SKIP, MARGIN_SKIP, SCAN_INFO, ORDER_FAILED_LIVE)
+    bot_rows = query("""
+        SELECT id, level as event_type,
+               CASE
+                   WHEN level IN ('CRITICAL','DAILY_LOSS_GUARD') THEN 'CRITICAL'
+                   WHEN level IN ('ORDER_FAILED_LIVE','ERROR') THEN 'ERROR'
+                   WHEN level IN ('ORDER_RETRY','RISK_BLOCK','MARGIN_SKIP','COMMITTEE_SKIP','AI_SKIP','SCAN_INFO','ENTRY_SKIP') THEN 'WARNING'
+                   ELSE 'INFO'
+               END as severity,
+               message, NULL as details_json, at as created_at
+        FROM bot_log WHERE user_id=? ORDER BY at DESC LIMIT ?
+    """, (u["id"], limit))
+
     # Merge and sort by timestamp descending
     combined = sorted(audit_rows + bot_rows, key=lambda x: -float(x.get("created_at") or 0.0))[:limit]
-    return ok(logs=combined, count=len(combined))
+    reason_types = ("COMMITTEE_SKIP", "RISK_BLOCK", "ORDER_FAILED_LIVE", "AI_SKIP", "MARGIN_SKIP", "SCAN_INFO", "DAILY_LOSS_GUARD", "FUTURES_ORDER_FAILED", "FUTURES_ORDER_REJECTED")
+    latest_reason_row = next((r for r in combined if str(r.get("event_type") or "") in reason_types), combined[0] if combined else None)
+    latest_scan_reason = f"[{latest_reason_row['event_type']}] {latest_reason_row['message']}" if latest_reason_row else ""
+    return ok(logs=combined, count=len(combined), latest_scan_reason=latest_scan_reason)
 
 
 @api.route("/api/coindcx/orders/spot", methods=["POST"])

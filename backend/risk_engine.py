@@ -251,9 +251,13 @@ class InstitutionalRiskEngine:
             max_leverage=eff_lev
         )
         current_exposure = sum(float(p["margin"] or 0) * float(p["leverage"] or 1) for p in open_positions)
-        max_total_exposure = float(equity_usd or 0) * DEFAULT_RISK_POLICY["max_portfolio_exposure_mult"]
+        effective_exposure_mult = max(
+            DEFAULT_RISK_POLICY["max_portfolio_exposure_mult"],
+            eff_lev * max(1, min(5, limits["max_open_positions"])) * 0.5,
+        )
+        max_total_exposure = float(equity_usd or 0) * effective_exposure_mult
         if current_exposure + sizing["notional_usd"] > max_total_exposure and max_total_exposure > 0:
-            return False, f"MAX_EXPOSURE_EXCEEDED: Total exposure would exceed {DEFAULT_RISK_POLICY['max_portfolio_exposure_mult']}x account equity.", {}
+            return False, f"MAX_EXPOSURE_EXCEEDED: Total exposure would exceed {effective_exposure_mult:.1f}x account equity.", {}
 
         return True, "RISK_APPROVED", {
             "limits": limits,

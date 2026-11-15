@@ -250,7 +250,14 @@ class AgentGammaRiskIntelligence:
         atr_pct = max(0.004, min(0.04, atr / entry if entry > 0 else 0.008))
 
         stop_dist_pct = max(0.005, round(atr_pct * 1.25, 4))
-        target_dist_pct = max(0.009, round(stop_dist_pct * 1.85, 4))
+        req_lev = float(requested_leverage or 1.0)
+        if req_lev >= 20.0 and entry > 0:
+            liq_ref = InstitutionalRiskEngine.calculate_liquidation_price(entry, direction, req_lev)
+            if liq_ref > 0:
+                liq_dist_pct = abs(entry - liq_ref) / entry
+                safe_liq_cap = max(0.0015, round(liq_dist_pct * 0.80, 4))
+                stop_dist_pct = min(stop_dist_pct, safe_liq_cap)
+        target_dist_pct = max(0.004, round(stop_dist_pct * 1.85, 4))
 
         is_long = str(direction).upper() in ("BUY", "LONG")
         if is_long:
@@ -318,7 +325,7 @@ class AICommitteeOrchestrator:
 
         # Weighted consensus (Alpha 30%, Beta 45%, Gamma 25%)
         consensus_score = round(alpha["score"] * 0.30 + beta["score"] * 0.45 + gamma["score"] * 0.25, 1)
-        approved = bool(gamma["approved"] and consensus_score >= 68.0 and alpha["metrics"]["liquidity_healthy"])
+        approved = bool(gamma["approved"] and consensus_score >= 62.0 and alpha["metrics"]["liquidity_healthy"])
         final_action = f"ENTER_{direction}" if approved else "HOLD_AND_MONITOR"
 
         rationale = (

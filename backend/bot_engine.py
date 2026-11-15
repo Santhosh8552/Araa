@@ -413,6 +413,19 @@ class Bot:
                 keep = rows[-1]["id"]
                 write("DELETE FROM bot_log WHERE id<?", (keep,))
 
+    def _log_scan_status(self, user_id, level, message, cooldown=15.0):
+        """Log periodic scan/block diagnostics to bot_log without spamming every cycle."""
+        cache = getattr(self, "_scan_log_ts", None)
+        if cache is None:
+            cache = {}
+            self._scan_log_ts = cache
+        now_ts = time.time()
+        key = (int(user_id), str(level), str(message)[:60])
+        if now_ts - cache.get(key, 0.0) < cooldown:
+            return
+        cache[key] = now_ts
+        self._log(user_id, level, message)
+
     # ---------- universe ----------
     @staticmethod
     def _spread(scored, tune):
@@ -1802,7 +1815,10 @@ class Bot:
         max_pos = 999 if is_unlimited else raw_max
         slots = 999 if is_unlimited else max(0, max_pos - len(all_opens))
         wallet = query_one("SELECT * FROM wallets WHERE user_id=?", (user["id"],))
-        if not wallet or (not is_unlimited and slots <= 0):
+        if not wallet:
+            return len(open_list), 0
+        if not is_unlimited and slots <= 0:
+            self._log_scan_status(user["id"], "SCAN_INFO", f"Max open positions reached ({len(all_opens)}/{max_pos}). Managing active positions; waiting for a slot to free.")
             return len(open_list), 0
 
         held = {p["symbol"] for p in open_list}
@@ -1833,6 +1849,7 @@ class Bot:
 
         min_required_cap = 0.01 if (is_pure_crypto or user_currency == "USD") else (50.0 if broker_name == "COINDCX" else 20.0)
         if capital < min_required_cap:
+            self._log_scan_status(user["id"], "SCAN_INFO", f"Free margin (${capital:.2f}) is below minimum (${min_required_cap:.2f}) required to enter a new trade.")
             return len(open_list), 0
 
         # Capital Preservation: Real-Money Daily Loss Circuit Breaker
@@ -1847,6 +1864,7 @@ class Bot:
             str(rbc_cfg.get("bot_status") or "").upper() == "PAUSED"
             or int(rbc_cfg.get("emergency_shutdown") or 0) == 1
         ):
+            self._log_scan_status(user["id"], "SCAN_INFO", "Real Bot is PAUSED or Emergency Lock is active. Switch Bot ON in Bot Rules to resume live entries.")
             return len(open_list), 0
         max_daily_loss_lim = abs(float((rbc_cfg and rbc_cfg.get("max_daily_loss")) or 250.0))
         daily_loss = float(daily_pnl_row["daily_pnl"] or 0.0) if daily_pnl_row else 0.0
@@ -2584,9 +2602,11 @@ class Bot:
 
                     # Full 3-Agent AI Committee (Alpha, Beta, Gamma) pre-entry analysis & gate
                     try:
+                        comm_candles = self._candles(picked["symbol"], "1m", limit=60) if hasattr(self, "_candles") else None
                         comm_res = AICommitteeOrchestrator.evaluate_candidate(
                             symbol=picked["symbol"],
                             user_id=user["id"],
+                            candles=comm_candles,
                             quote_data=q_row or picked,
                             equity_usd=capital,
                             requested_leverage=effective_lev,
@@ -2838,6 +2858,8 @@ class Bot:
             held.add(picked["symbol"])
             per_cat[picked["category"]] = per_cat.get(picked["category"], 0) + 1
             opened += 1
+        if opened == 0:
+            self._log_scan_status(user["id"], "SCAN_INFO", "Completed market & AI analysis cycle — no candidate passed all TradingView + 3-Agent Committee + Risk rules this cycle (re-scanning every 4s).")
         return len(open_list) + opened, opened
 
     # ---------- resting limit orders ----------
