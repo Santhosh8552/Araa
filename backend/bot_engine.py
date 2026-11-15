@@ -2602,6 +2602,7 @@ class Bot:
 
                     # Full 3-Agent AI Committee (Alpha, Beta, Gamma) pre-entry analysis & gate
                     try:
+                        from ai_committee import AICommitteeOrchestrator
                         comm_candles = self._candles(picked["symbol"], "1m", limit=60) if hasattr(self, "_candles") else None
                         comm_res = AICommitteeOrchestrator.evaluate_candidate(
                             symbol=picked["symbol"],
@@ -2777,7 +2778,6 @@ class Bot:
             # V3 Institutional Order Lifecycle & 3-Agent Committee Audit Trail
             try:
                 from risk_engine import OrderLifecycleManager, InstitutionalRiskEngine
-                from ai_committee import AICommitteeOrchestrator
                 ord_uuid = OrderLifecycleManager.create_order_record(
                     user_id=user["id"],
                     symbol=picked["symbol"],
