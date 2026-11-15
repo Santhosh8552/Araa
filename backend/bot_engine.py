@@ -1759,15 +1759,18 @@ class Bot:
             ok_p, exch_rows = cdx.futures.get_positions()
             if not ok_p or not isinstance(exch_rows, list):
                 return
-            active_pairs = {
-                str(r.get("pair") or "")
+            active_map = {
+                str(r.get("pair") or ""): r
                 for r in exch_rows
                 if isinstance(r, dict) and abs(float(r.get("active_pos") or 0.0)) > 0
             }
+            target_lev = min(500.0, max(1.0, float(user.get("bot_leverage") or 100.0)))
+            if not hasattr(self, "_cdx_lev_sync_ts"):
+                self._cdx_lev_sync_ts = {}
             settled = 0
             for p in candidates:
                 pair = cdx.futures.to_futures_pair(p["symbol"])
-                if pair not in active_pairs:
+                if pair not in active_map:
                     entry = float(p.get("entry_price") or 0.0)
                     tp_pct = float(p.get("target_pct") or 0.0)
                     is_long = str(p.get("side") or "").upper() in ("BUY", "LONG")
@@ -1777,6 +1780,20 @@ class Bot:
                         sync_px = round(entry * (1.0 + (tp_pct / 100.0 if is_long else -tp_pct / 100.0)), 8)
                     if self.close(p, sync_px, "EXCHANGE_TPSL_SYNC") is not None:
                         settled += 1
+                else:
+                    ex_row = active_map[pair]
+                    ex_lev = float(ex_row.get("leverage") or p.get("leverage") or 1.0)
+                    if target_lev > ex_lev:
+                        sync_key = (int(p["id"]), int(target_lev))
+                        if now - self._cdx_lev_sync_ts.get(sync_key, 0.0) >= 60.0:
+                            self._cdx_lev_sync_ts[sync_key] = now
+                            side_str = "buy" if str(p.get("side") or "").upper() in ("BUY", "LONG") else "sell"
+                            allowed_lev = cdx.futures.resolve_leverage(p["symbol"], target_lev, side_str)
+                            if allowed_lev > ex_lev:
+                                ok_lev, _ = cdx.futures.set_leverage(p["symbol"], allowed_lev)
+                                if ok_lev:
+                                    write("UPDATE positions SET leverage=? WHERE id=?", (float(allowed_lev), p["id"]))
+                                    self._log(user["id"], "LEVERAGE_SYNC", f"Upgraded live {p['symbol']} position leverage from {ex_lev:.0f}x -> {allowed_lev:.0f}x to match Bot Rule.")
             return settled
         except Exception:
             pass
