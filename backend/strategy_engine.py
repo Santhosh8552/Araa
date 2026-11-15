@@ -556,7 +556,9 @@ class StrategyEngine:
         # Maximum consecutive losses protection
         max_consec_losses = int(entry_rules.get("max_consecutive_losses") or 3)
         recent_closed = query(
-            "SELECT realized_pnl, closed_at FROM positions WHERE user_id=? AND status='CLOSED' AND is_live=? ORDER BY closed_at DESC LIMIT 10",
+            "SELECT realized_pnl, closed_at FROM positions WHERE user_id=? AND status='CLOSED' AND is_live=? "
+            "AND COALESCE(close_reason,'') NOT IN ('USER_STOPPED_BOT','DIRECTION_SWITCH_LONG','DIRECTION_SWITCH_SHORT','POSITION_LIMIT_REDUCED') "
+            "ORDER BY closed_at DESC LIMIT 10",
             (user_id, is_live_val),
         )
         consec_losses = 0

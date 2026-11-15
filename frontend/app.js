@@ -28,6 +28,7 @@ const API = (window.location.hostname === "araabot.in")
       ? window.location.protocol + "//" + (window.location.hostname || "localhost") + ":5050"
       : window.location.origin);
 const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const S = {token: localStorage.getItem("tp_token") || "", user: null, wallet: null, pf: null,
            orders: [], markets: [], symbol: "BTCUSDT", side: "LONG", tf: "1m", otype: "MARKET",
            cat: "COINDCX_USDT", size: 50, chartMode: "local", tvKey: "", candles: [], quote: {}, ind: {},
@@ -1709,7 +1710,7 @@ function posTable(rows) {
   const modeBanner = "";
 
   if (!computedRows.length) {
-    const isBotOn = Boolean(S.user && S.user.bot_enabled);
+    const isBotOn = Boolean((S.user && Number(S.user.bot_enabled || 0) === 1) || S.botEnabled);
     let emptyMsg = `No open ${isRealActive ? 'REAL MODE' : 'PAPER MODE'} positions. Use the Order Ticket or switch the AI Bot ON to start trading.`;
     if (isRealActive && isBotOn) {
       const scanInfo = S.latestScanReason
