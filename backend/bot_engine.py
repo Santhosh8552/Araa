@@ -2574,9 +2574,14 @@ class Bot:
                     pred["stop_price"] = sl_price
                     pred["target_price"] = tp_price
 
+                    strat_eval = dict(strat)
+                    strat_eval["leverage"] = effective_lev
+                    strat_eval["stop_loss_pct"] = strat_sl_pct
+                    strat_eval["take_profit_pct"] = strat_tp_pct
+
                     risk_ok, risk_reason = StrategyEngine.evaluate_hard_risk(
                         user_id=user["id"],
-                        strategy=strat,
+                        strategy=strat_eval,
                         symbol=picked["symbol"],
                         side=picked["side"],
                         ai_signal=pred,
@@ -2586,6 +2591,12 @@ class Bot:
                         if pred_id:
                             write("UPDATE ai_predictions SET post_entry_status='RISK_BLOCKED', outcome='CANCELLED' WHERE id=?", (pred_id,))
                         continue
+                    
+                    # Update dynamic SL/TP if auto-clamped by StrategyEngine
+                    if strat_eval.get("stop_loss_pct") and strat_eval["stop_loss_pct"] != strat_sl_pct:
+                        strat_sl_pct = float(strat_eval["stop_loss_pct"])
+                        sl_price = round(picked["price"] * (1.0 - strat_sl_pct / 100.0) if is_buy_dir else picked["price"] * (1.0 + strat_sl_pct / 100.0), 8)
+                        pred["stop_price"] = sl_price
 
                     # Mandatory exchange-side Stop Loss & Take Profit attachment
                     exch_stop_loss = sl_price

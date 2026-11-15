@@ -94,12 +94,23 @@ def round_to_increment(val: Optional[float], inc: float) -> Optional[float]:
         return 0.0
     if not inc or inc <= 0:
         return round(val, 4)
-    inc_dec = max(0, len(f"{inc:.10f}".rstrip("0").split(".")[1]) if "." in f"{inc:.10f}".rstrip("0") else 0)
-    steps = round(val / inc)
-    rounded = round(steps * inc, inc_dec)
-    if rounded <= 0:
-        rounded = inc
-    return rounded
+    from decimal import Decimal, ROUND_HALF_UP
+    try:
+        d_val = Decimal(str(val))
+        d_inc = Decimal(str(inc))
+        steps = (d_val / d_inc).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        rounded = steps * d_inc
+        float_rounded = float(rounded)
+        if float_rounded <= 0:
+            float_rounded = float(inc)
+        return float_rounded
+    except Exception:
+        inc_dec = max(0, len(f"{inc:.10f}".rstrip("0").split(".")[1]) if "." in f"{inc:.10f}".rstrip("0") else 0)
+        steps = round(val / inc)
+        rounded = round(steps * inc, inc_dec)
+        if rounded <= 0:
+            rounded = inc
+        return rounded
 
 
 def _request(endpoint: str, method: str = "GET", body: Optional[dict] = None,
@@ -1429,14 +1440,23 @@ class CoinDCXFuturesAdapter:
         raw = inst.get(side_key) if side_key in inst else inst.get("max_leverage")
         if raw is None and "max_leverage" in inst:
             raw = inst.get("max_leverage")
+        
+        # Check dynamic position leverage tiers if contract doesn't expose fixed max_leverage
+        dyn = inst.get("dynamic_position_leverage_details") or {}
+        dyn_max = max([float(k) for k in dyn.keys()]) if dyn else 0.0
+
         if raw is not None:
             try:
                 exch_max = float(raw)
             except (TypeError, ValueError):
                 exch_max = 0.0
-            if exch_max <= 0:
+            if exch_max <= 0 and dyn_max > 0:
+                exch_max = dyn_max
+            elif exch_max <= 0:
                 logger.info(f"Contract {self.to_futures_pair(symbol)} explicitly disallows {side} (max leverage=0x)")
                 return 0.0
+        elif dyn_max > 0:
+            exch_max = dyn_max
         else:
             exch_max = FUTURES_FALLBACK_MAX_LEVERAGE
         eff = float(int(min(req, exch_max)))

@@ -508,7 +508,10 @@ class StrategyEngine:
         if str(strategy.get("market_type") or "FUTURES").upper() == "FUTURES" and lev > 1.0:
             approx_liq_dist_pct = 90.0 / lev
             if sl_pct >= approx_liq_dist_pct:
-                return False, f"Liquidation risk: stop_loss_pct ({sl_pct:.2f}%) exceeds safe liquidation distance ({approx_liq_dist_pct:.2f}%) at {lev:.0f}x leverage."
+                # Auto-clamp stop loss strictly within liquidation buffer so trades execute with guaranteed safety
+                safe_sl_pct = max(0.10, round(approx_liq_dist_pct * 0.80, 2))
+                strategy["stop_loss_pct"] = safe_sl_pct
+                sl_pct = safe_sl_pct
 
         # Market Spread & Volatility Protection
         m_ctx = market_context or {}

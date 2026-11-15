@@ -4556,6 +4556,7 @@ function hideRealBotDevModal() {
     modal.classList.add("hide");
     modal.style.display = "none";
   }
+  document.body.style.overflow = "";
   if (typeof _exnessPollTimer !== "undefined" && _exnessPollTimer) {
     clearInterval(_exnessPollTimer);
     _exnessPollTimer = null;
@@ -7893,6 +7894,7 @@ if (btnOneScreen) {
 
 function showTab(t) {
   S.tab = t;
+  document.body.style.overflow = "";
   document.querySelectorAll("#tabnav button").forEach(x => x.classList.toggle("active", x.dataset.tab === t));
   document.querySelectorAll("#tp_subnav .tp-subnav-list button").forEach(x => x.classList.toggle("active", x.dataset.page === t));
   ["positions", "orders", "history", "analytics", "az_analysis", "auto_scalping", "eod", "ai_oracle", "ai_prediction_hub", "coindcx_audit"].forEach(x => {
