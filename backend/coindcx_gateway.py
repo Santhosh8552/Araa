@@ -1450,11 +1450,15 @@ class CoinDCXFuturesAdapter:
                 exch_max = float(raw)
             except (TypeError, ValueError):
                 exch_max = 0.0
-            if exch_max <= 0 and dyn_max > 0:
+            if exch_max <= 0:
+                if dyn_max > 0:
+                    exch_max = dyn_max
+                else:
+                    logger.info(f"Contract {self.to_futures_pair(symbol)} explicitly disallows {side} (max leverage=0x)")
+                    return 0.0
+            elif dyn_max > exch_max:
+                # CoinDCX exposes base max_leverage_long/short (e.g. 5x/10x/20x) while allowing up to 100x in dynamic_position_leverage_details
                 exch_max = dyn_max
-            elif exch_max <= 0:
-                logger.info(f"Contract {self.to_futures_pair(symbol)} explicitly disallows {side} (max leverage=0x)")
-                return 0.0
         elif dyn_max > 0:
             exch_max = dyn_max
         else:

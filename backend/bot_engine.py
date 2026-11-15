@@ -2131,19 +2131,23 @@ class Bot:
 
                 def _lev_tier(sym_name):
                     s_up = str(sym_name or "").upper()
-                    if s_up in tier1_lev_pairs:
-                        return 0
-                    if s_up in tier2_lev_pairs:
-                        return 1
                     try:
                         import coindcx_client
                         max_l = int(coindcx_client.get_coindcx_max_leverage(s_up) or 0)
+                        if max_l >= 100:
+                            return 0
+                        if max_l >= 50:
+                            return 1
                         if max_l >= 20:
                             return 2
                         if max_l >= 10:
                             return 3
                     except Exception:
                         pass
+                    if s_up in tier1_lev_pairs:
+                        return 0
+                    if s_up in tier2_lev_pairs:
+                        return 2
                     return 4
 
                 def _tv_verified_tier(cand_obj):
@@ -2499,6 +2503,9 @@ class Bot:
                         pass
                 if effective_lev < 1.0:
                     self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: CoinDCX contract disallows this direction (0x leverage).")
+                    continue
+                if lev >= 100.0 and effective_lev < 100.0:
+                    self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: max exchange leverage {effective_lev:.0f}x is below your {lev:.0f}x Bot Rule (100x-only).")
                     continue
                 target_margin = max(base_margin, 8.0) if free >= 20.0 else base_margin
                 margin = round(min(free * 0.25 if free >= 20.0 else free, target_margin), 4)
