@@ -21,6 +21,20 @@ import webbrowser
 # Prevent __pycache__ clutter in workspace
 sys.dont_write_bytecode = True
 
+# Validate & sanitize TLS CA bundle path so stale venv paths never crash HTTPS requests
+for ca_var in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"):
+    val = os.environ.get(ca_var)
+    if val and not os.path.exists(val):
+        os.environ.pop(ca_var, None)
+
+try:
+    import certifi
+    if os.path.exists(certifi.where()):
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+        os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+except Exception:
+    pass
+
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.join(CURRENT_DIR, "backend")
 if CURRENT_DIR not in sys.path:
