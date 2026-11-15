@@ -2043,8 +2043,10 @@ def bot_config():
              (" (Continuous Slot Refill Active)" if (enabled and not u["bot_enabled"]) else "") +
              (f" (Liquidated {closed_count} open positions, Net P&L: ${flush_pnl:+.2f})" if closed_count else ""))
     
-    # If user just turned bot ON, trigger immediate cycle in a thread so positions open right away
-    if enabled and bot.is_running:
+    # Ensure global bot engine is active when user enables bot
+    if enabled:
+        if not bot.is_running:
+            bot.start()
         threading.Thread(target=bot.cycle, daemon=True).start()
     
     rb_row = query_one(

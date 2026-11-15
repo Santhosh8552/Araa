@@ -1093,13 +1093,13 @@ function renderTopbar() {
         $("tp_crumb_page").textContent = "Command Center";
       }
       if ($("tp_mode_eyebrow")) {
-        $("tp_mode_eyebrow").innerHTML = `<span style="color:#38bdf8; font-weight:800;">🧪 COINDCX DEMO TESTING (ZERO RISK)</span> · 👤 <b style="color:#38bdf8; font-weight:800;">${profileName}</b> · <b>Live Portfolio: $${demoEq.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USD</b> · Araa AI Crypto Auto-Trader`;
+        $("tp_mode_eyebrow").innerHTML = `<span style="color:#38bdf8; font-weight:800;">⚡ COINDCX CONNECTED</span> · 👤 <b style="color:#38bdf8; font-weight:800;">${profileName}</b> · <b>Available: $${demoEq.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USDT</b> · Araa AI Auto-Trader`;
       }
       if ($("subnav_mode_foot")) {
-        $("subnav_mode_foot").innerHTML = `<span style="color:#38bdf8; font-weight:700;">CoinDCX Demo · ${profileName} ($${demoEq.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})})</span>`;
+        $("subnav_mode_foot").innerHTML = `<span style="color:#38bdf8; font-weight:700;">CoinDCX · ${profileName} ($${demoEq.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})})</span>`;
       }
       if ($("s_footer_mode")) {
-        $("s_footer_mode").innerHTML = `<b style="color:#38bdf8;">COINDCX DEMO · 👤 ${profileName} · ZERO REAL CAPITAL RISK</b>`;
+        $("s_footer_mode").innerHTML = `<b style="color:#38bdf8;">COINDCX API · 👤 ${profileName} · REAL MODE READY</b>`;
       }
       if ($("top_equity")) {
         $("top_equity").textContent = `$${demoEq.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
@@ -1200,7 +1200,7 @@ function renderGoal(pf) {
     if (isLive && isCoinDcx) {
       $("g_bal_title").innerHTML = `TOTAL BALANCE <span class="tag" style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:6px;">🔴 COINDCX LIVE REAL TRADING</span>`;
     } else if (isCoinDcx) {
-      $("g_bal_title").innerHTML = `TOTAL BALANCE <span class="tag" style="background:rgba(2,132,199,0.2); border:1px solid #0284c7; color:#38bdf8; font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:10px; margin-left:6px;">🧪 COINDCX DEMO (ZERO RISK)</span>`;
+      $("g_bal_title").innerHTML = `TOTAL BALANCE <span class="tag" style="background:rgba(16,185,129,0.18); border:1px solid #10b981; color:#10b981; font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:10px; margin-left:6px;">🟢 COINDCX FUTURES ACCOUNT</span>`;
     } else if (isLive) {
       const loginId = (S.broker && S.broker.mt4_login) || "REAL";
       $("g_bal_title").innerHTML = `TOTAL BALANCE <span class="tag" style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:6px;">🔴 LIVE #${loginId}</span>`;
@@ -1232,9 +1232,10 @@ function renderGoal(pf) {
       const freeStr = (freeBalUSD > 0) ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span>` : "";
       $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">$${liveBalUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>${freeStr}`;
     } else if (isCoinDcx) {
-      const demoInit = (Number(g.starting_balance) > 0) ? Number(g.starting_balance) : (liveBalUSD > 0 ? liveBalUSD : (equity() || 0.0));
-      const demoInitInr = liveBalINR > 0 ? liveBalINR : (demoInit * 90.0);
-      $("g_dep").innerHTML = `CoinDCX Demo Capital: <span style="font-family:var(--mono); color:#38bdf8; font-weight:700;">$${demoInit.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> · <span style="color:var(--muted2);">Simulating Live Portfolio</span> <span style="font-size:10px; color:#94a3b8;">(${inrFmt(demoInitInr)})</span>`;
+      const actualInit = (liveBalUSD > 0) ? liveBalUSD : ((Number(g.starting_balance) > 0) ? Number(g.starting_balance) : (equity() || 0.0));
+      const actualInitInr = liveBalINR > 0 ? liveBalINR : (actualInit * 90.0);
+      const freeStr = (freeBalUSD > 0) ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span>` : "";
+      $("g_dep").innerHTML = `CoinDCX Capital: <span style="font-family:var(--mono); color:#38bdf8; font-weight:700;">$${actualInit.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>${freeStr} <span style="font-size:10px; color:#94a3b8;">(${inrFmt(actualInitInr)})</span>`;
     } else if (isLive) {
       $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">${usd(liveBalUSD)}</span>`;
     } else {
