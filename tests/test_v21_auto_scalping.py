@@ -59,6 +59,11 @@ class TestAraaBotV21AutoScalping(unittest.TestCase):
             (cls.token, cls.uid, time.time(), time.time()),
         )
 
+    def setUp(self):
+        self.uid = self.__class__.uid
+        self.token = self.__class__.token
+        self.client = self.__class__.client
+
     def _headers(self):
         return {"X-Token": self.token}
 

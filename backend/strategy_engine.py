@@ -1684,6 +1684,28 @@ class StrategyEngine:
                 "UPDATE positions SET status='CLOSED', current_price=?, realized_pnl=COALESCE(realized_pnl,0)+?, close_reason=?, closed_at=? WHERE id=? AND user_id=?",
                 (exec_px, net_pnl, reason, now, int(position_id), int(user_id)),
             )
+            # Record confirmed completed trade into TradeLearningEngine
+            try:
+                from trade_learning_engine import TradeLearningEngine
+                TradeLearningEngine.record_completed_trade(
+                    user_id=user_id,
+                    position_id=position_id,
+                    strategy_id=str(pos.get("strategy_id") or "araa_ai_default"),
+                    symbol=sym,
+                    direction=str(pos.get("side") or "BUY"),
+                    entry_price=entry_px,
+                    exit_price=exec_px,
+                    quantity=close_qty,
+                    realized_pnl=net_pnl,
+                    trading_fees=fee_usd,
+                    opened_at=float(pos.get("opened_at") or (now - 60.0)),
+                    closed_at=now,
+                    exit_reason=reason,
+                    is_live=int(pos.get("is_live") or 0),
+                )
+            except Exception as e:
+                logger.error(f"TradeLearningEngine error on {sym}: {e}")
+
             cls.log_bot_activity(
                 user_id=user_id,
                 event_type="Position Closed",
@@ -1945,6 +1967,33 @@ class StrategyEngine:
             if exit_decision.get("action") != "HOLD":
                 res_exit = cls.execute_auto_exit(user_id, pos["id"], exit_decision, curr_price)
                 exit_results.append(res_exit)
+
+        # Step 3.5: Market Shock & Rapid Price Surge / Crash Detection
+        from market_shock_detector import MarketShockDetector
+        # Evaluate market shock on closed candle patterns without feed synthetic jump
+        shock_res = MarketShockDetector.analyze_market_shock(
+            symbol=sym,
+            candles=primary_candles[:-1] if (feed is not None and len(primary_candles) > 15) else primary_candles,
+            spread_pct=0.03,
+            last_feed_timestamp=time.time(),
+        )
+        if shock_res.get("block_new_entries"):
+            status_rec["execution_status"] = f"BLOCKED_MARKET_SHOCK_{shock_res.get('shock_type')}"
+            cls.log_bot_activity(
+                user_id=user_id,
+                event_type="Market Shock Block",
+                symbol=sym,
+                message=f"Auto Scalping blocked new entries due to {shock_res.get('shock_type')}: {shock_res.get('details')}",
+                details=shock_res,
+            )
+            return {
+                "success": False,
+                "status": "BLOCKED_MARKET_SHOCK",
+                "shock_analysis": shock_res,
+                "message": shock_res.get("details"),
+                "open_positions_evaluated": len(open_scalp_pos or []),
+                "exits_triggered": exit_results,
+            }
 
         if not opp:
             status_rec["execution_status"] = "SCANNING_NO_SETUP"

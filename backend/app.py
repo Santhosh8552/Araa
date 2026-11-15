@@ -5414,6 +5414,167 @@ def api_bot_real_mode_events():
 
 
 # =====================================================================
+# ARAABOT ADVANCED REAL MODE AI PREDICTION, DEEP ANALYSIS & LEARNING APIS
+# =====================================================================
+
+@api.route("/api/bot/real-mode/deep-prediction", methods=["GET", "POST"])
+def api_bot_real_mode_deep_prediction():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    args = request.get_json(silent=True) or request.args
+    symbol = str(args.get("symbol") or "BTCUSDT").upper().replace("B-", "").replace("_", "")
+    timeframe = str(args.get("timeframe") or "15m").lower()
+    
+    from backtest_engine import BacktestEngine
+    from prediction_engine import generate_deep_prediction
+    from market_shock_detector import MarketShockDetector
+    
+    candles, _, _, _ = BacktestEngine.generate_historical_candles(symbol=symbol, timeframe=timeframe, count=65)
+    live_px = float(feed.live_price(symbol) or feed.price(symbol) or (candles[-1]["c"] if candles else 0.0))
+    if live_px > 0 and candles:
+        candles[-1]["c"] = live_px
+
+    # Check shock status
+    shock_res = MarketShockDetector.analyze_market_shock(
+        symbol=symbol,
+        candles=candles,
+        current_price=live_px,
+        last_feed_timestamp=time.time(),
+    )
+    deep_pred = generate_deep_prediction(
+        symbol=symbol,
+        candles=candles,
+        timeframe=timeframe,
+    )
+    deep_pred["market_shock"] = shock_res
+
+    # Audit log prediction
+    try:
+        from prediction_engine import record_prediction_audit
+        with get_db() as conn:
+            record_prediction_audit(conn, deep_pred, user_id=u["id"])
+    except Exception:
+        pass
+
+    return ok(prediction=deep_pred, shock_status=shock_res)
+
+
+@api.route("/api/bot/real-mode/deep-position-analysis", methods=["GET"])
+def api_bot_real_mode_deep_position_analysis():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    
+    positions = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' ORDER BY opened_at DESC", (u["id"],))
+    from prediction_engine import generate_deep_prediction
+    from market_shock_detector import MarketShockDetector
+    from backtest_engine import BacktestEngine
+    
+    analyzed_positions = []
+    for pos in positions:
+        sym = str(pos.get("symbol") or "BTCUSDT")
+        cur_px = float(pos.get("current_price") or feed.live_price(sym) or feed.price(sym) or pos.get("entry_price") or 1.0)
+        candles, _, _, _ = BacktestEngine.generate_historical_candles(symbol=sym, timeframe="15m", count=50)
+        pred = generate_deep_prediction(sym, candles) if candles else {}
+        shock = MarketShockDetector.analyze_market_shock(sym, candles, current_price=cur_px) if candles else {}
+        
+        entry_p = float(pos.get("entry_price") or cur_px)
+        is_long = str(pos.get("side") or "BUY").upper() in ("BUY", "LONG")
+        move_pct = ((cur_px - entry_p) / entry_p) * 100.0 * (1.0 if is_long else -1.0) if entry_p > 0 else 0.0
+        
+        # Position Health classification
+        health = "HEALTHY"
+        if move_pct < -0.30:
+            health = "AT_RISK"
+        elif shock.get("shock_detected"):
+            health = "SHOCK_WARNING"
+        elif move_pct >= 0.50:
+            health = "IN_PROFIT"
+
+        analyzed_positions.append({
+            "position": pos,
+            "current_price": cur_px,
+            "move_pct": round(move_pct, 4),
+            "health": health,
+            "prediction": pred.get("prediction", "UNCERTAIN"),
+            "confidence_score": pred.get("confidence_score", 50),
+            "reversal_warning": (pred.get("advanced_analytics", {}).get("reversal_probability_pct", 0.0) > 60.0),
+            "shock_detected": shock.get("shock_detected", False),
+            "ai_thesis": f"Holding {pos.get('side')} on {sym}: Entry thesis remains {'VALID' if move_pct >= -0.3 and not shock.get('shock_detected') else 'DEGRADED'}.",
+        })
+
+    return ok(positions=analyzed_positions, count=len(analyzed_positions))
+
+
+@api.route("/api/bot/real-mode/trade-learning", methods=["GET"])
+def api_bot_real_mode_trade_learning():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    
+    from trade_learning_engine import TradeLearningEngine
+    strat_id = request.args.get("strategy_id")
+    perf = TradeLearningEngine.get_strategy_performance_analytics(u["id"], strat_id)
+    return ok(learning=perf, **perf)
+
+
+@api.route("/api/bot/real-mode/strategy-proposal", methods=["GET", "POST"])
+def api_bot_real_mode_strategy_proposal():
+    u = current_user()
+    if not u:
+        return fail("Not logged in", 401)
+    
+    from trade_learning_engine import TradeLearningEngine
+    strat_id = request.args.get("strategy_id") or "araa_ai_scalp"
+    proposal = TradeLearningEngine.generate_strategy_improvement_proposal(u["id"], strat_id)
+    return ok(proposal=proposal)
+
+
+@api.route("/api/admin/institutional-intelligence", methods=["GET"])
+def api_admin_institutional_intelligence():
+    # Admin guard via _valid_admin_token
+    token = request.headers.get("X-Admin-Token", "")
+    if not _valid_admin_token(token):
+        return fail("Admin authentication required.", 403)
+
+    from market_shock_detector import MarketShockDetector
+    from prediction_engine import evaluate_prediction_accuracy
+    from security_firewall import firewall
+
+    active_shocks = MarketShockDetector.get_all_active_shocks()
+    with get_db() as conn:
+        acc_report = evaluate_prediction_accuracy(conn)
+
+    fw_stats = firewall.stats
+    threat_logs = firewall.threat_logs[:20]
+
+    tot_trades_row = query_one("SELECT COUNT(*) AS c, COALESCE(SUM(realized_pnl), 0.0) AS pnl FROM positions WHERE status='CLOSED'")
+    win_row = query_one("SELECT COUNT(*) AS c FROM positions WHERE status='CLOSED' AND realized_pnl > 0")
+
+    tot_c = (tot_trades_row or {}).get("c") or 0
+    win_c = (win_row or {}).get("c") or 0
+    net_pnl = (tot_trades_row or {}).get("pnl") or 0.0
+
+    return ok(
+        market_intelligence={
+            "active_shocks": active_shocks,
+            "prediction_accuracy": acc_report,
+            "firewall_stats": fw_stats,
+            "recent_security_threats": threat_logs,
+            "global_trades": {
+                "total_trades": tot_c,
+                "winning_trades": win_c,
+                "losing_trades": max(0, tot_c - win_c),
+                "win_rate_pct": round((win_c / max(tot_c, 1)) * 100.0, 2),
+                "total_net_pnl_usd": round(net_pnl, 2),
+            },
+        }
+    )
+
+
+
+# =====================================================================
 # EXNESS MT4 REAL BOT GATEWAY & TERMINAL ENDPOINTS
 # =====================================================================
 
