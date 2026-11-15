@@ -5032,14 +5032,14 @@ async function refreshCoinDcxAuditLogs() {
     }
     container.innerHTML = res.logs.map(log => {
       const timeStr = log.created_at ? new Date(log.created_at * 1000).toLocaleTimeString() : "--:--";
-      const isCritical = log.severity === "CRITICAL" || log.event_type.includes("EMERGENCY");
-      const isWarn = log.severity === "WARNING" || log.event_type.includes("REJECTED");
-      const isSuccess = log.event_type.includes("ACTIVATED") || log.event_type.includes("CONNECTED") || log.event_type.includes("EXECUTED");
+      const isCritical = log.severity === "CRITICAL" || log.event_type.includes("EMERGENCY") || log.event_type.includes("GUARD");
+      const isWarn = log.severity === "WARNING" || log.event_type.includes("REJECTED") || log.event_type.includes("SKIP") || log.event_type.includes("BLOCK");
+      const isSuccess = log.event_type.includes("ACTIVATED") || log.event_type.includes("CONNECTED") || log.event_type.includes("EXECUTED") || log.event_type.includes("APPROVED") || log.event_type.includes("ADOPTED") || log.event_type === "OPEN";
       const color = isCritical ? "#ef4444" : isWarn ? "#f59e0b" : isSuccess ? "#10b981" : "#38bdf8";
       const bg = isCritical ? "rgba(239,68,68,0.15)" : isWarn ? "rgba(245,158,11,0.12)" : isSuccess ? "rgba(16,185,129,0.12)" : "rgba(56,189,248,0.08)";
       return `
         <div style="background:${bg}; border-left:3px solid ${color}; padding:6px 10px; border-radius:4px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <div style="display:flex; align-items:center; gap:6px;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <span style="color:#94a3b8; font-size:10px;">${timeStr}</span>
             <span style="background:${color}; color:#0f172a; font-weight:800; font-size:9px; padding:1px 5px; border-radius:3px;">${log.event_type}</span>
             <span style="color:#e2e8f0; font-size:11px;">${log.message}</span>
@@ -9371,6 +9371,11 @@ function startPollers() {
   setInterval(() => { if (S.token) loadTicker().catch(() => {}); }, 25000);
   setInterval(() => { if (isDrawerOpen("drawer_bot")) renderAnalysis().catch(() => {}); }, 8000);
   setInterval(() => { if (S.tab === "az_analysis") renderTabAZ().catch(() => {}); }, 10000);
+  setInterval(() => {
+    if (typeof refreshCoinDcxAuditLogs === "function") {
+      refreshCoinDcxAuditLogs().catch(() => {});
+    }
+  }, 4000);
   setInterval(() => {
     if (_pingInFlight || !S.token) return;
     _pingInFlight = true;

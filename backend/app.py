@@ -4986,13 +4986,21 @@ def api_coindcx_emergency_stop():
 
 @api.route("/api/coindcx/audit-logs", methods=["GET"])
 def api_coindcx_audit_logs():
-    """Returns persistent execution audit logs for CoinDCX real bot."""
+    """Returns persistent execution audit logs for CoinDCX real bot combined with live bot engine logs."""
     u = current_user()
     if not u:
         return fail("Not logged in", 401)
     limit = int(request.args.get("limit") or 50)
-    logs = query("SELECT * FROM real_bot_audit_logs WHERE user_id=? ORDER BY created_at DESC LIMIT ?", (u["id"], limit))
-    return ok(logs=logs, count=len(logs))
+    
+    # Fetch real_bot_audit_logs
+    audit_rows = query("SELECT id, event_type, severity, message, details_json, created_at FROM real_bot_audit_logs WHERE user_id=? ORDER BY created_at DESC LIMIT ?", (u["id"], limit))
+    
+    # Fetch live bot_log events
+    bot_rows = query("SELECT id, level as event_type, CASE WHEN level IN ('CRITICAL','DAILY_LOSS_GUARD') THEN 'CRITICAL' WHEN level IN ('ORDER_RETRY','RISK_BLOCK','MARGIN_SKIP') THEN 'WARNING' ELSE 'INFO' END as severity, message, NULL as details_json, at as created_at FROM bot_log WHERE user_id=? ORDER BY at DESC LIMIT ?", (u["id"], limit))
+    
+    # Merge and sort by timestamp descending
+    combined = sorted(audit_rows + bot_rows, key=lambda x: -float(x.get("created_at") or 0.0))[:limit]
+    return ok(logs=combined, count=len(combined))
 
 
 @api.route("/api/coindcx/orders/spot", methods=["POST"])
