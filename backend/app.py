@@ -161,21 +161,32 @@ def _valid_admin_token(token: str) -> bool:
 @api.before_request
 def admin_auth_guard():
     path = request.path or ""
-    # Strictly protect all /api/admin/* and /api/v3/admin/* endpoints
-    if not (path.startswith("/api/admin/") or path.startswith("/api/v3/admin/")):
+    norm_path = path.rstrip("/")
+    is_central_admin = path.startswith("/api/central-admin/")
+    # Strictly protect all /api/admin/*, /api/v3/admin/*, and /api/central-admin/* endpoints
+    if not (path.startswith("/api/admin/") or path.startswith("/api/v3/admin/") or is_central_admin):
         return None
-    if path.rstrip("/") == "/api/admin/login":
+    if norm_path in ("/api/admin/login", "/api/central-admin/login", "/api/central-admin/validate-token"):
         return None
     if request.method == "OPTIONS":
         return None
-    
+
     # Check if a regular user token was presented instead of admin token
     user_token = request.headers.get("X-Token")
     admin_token = request.headers.get("X-Admin-Token", "")
-    
+    sso_token = request.headers.get("X-SSO-Token", "")
+
     if _valid_admin_token(admin_token):
         return None
-        
+
+    if is_central_admin and sso_token:
+        try:
+            from central_admin_ecosystem import CentralIdentityService
+            if CentralIdentityService.validate_sso_token(sso_token):
+                return None
+        except Exception:
+            pass
+
     # If a regular user attempted to hit an admin endpoint, strictly 403 Forbidden
     if user_token:
         return jsonify({"success": False, "error": "Forbidden: Access restricted to authorized Admin roles"}), 403
@@ -5475,8 +5486,12 @@ def api_bot_real_mode_deep_prediction():
     # Audit log prediction
     try:
         from prediction_engine import record_prediction_audit
-        with get_db() as conn:
+        from database import connect
+        conn = connect()
+        try:
             record_prediction_audit(conn, deep_pred, user_id=u["id"])
+        finally:
+            conn.close()
     except Exception:
         pass
 
@@ -5565,9 +5580,13 @@ def api_admin_institutional_intelligence():
     from prediction_engine import evaluate_prediction_accuracy
     from security_firewall import firewall
 
+    from database import connect
     active_shocks = MarketShockDetector.get_all_active_shocks()
-    with get_db() as conn:
+    conn = connect()
+    try:
         acc_report = evaluate_prediction_accuracy(conn)
+    finally:
+        conn.close()
 
     fw_stats = firewall.stats
     threat_logs = firewall.threat_logs[:20]
@@ -6765,22 +6784,60 @@ def admin_overview():
     })
 
 
+def _admin_usdt_inr_rate() -> float:
+    """Resolve current USDT->INR conversion rate from CoinDCX ticker cache."""
+    try:
+        from coindcx_gateway import _get_live_usdt_inr_rate
+        rate = float(_get_live_usdt_inr_rate() or 90.0)
+        return round(rate, 2) if 70.0 <= rate <= 130.0 else 90.0
+    except Exception:
+        return 90.0
+
+
+def _log_admin_audit(uid, event_type: str, severity: str, message: str, details: dict = None):
+    """Persist admin lifecycle actions to real_bot_audit_logs safely."""
+    try:
+        write(
+            "INSERT INTO real_bot_audit_logs(user_id, event_type, severity, message, details_json, created_at) "
+            "VALUES(?, ?, ?, ?, ?, ?)",
+            (int(uid or 0), event_type, severity, message, json.dumps(details or {}), time.time()),
+        )
+    except Exception:
+        pass
+
+
 @api.route("/api/admin/users")
 def admin_users():
     online_window = time.time() - 120  # Active in last 2 minutes
-    rows = query("SELECT u.id, u.email, u.name, u.created_at, u.last_login_at, u.bot_enabled, "
-                 "u.bot_max_positions, u.bot_risk_pct, u.bot_mode, u.bot_leverage, "
-                 "w.deposit_balance, w.profit_balance, w.total_deposited, w.total_withdrawn, "
-                 "w.total_brokerage, "
-                 "(SELECT COUNT(*) FROM positions p WHERE p.user_id=u.id AND p.status='OPEN') open_pos, "
-                 "(SELECT COUNT(*) FROM positions p WHERE p.user_id=u.id AND p.status='CLOSED') closed_pos, "
-                 "(SELECT COALESCE(SUM(realized_pnl),0) FROM positions p WHERE p.user_id=u.id "
-                 " AND p.status='CLOSED') realized, "
-                 "(SELECT COUNT(*) FROM login_events l WHERE l.user_id=u.id AND l.at>=?) logins_today, "
-                 "CASE WHEN EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=u.id AND s.last_seen>=?) THEN 1 ELSE 0 END is_online "
-                 "FROM users u JOIN wallets w ON w.user_id=u.id ORDER BY is_online DESC, u.last_login_at DESC",
-                 (day_start(), online_window))
-    return jsonify({"count": len(rows), "users": rows})
+    rows = query(
+        "SELECT u.id, u.email, u.name, u.created_at, u.last_login_at, u.bot_enabled, "
+        "u.bot_max_positions, u.bot_risk_pct, u.bot_mode, u.bot_leverage, "
+        "u.bot_trade_direction, u.bot_market_focus, "
+        "w.deposit_balance, w.profit_balance, w.total_deposited, w.total_withdrawn, "
+        "w.total_brokerage, "
+        "COALESCE(bc.broker_name, '') as broker_name, "
+        "COALESCE(bc.status, 'DISCONNECTED') as broker_status, "
+        "COALESCE(bc.is_live_active, 0) as is_live_active, "
+        "COALESCE(bc.live_balance, 0.0) as live_balance, "
+        "COALESCE(bc.live_equity, 0.0) as live_equity, "
+        "COALESCE(rbc.bot_status, 'PAUSED') as real_bot_status, "
+        "COALESCE(rbc.emergency_shutdown, 0) as emergency_shutdown, "
+        "COALESCE(rbc.verified_margin, 0.0) as verified_margin, "
+        "COALESCE(rbc.verified_funds, 0.0) as verified_funds, "
+        "(SELECT COUNT(*) FROM positions p WHERE p.user_id=u.id AND p.status IN ('OPEN','PENDING_BROKER')) open_pos, "
+        "(SELECT COUNT(*) FROM positions p WHERE p.user_id=u.id AND p.status IN ('OPEN','PENDING_BROKER') AND COALESCE(p.is_live,0)=1) live_open_pos, "
+        "(SELECT COUNT(*) FROM positions p WHERE p.user_id=u.id AND p.status='CLOSED') closed_pos, "
+        "(SELECT COALESCE(SUM(realized_pnl),0) FROM positions p WHERE p.user_id=u.id "
+        " AND p.status='CLOSED') realized, "
+        "(SELECT COUNT(*) FROM login_events l WHERE l.user_id=u.id AND l.at>=?) logins_today, "
+        "CASE WHEN EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=u.id AND s.last_seen>=?) THEN 1 ELSE 0 END is_online "
+        "FROM users u JOIN wallets w ON w.user_id=u.id "
+        "LEFT JOIN broker_connections bc ON bc.user_id=u.id "
+        "LEFT JOIN real_bot_configs rbc ON rbc.user_id=u.id "
+        "ORDER BY is_live_active DESC, is_online DESC, u.last_login_at DESC",
+        (day_start(), online_window),
+    )
+    return jsonify({"count": len(rows), "users": rows, "usdt_inr_rate": _admin_usdt_inr_rate()})
 
 
 @api.route("/api/admin/user/<int:uid>/bot-toggle", methods=["POST"])
@@ -6792,13 +6849,173 @@ def admin_user_bot_toggle(uid):
     data = request.get_json(silent=True) or {}
     cur_state = bool(u.get("bot_enabled"))
     new_state = 1 if data.get("enable", not cur_state) else 0
+    now = time.time()
+    closed_cnt = 0
+    closed_pnl = 0.0
     if new_state == 1:
-        write("UPDATE users SET bot_enabled=1, bot_activated_at=? WHERE id=?", (time.time(), uid))
+        write("UPDATE users SET bot_enabled=1, bot_activated_at=0 WHERE id=?", (uid,))
+        write("UPDATE real_bot_configs SET bot_status='RUNNING', emergency_shutdown=0, updated_at=? WHERE user_id=?", (now, uid))
+        write(
+            "UPDATE trading_bots SET status=CASE WHEN execution_mode='REAL' THEN 'ACTIVE' ELSE 'PAPER_TRADING' END, "
+            "updated_at=? WHERE user_id=? AND status IN ('DRAFT','PAUSED','STOPPED')",
+            (now, uid),
+        )
         bot.start()
         threading.Thread(target=bot.cycle, daemon=True).start()
+        _log_admin_audit(uid, "ADMIN_USER_BOT_ON", "INFO", f"Admin started bot for {u['email']} (CoinDCX Real sync enabled)")
     else:
         write("UPDATE users SET bot_enabled=0 WHERE id=?", (uid,))
-    return ok(success=True, user_id=uid, bot_enabled=new_state, message=f"User bot {'enabled' if new_state else 'disabled'} successfully")
+        write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=? WHERE user_id=?", (now, uid))
+        write("UPDATE trading_bots SET status='PAUSED', updated_at=? WHERE user_id=? AND status IN ('ACTIVE','PAPER_TRADING')", (now, uid))
+        try:
+            from coindcx_gateway import get_user_coindcx_client
+            cdx = get_user_coindcx_client(uid)
+            if cdx:
+                cdx.cancel_all_orders()
+        except Exception:
+            pass
+        closed_pnl, closed_cnt = bot.close_all_for(uid, reason="ADMIN_STOPPED_USER_BOT", include_manual=True)
+        _log_admin_audit(uid, "ADMIN_USER_BOT_OFF", "WARNING", f"Admin paused bot for {u['email']} (Closed {closed_cnt} trades, PnL ${closed_pnl:+.2f})")
+    return ok(
+        success=True,
+        user_id=uid,
+        bot_enabled=new_state,
+        closed_positions=closed_cnt,
+        closed_pnl=round(closed_pnl, 2),
+        message=f"User bot {'enabled' if new_state else 'disabled'} successfully"
+        + (f" ({closed_cnt} open trades closed)" if new_state == 0 and closed_cnt else ""),
+    )
+
+
+@api.route("/api/admin/user/<int:uid>/emergency-reset", methods=["POST"])
+def admin_user_emergency_reset(uid):
+    """Clears emergency_shutdown lock on a user's CoinDCX Real Bot configuration."""
+    u = query_one("SELECT id, email FROM users WHERE id=?", (uid,))
+    if not u:
+        return fail("User not found", 404)
+    now = time.time()
+    write("UPDATE real_bot_configs SET emergency_shutdown=0, updated_at=? WHERE user_id=?", (now, uid))
+    _log_admin_audit(uid, "ADMIN_EMERGENCY_RESET", "INFO", f"Admin cleared emergency shutdown lock for {u['email']}")
+    return ok(success=True, user_id=uid, message=f"Emergency lock cleared for {u['email']}")
+
+
+@api.route("/api/admin/positions/<int:pid>/close", methods=["POST"])
+def admin_position_close(pid):
+    """Admin manual close for any single open or pending position (Paper or CoinDCX Live)."""
+    p = query_one("SELECT * FROM positions WHERE id=?", (pid,))
+    if not p:
+        return fail("Position not found", 404)
+    if p.get("status") not in ("OPEN", "PENDING_BROKER"):
+        return fail(f"Position #{pid} is already {p.get('status')}", 400)
+    price = float(p.get("current_price") or 0) or bot.feed.live_price(p["symbol"]) or float(p.get("entry_price") or 0)
+    pnl = bot.close(p, price, "ADMIN_MANUAL_CLOSE")
+    if pnl is None:
+        return fail(f"Could not close {p['symbol']} on CoinDCX exchange; check broker logs and retry.", 409)
+    _log_admin_audit(p.get("user_id"), "ADMIN_MANUAL_CLOSE", "WARNING", f"Admin manually closed {p['symbol']} #{pid} (PnL: ${pnl:+.2f})")
+    return ok(success=True, position_id=pid, symbol=p["symbol"], realized_pnl=round(float(pnl), 2),
+              message=f"Closed {p['symbol']} #{pid} (P&L: ${pnl:+.2f})")
+
+
+@api.route("/api/admin/coindcx-live")
+def admin_coindcx_live():
+    """Live CoinDCX Real Mode, 3-Agent AI Committee consensus, and USD/INR telemetry for Admin Panel."""
+    rate = _admin_usdt_inr_rate()
+    today = day_start()
+    cutoff_24h = time.time() - 86400
+
+    conns = query(
+        "SELECT bc.user_id, u.email, u.name, u.bot_enabled, COALESCE(u.bot_leverage, 100) as bot_leverage, "
+        "bc.broker_name, bc.api_key_masked, bc.status, bc.is_live_active, bc.live_balance, bc.live_equity, "
+        "bc.last_synced_at, "
+        "COALESCE(rbc.bot_status, 'PAUSED') as real_bot_status, "
+        "COALESCE(rbc.emergency_shutdown, 0) as emergency_shutdown, "
+        "COALESCE(rbc.strategy_mode, 'PURE_CRYPTO') as strategy_mode, "
+        "COALESCE(rbc.verified_margin, 0.0) as verified_margin, "
+        "COALESCE(rbc.verified_funds, 0.0) as verified_funds, "
+        "(SELECT COUNT(*) FROM positions p WHERE p.user_id=bc.user_id AND p.status IN ('OPEN','PENDING_BROKER') AND COALESCE(p.is_live,0)=1) as live_open_positions, "
+        "(SELECT COALESCE(SUM(realized_pnl), 0.0) FROM positions p WHERE p.user_id=bc.user_id AND p.status='CLOSED' AND COALESCE(p.is_live,0)=1 AND p.closed_at>=?) as today_live_pnl "
+        "FROM broker_connections bc "
+        "JOIN users u ON u.id=bc.user_id "
+        "LEFT JOIN real_bot_configs rbc ON rbc.user_id=bc.user_id "
+        "ORDER BY bc.is_live_active DESC, bc.last_synced_at DESC",
+        (today,),
+    )
+
+    committee_logs = query(
+        "SELECT c.*, COALESCE(u.email, 'PLATFORM') as user_email "
+        "FROM ai_committee_logs c LEFT JOIN users u ON u.id=c.user_id "
+        "ORDER BY c.id DESC LIMIT 30"
+    )
+    comm_agg = query_one(
+        "SELECT COUNT(*) as total_scans, "
+        "SUM(CASE WHEN final_action IN ('BUY','SELL','LONG','SHORT','EXECUTE','EXECUTE_LONG','EXECUTE_SHORT') THEN 1 ELSE 0 END) as approved_count, "
+        "SUM(CASE WHEN final_action IN ('WAIT','SKIP','REJECT','HOLD','BLOCKED') THEN 1 ELSE 0 END) as skipped_count, "
+        "COALESCE(AVG(consensus_score), 0.0) as avg_consensus "
+        "FROM ai_committee_logs WHERE created_at>=?",
+        (cutoff_24h,),
+    ) or {}
+
+    audit_logs = query(
+        "SELECT a.id, a.user_id, COALESCE(u.email, 'SYSTEM') as user_email, "
+        "a.event_type, a.severity, a.message, a.created_at "
+        "FROM real_bot_audit_logs a LEFT JOIN users u ON u.id=a.user_id "
+        "ORDER BY a.id DESC LIMIT 50"
+    )
+
+    pos_agg = query_one(
+        "SELECT "
+        "SUM(CASE WHEN status IN ('OPEN','PENDING_BROKER') AND COALESCE(is_live,0)=1 THEN 1 ELSE 0 END) as live_open, "
+        "SUM(CASE WHEN status IN ('OPEN','PENDING_BROKER') AND COALESCE(is_live,0)=0 THEN 1 ELSE 0 END) as paper_open, "
+        "SUM(CASE WHEN status='PENDING_BROKER' THEN 1 ELSE 0 END) as pending_broker, "
+        "COALESCE(AVG(CASE WHEN status IN ('OPEN','PENDING_BROKER') THEN leverage END), 0.0) as avg_leverage, "
+        "COALESCE(MAX(CASE WHEN status IN ('OPEN','PENDING_BROKER') THEN leverage END), 0.0) as max_leverage, "
+        "COALESCE(SUM(CASE WHEN status IN ('OPEN','PENDING_BROKER') AND COALESCE(is_live,0)=1 THEN unrealized_pnl ELSE 0 END), 0.0) as live_unrealized, "
+        "COALESCE(SUM(CASE WHEN status IN ('OPEN','PENDING_BROKER') AND COALESCE(is_live,0)=0 THEN unrealized_pnl ELSE 0 END), 0.0) as paper_unrealized, "
+        "COALESCE(SUM(CASE WHEN status='CLOSED' AND COALESCE(is_live,0)=1 AND closed_at>=? THEN realized_pnl ELSE 0 END), 0.0) as today_live_realized, "
+        "COALESCE(SUM(CASE WHEN status='CLOSED' AND COALESCE(is_live,0)=0 AND closed_at>=? THEN realized_pnl ELSE 0 END), 0.0) as today_paper_realized "
+        "FROM positions",
+        (today, today),
+    ) or {}
+
+    total_syms = 0
+    live_syms_cnt = 0
+    try:
+        with feed.lock:
+            total_syms = len(feed.prices)
+            live_syms_cnt = sum(
+                1 for row in feed.prices.values()
+                if row.get("live") or float(row.get("price") or 0) > 0
+            )
+    except Exception:
+        pass
+    return ok(
+        usdt_inr_rate=rate,
+        coindcx_connections=conns,
+        committee_logs=committee_logs,
+        committee_summary={
+            "total_scans": int(comm_agg.get("total_scans") or 0),
+            "approved_count": int(comm_agg.get("approved_count") or 0),
+            "skipped_count": int(comm_agg.get("skipped_count") or 0),
+            "avg_consensus": round(float(comm_agg.get("avg_consensus") or 0.0), 1),
+        },
+        live_audit_logs=audit_logs,
+        positions_summary={
+            "live_open": int(pos_agg.get("live_open") or 0),
+            "paper_open": int(pos_agg.get("paper_open") or 0),
+            "pending_broker": int(pos_agg.get("pending_broker") or 0),
+            "avg_leverage": round(float(pos_agg.get("avg_leverage") or 0.0), 1),
+            "max_leverage": round(float(pos_agg.get("max_leverage") or 0.0), 1),
+            "live_unrealized_usd": round(float(pos_agg.get("live_unrealized") or 0.0), 2),
+            "paper_unrealized_usd": round(float(pos_agg.get("paper_unrealized") or 0.0), 2),
+            "today_live_realized_usd": round(float(pos_agg.get("today_live_realized") or 0.0), 2),
+            "today_paper_realized_usd": round(float(pos_agg.get("today_paper_realized") or 0.0), 2),
+        },
+        market_stats={
+            "total_symbols": total_syms,
+            "live_count": live_syms_cnt,
+            "offline_count": max(0, total_syms - live_syms_cnt),
+        },
+    )
 
 
 @api.route("/api/admin/user/<int:uid>/withdraw", methods=["POST"])
@@ -6873,7 +7090,7 @@ def admin_user_withdraw(uid):
              (uid, amount, brokerage, net, now))
         ])
 
-    return ok(success=True, message=f"Withdrawn Rs {net:.2f} for user {u['email']}", withdrawn=net)
+    return ok(success=True, message=f"Withdrawn ${net:.2f} for user {u['email']}", withdrawn=net)
 
 
 @api.route("/api/admin/user/<int:uid>/eod-report")
@@ -6939,6 +7156,12 @@ def admin_user_delete(uid):
         ("DELETE FROM positions WHERE user_id=?", (uid,)),
         ("DELETE FROM orders WHERE user_id=?", (uid,)),
         ("DELETE FROM ai_predictions WHERE user_id=?", (uid,)),
+        ("DELETE FROM ai_committee_logs WHERE user_id=?", (uid,)),
+        ("DELETE FROM real_bot_audit_logs WHERE user_id=?", (uid,)),
+        ("DELETE FROM real_bot_configs WHERE user_id=?", (uid,)),
+        ("DELETE FROM broker_provider_consents WHERE user_id=?", (uid,)),
+        ("DELETE FROM broker_connections WHERE user_id=?", (uid,)),
+        ("DELETE FROM trading_bots WHERE user_id=?", (uid,)),
         ("DELETE FROM withdrawals WHERE user_id=?", (uid,)),
         ("DELETE FROM deposits WHERE user_id=?", (uid,)),
         ("DELETE FROM profit_links WHERE user_id=?", (uid,)),
@@ -6968,6 +7191,12 @@ def admin_users_wipe_all():
         ("DELETE FROM positions", ()),
         ("DELETE FROM orders", ()),
         ("DELETE FROM ai_predictions", ()),
+        ("DELETE FROM ai_committee_logs", ()),
+        ("DELETE FROM real_bot_audit_logs", ()),
+        ("DELETE FROM real_bot_configs", ()),
+        ("DELETE FROM broker_provider_consents", ()),
+        ("DELETE FROM broker_connections", ()),
+        ("DELETE FROM trading_bots", ()),
         ("DELETE FROM withdrawals", ()),
         ("DELETE FROM deposits", ()),
         ("DELETE FROM profit_links", ()),
@@ -7107,13 +7336,16 @@ def admin_adapter_gatekeeper():
         }
     ]
     
-    # Query recent pre-trade inspection logs from real_bot_audit_logs
+    # Query recent pre-trade inspection logs from real_bot_audit_logs (including CoinDCX live & 3-Agent AI Committee)
     recent_logs = query(
         "SELECT id, user_id, event_type, severity, message, details_json, created_at "
         "FROM real_bot_audit_logs "
-        "WHERE event_type IN ('ORDER_REJECTED_SPREAD', 'ORDER_REJECTED_DUMP', 'ORDER_REJECTED_AI', "
-        "'ORDER_REJECTED_RISK', 'SPOT_ORDER_EXECUTED', 'FUTURES_FALLBACK', 'SPOT_ORDER_REJECTED', "
-        "'ORDER_REJECTED_EMERGENCY', 'DAILY_LOSS_GUARD_TRIGGERED', 'DAILY_LOSS_LIMIT') "
+        "WHERE event_type IN ("
+        "'ORDER_REJECTED_SPREAD', 'ORDER_REJECTED_DUMP', 'ORDER_REJECTED_AI', 'ORDER_REJECTED_RISK', "
+        "'ORDER_REJECTED_EMERGENCY', 'ORDER_REJECTED', 'SPOT_ORDER_EXECUTED', 'SPOT_ORDER_REJECTED', "
+        "'FUTURES_FALLBACK', 'FUTURES_ORDER_EXECUTED', 'LEVERAGE_AUTO_UPGRADED', "
+        "'COMMITTEE_SCAN', 'COMMITTEE_SKIP', 'DAILY_LOSS_GUARD_TRIGGERED', 'DAILY_LOSS_LIMIT'"
+        ") "
         "ORDER BY id DESC LIMIT 50"
     )
     
@@ -7139,6 +7371,7 @@ def admin_adapter_gatekeeper():
         "stats": stats,
         "rules": rules,
         "audit_logs": recent_logs,
+        "inspection_logs": recent_logs,
         "ai_analysis": recent_preds
     })
 
@@ -7193,8 +7426,23 @@ def admin_bot_stop():
 
 @api.route("/api/admin/bot/close-all", methods=["POST"])
 def admin_bot_close_all():
-    """Admin emergency liquidate: closes all open bot positions across all users immediately."""
-    open_pos = query("SELECT * FROM positions WHERE status='OPEN' AND source IN ('BOT','COINDCX LIVE')")
+    """Admin emergency liquidate: closes all open bot and live broker positions across all users immediately."""
+    open_pos = query(
+        "SELECT * FROM positions WHERE status IN ('OPEN','PENDING_BROKER') "
+        "AND (COALESCE(is_live,0)=1 OR COALESCE(source,'BOT') NOT IN ('MANUAL','USER'))"
+    )
+    seen_cdx_uids = set()
+    for p in open_pos:
+        uid = p.get("user_id")
+        if p.get("is_live") and uid and uid not in seen_cdx_uids:
+            seen_cdx_uids.add(uid)
+            try:
+                from coindcx_gateway import get_user_coindcx_client
+                cdx_c = get_user_coindcx_client(uid)
+                if cdx_c:
+                    cdx_c.cancel_all_orders()
+            except Exception:
+                pass
     closed = 0
     failed = 0
     total_pnl = 0.0
@@ -7206,7 +7454,7 @@ def admin_bot_close_all():
             continue
         total_pnl += pnl
         closed += 1
-    bot._log(None, "INFO", f"ADMIN EMERGENCY FLUSH: Closed {closed} positions across platform (Total P&L: Rs {total_pnl:+.2f})")
+    bot._log(None, "INFO", f"ADMIN EMERGENCY FLUSH: Closed {closed} positions across platform (Total P&L: ${total_pnl:+.2f})")
     return ok(closed=closed, failed=failed, total_pnl=round(total_pnl, 2),
               message=f"Emergency liquidated {closed} positions across platform." + (f" {failed} could not be closed on the exchange - retry or close manually." if failed else ""))
 
@@ -7394,7 +7642,7 @@ def admin_user_deposit(uid):
         ("UPDATE wallets SET starting_balance=deposit_balance, target_amount=ROUND(deposit_balance*1.5,2) "
          "WHERE user_id=? AND (starting_balance<=0 OR starting_balance IS NULL)", (uid,))
     ])
-    return ok(success=True, message=f"Successfully credited Rs {amount:,.2f} to {u['email']}", wallet=wallet_of(uid))
+    return ok(success=True, message=f"Successfully credited ${amount:,.2f} to {u['email']}", wallet=wallet_of(uid))
 
 
 @api.route("/api/admin/brokerage")
@@ -8212,6 +8460,7 @@ def v3_admin_user_status(target_id):
         return fail("Invalid account_status", 400)
     if new_status == "SUSPENDED":
         write("UPDATE users SET account_status='SUSPENDED', bot_enabled=0 WHERE id=?", (target_id,))
+        write("UPDATE real_bot_configs SET bot_status='PAUSED', updated_at=? WHERE user_id=?", (time.time(), target_id))
     else:
         write("UPDATE users SET account_status='ACTIVE' WHERE id=?", (target_id,))
     if plan_code:

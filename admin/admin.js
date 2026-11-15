@@ -162,7 +162,7 @@ async function loadOverview() {
             $("pipe_bot_live_action_text").innerHTML = `
               <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
                 <div>
-                  <span style="color:#10b981; font-weight:700;">▶ [STAGE 06: ACTIVE EXECUTION]</span> Managing <b>${openPos.length} positions</b> across <b>[${symbolsList}]</b> at <b>500x leverage</b>.
+                  <span style="color:#10b981; font-weight:700;">▶ [STAGE 06: ACTIVE EXECUTION]</span> Managing <b>${openPos.length} positions</b> across <b>[${symbolsList}]</b> at <b>${openPos.slice(0, 3).map(x => `${Math.round(x.leverage || 100)}x`).join('/')} leverage</b>.
                   <br><span style="color:#94a3b8; font-size:11px;">Trailing Profit Lock: Peak gains protected by dynamic multi-tiered exit ladder.</span>
                 </div>
                 <div style="text-align:right;">
@@ -208,7 +208,7 @@ async function loadOverview() {
                 <div class="trade_card_3d ${sideClass}">
                   <div class="tc_top">
                     <span class="tc_symbol">${p.symbol}</span>
-                    <span class="tc_side ${sideClass}">${p.side} 500x</span>
+                    <span class="tc_side ${sideClass}">${_admEsc(p.side)} ${Math.round(p.leverage || 100)}x${p.is_live ? ' · LIVE' : ''}</span>
                   </div>
                   <div class="tc_body">
                     <div class="tc_margin">
@@ -285,7 +285,8 @@ async function loadWithdrawals() {
 /* ---------------- users ---------------- */
 async function loadUsers() {
   const d = await get("/api/admin/users");
-  if (!d.users || !d.users.length) {
+  if (d && d.usdt_inr_rate) window._admUsdtInrRate = Number(d.usdt_inr_rate) || 90.0;
+  if (!d || !d.users || !d.users.length) {
     $("user_rows").innerHTML = `<tr><td colspan="11" class="empty" style="padding:24px; text-align:center; color:#94a3b8;">
       <b>No registered users yet.</b><br>
       <span style="font-size:12px;">When any user registers or logs in on <a href="/" target="_blank" style="color:#38bdf8;">Live Trading Terminal</a>, their live details appear here automatically!</span>
@@ -294,37 +295,49 @@ async function loadUsers() {
   }
   $("user_rows").innerHTML = d.users.map(u => {
     const isOnline = Boolean(u.is_online);
+    const isLiveBroker = Boolean(u.is_live_active) || String(u.broker_status || "").toUpperCase() === "CONNECTED";
     const totalBal = (u.deposit_balance || 0) + (u.profit_balance || 0);
+    const liveEq = Number(u.live_equity || u.live_balance || 0);
+    const lev = Math.round(Number(u.bot_leverage || 100));
+    const emgLock = Boolean(u.emergency_shutdown);
+    const liveBadge = isLiveBroker
+      ? `<div style="margin-top:3px;"><span class="pill live" style="font-size:9px; padding:1px 6px; border-color:#ef4444; color:#fca5a5; background:rgba(239,68,68,0.16);">🔴 ${_admEsc(u.broker_name || "COINDCX")} ${u.is_live_active ? "LIVE" : "READY"}</span></div>`
+      : `<div style="margin-top:3px; font-size:9.5px; color:#64748b;">PAPER · ${lev}x</div>`;
+    const emgHtml = emgLock
+      ? `<button onclick="adminResetEmergency(${u.id})" class="btn sm danger" style="font-size:9.5px; padding:2px 6px; margin-top:3px;" title="Clear emergency shutdown lock">🚨 RESET LOCK</button>`
+      : "";
     return `<tr>
-      <td><b>${u.name || "Trader"}</b></td>
-      <td class="sub">${u.email}</td>
+      <td><b>${_admEsc(u.name || "Trader")}</b><div class="sub" style="font-size:10px;">${lev}x · ${_admEsc(u.bot_trade_direction || "BOTH")}</div></td>
+      <td class="sub">${_admEsc(u.email)}</td>
       <td>
         <span class="tag ${isOnline ? "live" : "sub"}" style="font-weight:700; font-size:10px;">
           ${isOnline ? "🟢 ONLINE" : "⚪ OFFLINE"}
         </span>
+        ${liveBadge}
       </td>
       <td>${ago(u.last_login_at)}</td>
-      <td class="r">${u.logins_today}</td>
-      <td class="r">${inr(u.deposit_balance)}</td>
-      <td class="r ${u.profit_balance >= 0 ? "up" : "down"}">${inr(u.profit_balance)}</td>
+      <td class="r">${num(u.logins_today)}</td>
+      <td class="r">${inr(u.deposit_balance)}${isLiveBroker ? `<div style="font-size:10px; color:#34d399;">CDX: ${inr(liveEq)} (${_admFmtInr(liveEq)})</div>` : `<div style="font-size:10px; color:#64748b;">${_admFmtInr(u.deposit_balance)}</div>`}</td>
+      <td class="r ${u.profit_balance >= 0 ? "up" : "down"}">${inr(u.profit_balance)}<div style="font-size:10px; color:#94a3b8;">R.PnL: ${signed(u.realized)}</div></td>
       <td class="r green">${inr(u.total_brokerage)}</td>
-      <td class="r">${u.open_pos} / ${u.closed_pos}</td>
+      <td class="r">${num(u.open_pos)}${u.live_open_pos ? ` <span style="color:#f87171; font-size:10px;">(${u.live_open_pos}L)</span>` : ""} / ${num(u.closed_pos)}</td>
       <td>
-        <button class="btn sm ${u.bot_enabled ? 'danger' : 'ok'} btn-user-toggle-bot" data-uid="${u.id}" data-action="${u.bot_enabled ? 'stop' : 'start'}" style="font-size:10.5px; padding:3px 8px; font-weight:800; cursor:pointer;" title="Click to ${u.bot_enabled ? 'Stop' : 'Start'} Bot for ${u.email}">
-          ${u.bot_enabled ? `🟢 ON (${u.bot_mode || 'SCALP'})` : '⚪ OFF · START'}
+        <button class="btn sm ${u.bot_enabled ? 'danger' : 'ok'} btn-user-toggle-bot" data-uid="${u.id}" data-action="${u.bot_enabled ? 'stop' : 'start'}" style="font-size:10.5px; padding:3px 8px; font-weight:800; cursor:pointer;" title="Click to ${u.bot_enabled ? 'Stop' : 'Start'} Bot for ${_admEsc(u.email)}">
+          ${u.bot_enabled ? `🟢 ON (${_admEsc(u.bot_mode || 'SCALP')})` : '⚪ OFF · START'}
         </button>
+        ${emgHtml}
       </td>
       <td style="text-align:center; white-space:nowrap;">
-        <button class="btn sm ok btn-user-deposit" data-uid="${u.id}" data-email="${u.email}" style="font-size:11px; padding:3px 8px; margin-right:4px; background:#10b981; color:#0f172a; font-weight:800;" title="Credit bank deposit into user wallet">
+        <button class="btn sm ok btn-user-deposit" data-uid="${u.id}" data-email="${_admEsc(u.email)}" style="font-size:11px; padding:3px 8px; margin-right:4px; background:#10b981; color:#0f172a; font-weight:800;" title="Credit bank deposit into user wallet">
           ➕ Deposit
         </button>
-        <button class="btn sm btn-user-eod" data-uid="${u.id}" data-name="${u.name}" data-email="${u.email}" style="font-size:11px; padding:3px 8px; margin-right:4px; background:#0284c7; color:#fff; border:none; font-weight:700;" title="View comprehensive EOD statement">
+        <button class="btn sm btn-user-eod" data-uid="${u.id}" data-name="${_admEsc(u.name || 'Trader')}" data-email="${_admEsc(u.email)}" style="font-size:11px; padding:3px 8px; margin-right:4px; background:#0284c7; color:#fff; border:none; font-weight:700;" title="View comprehensive EOD statement">
           📊 EOD Report
         </button>
-        <button class="btn sm ok btn-user-withdraw" data-uid="${u.id}" data-email="${u.email}" data-bal="${totalBal}" style="font-size:11px; padding:3px 8px; margin-right:4px;" title="Withdraw all money for this user">
+        <button class="btn sm ok btn-user-withdraw" data-uid="${u.id}" data-email="${_admEsc(u.email)}" data-bal="${totalBal}" style="font-size:11px; padding:3px 8px; margin-right:4px;" title="Withdraw all money for this user">
           💸 Withdraw
         </button>
-        <button class="btn sm danger btn-user-delete" data-uid="${u.id}" data-email="${u.email}" style="font-size:11px; padding:3px 8px;" title="Remove user from system">
+        <button class="btn sm danger btn-user-delete" data-uid="${u.id}" data-email="${_admEsc(u.email)}" style="font-size:11px; padding:3px 8px;" title="Remove user from system">
           🗑️ Remove
         </button>
       </td>
@@ -358,7 +371,7 @@ async function loadUsers() {
     btn.onclick = async () => {
       const uid = btn.dataset.uid;
       const email = btn.dataset.email;
-      const amtStr = prompt(`Enter Bank Deposit Amount (INR) to credit to ${email}:`, "10000");
+      const amtStr = prompt(`Enter Deposit Amount ($ USD) to credit to ${email} (1 USD ≈ ₹${Math.round(window._admUsdtInrRate || 90)} INR):`, "100");
       if (!amtStr) return;
       const amt = parseFloat(amtStr);
       if (isNaN(amt) || amt <= 0) {
@@ -369,7 +382,7 @@ async function loadUsers() {
       try {
         const res = await post(`/api/admin/user/${uid}/deposit`, { amount: amt, bank_name: "ADMIN DIRECT BANK", note: "Admin Manual Bank Deposit" });
         if (res.success) {
-          alert(`Successfully credited $${amt.toLocaleString('en-IN')} to ${email}!`);
+          alert(`Successfully credited $${amt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${_admFmtInr(amt)}) to ${email}!`);
           await Promise.all([loadUsers(), loadOverview(), loadDeposits(), loadLedger()]);
         } else {
           alert(res.error || "Failed to credit deposit");
@@ -567,7 +580,7 @@ if ($("modal_eod_csv_btn")) {
     if (!_currentEodData) return;
     const trades = _currentEodData.closed_trades || [];
     const u = _currentEodData.user || {};
-    let csv = "Type,Date,Time,Symbol,Side,Entry Price,Exit Price,Margin (INR),Realized PnL (INR),Close Reason\n";
+    let csv = "Type,Date,Time,Symbol,Side,Entry Price,Exit Price,Margin (USD),Realized PnL (USD),Close Reason\n";
     trades.forEach(t => {
       const dt = t.closed_at ? new Date(t.closed_at * 1000) : new Date();
       csv += `"TRADE","${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${t.symbol}","${t.side}","${t.entry_price}","${t.current_price}","${t.margin}","${t.realized_pnl}","${t.close_reason || ''}"\n`;
@@ -614,22 +627,34 @@ if ($("btn_refresh_users") && !$("btn_refresh_users")._bound) {
 /* ---------------- bot storage ---------------- */
 async function loadStorage() {
   const d = await get("/api/admin/bot-storage");
-  $("pos_rows").innerHTML = d.open.length ? d.open.map(p => `<tr>
-    <td class="sub">${p.email}</td><td><b>${p.symbol}</b></td>
-    <td class="sub">${p.category || "—"}</td>
-    <td><span class="tag ${p.source === "BOT" ? "bot" : "manual"}">${p.source}</span></td>
-    <td><span class="tag ${p.side.toLowerCase()}">${p.side}</span></td>
-    <td class="r">${priceFmt(p.entry_price)}</td><td class="r">${priceFmt(p.current_price)}</td>
-    <td class="r">${inr(p.margin)}</td>
-    <td class="r ${p.unrealized_pnl >= 0 ? "up" : "down"}">${inr(p.unrealized_pnl)}</td>
-    <td class="sub">${ago(p.opened_at)}</td></tr>`).join("")
+  if (!d) return;
+  $("pos_rows").innerHTML = (d.open && d.open.length) ? d.open.map(p => {
+    const lev = Math.round(Number(p.leverage || 100));
+    const isLive = Boolean(p.is_live);
+    const modeTag = isLive
+      ? `<span class="pill live" style="font-size:9px; padding:1px 5px; border-color:#ef4444; color:#fca5a5; background:rgba(239,68,68,0.16);">${p.status === 'PENDING_BROKER' ? 'PENDING' : 'LIVE'}</span>`
+      : `<span class="tag bot" style="font-size:9px;">PAPER</span>`;
+    return `<tr>
+      <td class="sub">${_admEsc(p.email)}</td><td><b>${_admEsc(p.symbol)}</b> ${modeTag}</td>
+      <td class="sub">${_admEsc(p.category || "—")}</td>
+      <td><span class="tag ${p.source === "BOT" ? "bot" : "manual"}">${_admEsc(p.source)}</span></td>
+      <td><span class="tag ${(p.side || "").toLowerCase()}">${_admEsc(p.side)} ${lev}x</span></td>
+      <td class="r">${priceFmt(p.entry_price)}</td><td class="r">${priceFmt(p.current_price)}</td>
+      <td class="r">${inr(p.margin)}<div style="font-size:10px; color:#64748b;">${_admFmtInr(p.margin)}</div></td>
+      <td class="r ${p.unrealized_pnl >= 0 ? "up" : "down"}">${signed(p.unrealized_pnl)}<div style="font-size:10px; color:#94a3b8;">${_admFmtInr(p.unrealized_pnl)}</div></td>
+      <td class="sub" style="white-space:nowrap;">${ago(p.opened_at)} <button onclick="adminClosePosition(${p.id}, '${_admEsc(p.symbol)}')" class="btn sm danger" style="font-size:9.5px; padding:1px 6px; margin-left:4px;" title="Force close position #${p.id}">✕</button></td></tr>`;
+  }).join("")
     : '<tr><td colspan="10" class="empty">No open positions. Turn the bot ON.</td></tr>';
-  $("closed_rows").innerHTML = d.closed.length ? d.closed.map(p => `<tr>
-    <td>${p.symbol} <span class="sub">${p.email}</span></td>
-    <td><span class="tag ${p.side.toLowerCase()}">${p.side}</span></td>
-    <td class="r">${priceFmt(p.entry_price)} → ${priceFmt(p.current_price)}</td>
-    <td class="r ${p.realized_pnl >= 0 ? "up" : "down"}">${inr(p.realized_pnl)}</td>
-    <td class="sub">${p.close_reason}</td><td class="sub">${ago(p.closed_at)}</td></tr>`).join("")
+  $("closed_rows").innerHTML = (d.closed && d.closed.length) ? d.closed.map(p => {
+    const lev = Math.round(Number(p.leverage || 100));
+    const modeLbl = p.is_live ? '<span style="color:#f87171; font-size:9.5px; font-weight:800;">● LIVE</span>' : '<span style="color:#64748b; font-size:9.5px;">PAPER</span>';
+    return `<tr>
+      <td><b>${_admEsc(p.symbol)}</b> ${modeLbl} <span class="sub">${_admEsc(p.email)}</span></td>
+      <td><span class="tag ${(p.side || "").toLowerCase()}">${_admEsc(p.side)} ${lev}x</span></td>
+      <td class="r">${priceFmt(p.entry_price)} → ${priceFmt(p.current_price)}</td>
+      <td class="r ${p.realized_pnl >= 0 ? "up" : "down"}">${signed(p.realized_pnl)}<div style="font-size:10px; color:#94a3b8;">${_admFmtInr(p.realized_pnl)}</div></td>
+      <td class="sub">${_admEsc(p.close_reason)}</td><td class="sub">${ago(p.closed_at)}</td></tr>`;
+  }).join("")
     : '<tr><td colspan="6" class="empty">No closed trades yet.</td></tr>';
 }
 
@@ -664,7 +689,7 @@ if ($("btn_admin_credit_dep") && !$("btn_admin_credit_dep")._bound) {
   $("btn_admin_credit_dep").onclick = async () => {
     const email = prompt("Enter user email to credit bank deposit to:", "autotrader_pro@gmail.com");
     if (!email) return;
-    const amtStr = prompt(`Enter amount (INR) to deposit for ${email}:`, "25000");
+    const amtStr = prompt(`Enter Deposit Amount ($ USD) to deposit for ${email} (1 USD ≈ ₹${Math.round(window._admUsdtInrRate || 90)} INR):`, "100");
     if (!amtStr) return;
     const amt = parseFloat(amtStr);
     if (isNaN(amt) || amt <= 0) {
@@ -684,7 +709,7 @@ if ($("btn_admin_credit_dep") && !$("btn_admin_credit_dep")._bound) {
         note: "Admin Bank Settlement Credit"
       });
       if (res && res.success) {
-        alert(`Successfully deposited $${amt.toLocaleString('en-IN')} to ${email}!`);
+        alert(`Successfully deposited $${amt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${_admFmtInr(amt)}) to ${email}!`);
         await Promise.all([loadUsers(), loadOverview(), loadDeposits(), loadLedger()]);
       } else {
         alert(res.error || "Failed to credit deposit");
@@ -847,7 +872,7 @@ if ($("sidepanel_overlay")) {
   $("sidepanel_overlay").onclick = closeSidepanel;
 }
 
-/* ================================ ADMIN 995 SYMBOLS FEED & SIGNALS HUB ================================ */
+/* ================================ ADMIN LIVE SYMBOLS FEED & SIGNALS HUB ================================ */
 let adminHubData = null;
 let currentAdminHubFilter = "ALL";
 
@@ -859,15 +884,22 @@ async function openAdminFeedHub() {
 
   try {
     const d = await get("/api/markets/status");
-    adminHubData = d;
-    if ($("adm_hub_total")) $("adm_hub_total").textContent = d.total_symbols || 995;
-    if ($("adm_hub_live")) $("adm_hub_live").textContent = d.live_count || 992;
-    if ($("adm_hub_offline")) $("adm_hub_offline").textContent = d.offline_count || 3;
-    if ($("adm_hub_buy")) $("adm_hub_buy").textContent = d.signals_summary ? d.signals_summary.BUY : 472;
-    if ($("adm_hub_sell")) $("adm_hub_sell").textContent = d.signals_summary ? d.signals_summary.SELL : 473;
-    if ($("adm_filter_all")) $("adm_filter_all").textContent = `ALL (${d.total_symbols || 995})`;
-    if ($("adm_filter_live")) $("adm_filter_live").textContent = `🟢 LIVE (${d.live_count || 992})`;
-    if ($("adm_filter_offline")) $("adm_filter_offline").textContent = `○ OFFLINE / SIM (${d.offline_count || 3})`;
+    adminHubData = d || {};
+    const tot = Number(d.total_symbols ?? 0);
+    const live = Number(d.live_count ?? 0);
+    const off = Number(d.offline_count ?? 0);
+    const buys = Number((d.signals_summary && d.signals_summary.BUY) ?? 0);
+    const sells = Number((d.signals_summary && d.signals_summary.SELL) ?? 0);
+    if ($("adm_hub_title")) $("adm_hub_title").textContent = `ADMIN ${tot || "LIVE"} SYMBOLS FEED & SIGNALS DIAGNOSTIC`;
+    if ($("adm_hub_total")) $("adm_hub_total").textContent = num(tot);
+    if ($("adm_hub_live")) $("adm_hub_live").textContent = num(live);
+    if ($("adm_hub_offline")) $("adm_hub_offline").textContent = num(off);
+    if ($("adm_hub_buy")) $("adm_hub_buy").textContent = num(buys);
+    if ($("adm_hub_sell")) $("adm_hub_sell").textContent = num(sells);
+    if ($("adm_filter_all")) $("adm_filter_all").textContent = `ALL (${num(tot)})`;
+    if ($("adm_filter_live")) $("adm_filter_live").textContent = `🟢 LIVE (${num(live)})`;
+    if ($("adm_filter_offline")) $("adm_filter_offline").textContent = `○ OFFLINE / SIM (${num(off)})`;
+    if ($("admin_feed_stats")) $("admin_feed_stats").textContent = `🟢 ${num(live)}/${num(tot)} LIVE · ⚡ ${num(buys + sells)} SIGNALS`;
     renderAdminHubSymbols();
   } catch (err) {
     console.error("Failed to load admin feed status", err);
@@ -941,12 +973,12 @@ function renderAdminHubSymbols() {
 
     return `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
       <td style="padding:8px 6px;">
-        <b style="color:#f8fafc; font-family:monospace;">${item.symbol}</b>
-        <div style="font-size:10.5px; color:#94a3b8; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name || item.symbol}</div>
+        <b style="color:#f8fafc; font-family:monospace;">${_admEsc(item.symbol)}</b>
+        <div style="font-size:10.5px; color:#94a3b8; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${_admEsc(item.name || item.symbol)}</div>
       </td>
-      <td style="padding:8px 6px;"><span class="pill" style="font-size:9.5px; padding:1px 6px;">${(item.category || "CR").slice(0, 3)}</span></td>
+      <td style="padding:8px 6px;"><span class="pill" style="font-size:9.5px; padding:1px 6px;">${_admEsc((item.category || "CR").slice(0, 3))}</span></td>
       <td style="padding:8px 6px; font-size:11px;">${liveBadge}</td>
-      <td style="padding:8px 6px; font-family:monospace; color:#38bdf8; font-size:11px;">${item.source || "STREAM"}</td>
+      <td style="padding:8px 6px; font-family:monospace; color:#38bdf8; font-size:11px;">${_admEsc(item.source || "STREAM")}</td>
       <td style="padding:8px 6px; font-family:monospace; font-weight:700;">${priceFmt(item.price)}</td>
       <td style="padding:8px 6px; font-family:monospace; font-weight:700; ${chgClass}">${chgText}</td>
       <td style="padding:8px 6px;">${sigBadge}</td>
@@ -978,9 +1010,9 @@ if ($("adm_hub_search")) {
   };
 }
 
-preview(); if (getAdminToken()) tick();
-setInterval(async () => { if (!getAdminToken()) return; try { await loadOverview(); await loadStorage(); await loadGatekeeperAudit(); } catch (e) {} }, 3000);
-setInterval(async () => { if (!getAdminToken()) return; try { await loadWithdrawals(); await loadUsers(); await loadLogs(); await loadFirewall(); } catch (e) {} }, 7000);
+preview(); if (getAdminToken()) { tick(); if (typeof loadCoinDcxLiveAdmin === "function") loadCoinDcxLiveAdmin(); if (typeof fetchInstitutionalAI === "function") fetchInstitutionalAI(); }
+setInterval(async () => { if (!getAdminToken()) return; try { await loadOverview(); await loadStorage(); await loadGatekeeperAudit(); if (typeof loadCoinDcxLiveAdmin === "function") await loadCoinDcxLiveAdmin(); } catch (e) {} }, 4000);
+setInterval(async () => { if (!getAdminToken()) return; try { await loadWithdrawals(); await loadUsers(); await loadLogs(); await loadFirewall(); if (typeof fetchInstitutionalAI === "function") await fetchInstitutionalAI(); } catch (e) {} }, 8000);
 setInterval(async () => { if (!getAdminToken()) return; try { await loadDeposits(); await loadLedger(); } catch (e) {} }, 15000);
 
 /* ---------------- AraaBot Adapter Rules Gatekeeper Telemetry & Pre-Trade Audit Stream ---------------- */
@@ -997,7 +1029,7 @@ async function loadGatekeeperAudit() {
         $("gatekeeper_badge").style.background = "rgba(239,68,68,0.2)";
         $("gatekeeper_badge").style.borderColor = "#ef4444";
         $("gatekeeper_badge").style.color = "#ef4444";
-        $("gatekeeper_badge").textContent = "● CIRCUIT BREAKER TRIPPED (-₹250)";
+        $("gatekeeper_badge").textContent = "● CIRCUIT BREAKER TRIPPED (-$250 USD)";
       } else {
         $("gatekeeper_badge").className = "pill live";
         $("gatekeeper_badge").style.background = "rgba(16,185,129,0.18)";
@@ -1025,20 +1057,20 @@ async function loadGatekeeperAudit() {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
               <div style="display:flex; align-items:center; gap:8px;">
                 <span style="width:20px; height:20px; border-radius:50%; background:${iconBg}; color:#000; font-weight:900; font-size:11px; display:flex; align-items:center; justify-content:center;">${icon}</span>
-                <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">${rule.title}</span>
+                <span style="font-weight:800; font-size:12.5px; color:#f8fafc;">${_admEsc(rule.title)}</span>
               </div>
-              <span class="${pillClass}" style="font-size:9.5px; padding:2px 6px; background:${pillBg}; color:${pillColor}; border-color:${pillBorder};">${rule.status}</span>
+              <span class="${pillClass}" style="font-size:9.5px; padding:2px 6px; background:${pillBg}; color:${pillColor}; border-color:${pillBorder};">${_admEsc(rule.status)}</span>
             </div>
-            <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: ${rule.condition} (${rule.threshold})</div>
-            <div style="font-size:10.5px; color:${pillColor}; margin-top:4px; font-weight:600;">${rule.badge}</div>
+            <div style="font-size:11px; color:#94a3b8; font-family:'JetBrains Mono', monospace;">Condition: ${_admEsc(rule.condition)} (${_admEsc(rule.threshold)})</div>
+            <div style="font-size:10.5px; color:${pillColor}; margin-top:4px; font-weight:600;">${_admEsc(rule.badge)}</div>
           </div>
         `;
       });
       $("gatekeeper_rules_grid").innerHTML = gridHtml;
     }
 
-    // Render Stream Count & Audit Table
-    const logs = Array.isArray(res.inspection_logs) ? res.inspection_logs : [];
+    // Render Stream Count & Audit Table (backend returns audit_logs + inspection_logs alias)
+    const logs = Array.isArray(res.audit_logs) ? res.audit_logs : (Array.isArray(res.inspection_logs) ? res.inspection_logs : []);
     if ($("gatekeeper_stream_count")) {
       $("gatekeeper_stream_count").textContent = `${logs.length} Live Pre-Trade Inspection Audits Monitored`;
     }
@@ -1051,17 +1083,17 @@ async function loadGatekeeperAudit() {
           let rowsHtml = "";
           preds.forEach(p => {
             const timeStr = p.created_at ? new Date(p.created_at * 1000).toLocaleTimeString() : "--";
-            const winProb = p.win_probability || 0;
+            const winProb = Number(p.win_probability || 0);
             const passed = winProb >= 80;
             const decPill = passed
               ? `<span style="color:#10b981; font-weight:800;">✓ PASSED</span>`
               : `<span style="color:#ef4444; font-weight:800;">✕ BLOCKED (&lt;80%)</span>`;
             rowsHtml += `
               <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                <td style="padding:6px 10px; font-family:'JetBrains Mono', monospace; color:#94a3b8;">${timeStr}</td>
-                <td style="padding:6px 10px;"><span class="pill" style="font-size:10px; background:rgba(56,189,248,0.15); color:#38bdf8; border-color:#38bdf8;">AI_INSPECTION</span> <span style="font-weight:700;">${p.symbol || 'PAIR'}</span></td>
+                <td style="padding:6px 10px; font-family:'JetBrains Mono', monospace; color:#94a3b8;">${_admEsc(timeStr)}</td>
+                <td style="padding:6px 10px;"><span class="pill" style="font-size:10px; background:rgba(56,189,248,0.15); color:#38bdf8; border-color:#38bdf8;">AI_INSPECTION</span> <span style="font-weight:700;">${_admEsc(p.symbol || 'PAIR')}</span></td>
                 <td style="padding:6px 10px;">${decPill}</td>
-                <td style="padding:6px 10px; color:#cbd5e1;">Neural Win Prob: <b>${winProb}%</b> (${p.direction || 'HOLD'} ${p.action || 'WAIT'}) · Rule 6 Gemini Evaluation</td>
+                <td style="padding:6px 10px; color:#cbd5e1;">ARAA Win Prob: <b>${winProb}%</b> (${_admEsc(p.direction || 'HOLD')} ${_admEsc(p.action || 'WAIT')}) · Rule 6 ARAA Quant AI + 3-Agent Committee</td>
               </tr>
             `;
           });
@@ -1073,24 +1105,28 @@ async function loadGatekeeperAudit() {
         let rowsHtml = "";
         logs.forEach(l => {
           const timeStr = l.created_at ? new Date(l.created_at * 1000).toLocaleTimeString() : "--";
-          const isPassed = l.event_type === "SPOT_ORDER_EXECUTED" || l.severity === "SUCCESS";
+          const evType = String(l.event_type || "AUDIT");
+          const isPassed = evType.includes("EXECUTED") || evType === "COMMITTEE_SCAN" || evType === "LEVERAGE_AUTO_UPGRADED" || l.severity === "SUCCESS";
+          const isWarn = evType === "COMMITTEE_SKIP" || l.severity === "WARNING";
           const decBadge = isPassed
-            ? `<span style="color:#10b981; font-weight:800;">✓ EXECUTED</span>`
-            : `<span style="color:#ef4444; font-weight:800;">✕ REJECTED</span>`;
-          
-          let eventPill = `<span class="pill danger" style="font-size:10px;">${l.event_type}</span>`;
+            ? `<span style="color:#10b981; font-weight:800;">✓ PASSED</span>`
+            : isWarn
+            ? `<span style="color:#f59e0b; font-weight:800;">⊘ SKIPPED</span>`
+            : `<span style="color:#ef4444; font-weight:800;">✕ BLOCKED</span>`;
+
+          let eventPill = `<span class="pill danger" style="font-size:10px;">${_admEsc(evType)}</span>`;
           if (isPassed) {
-            eventPill = `<span class="pill live" style="font-size:10px;">${l.event_type}</span>`;
-          } else if (l.severity === "WARNING") {
-            eventPill = `<span class="pill warn" style="font-size:10px;">${l.event_type}</span>`;
+            eventPill = `<span class="pill live" style="font-size:10px;">${_admEsc(evType)}</span>`;
+          } else if (isWarn) {
+            eventPill = `<span class="pill warn" style="font-size:10px;">${_admEsc(evType)}</span>`;
           }
 
           rowsHtml += `
             <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-              <td style="padding:6px 10px; font-family:'JetBrains Mono', monospace; color:#94a3b8;">${timeStr}</td>
+              <td style="padding:6px 10px; font-family:'JetBrains Mono', monospace; color:#94a3b8;">${_admEsc(timeStr)}</td>
               <td style="padding:6px 10px;">${eventPill}</td>
               <td style="padding:6px 10px;">${decBadge}</td>
-              <td style="padding:6px 10px; color:#cbd5e1; word-break:break-word;">${l.message || '--'}</td>
+              <td style="padding:6px 10px; color:#cbd5e1; word-break:break-word;">${_admEsc(l.message || '--')}</td>
             </tr>
           `;
         });
@@ -1223,15 +1259,15 @@ async function loadFirewall() {
       const timeStr = ev.timestamp ? new Date(ev.timestamp * 1000).toLocaleTimeString() : "just now";
       
       return `<tr>
-        <td style="font-family:monospace; font-size:11px; color:#94a3b8;">${timeStr}</td>
+        <td style="font-family:monospace; font-size:11px; color:#94a3b8;">${_admEsc(timeStr)}</td>
         <td style="font-family:monospace; font-weight:700; color:#f8fafc;">
-          ${ev.ip}
-          ${d.active_bans && d.active_bans[ev.ip] ? `<button onclick="unbanFirewallIp('${ev.ip}')" class="btn sm danger" style="padding:1px 5px; font-size:9px; margin-left:6px;">UNBAN</button>` : ""}
+          ${_admEsc(ev.ip)}
+          ${d.active_bans && d.active_bans[ev.ip] ? `<button onclick="unbanFirewallIp('${_admEsc(ev.ip)}')" class="btn sm danger" style="padding:1px 5px; font-size:9px; margin-left:6px;">UNBAN</button>` : ""}
         </td>
-        <td style="color:#f59e0b; font-weight:700; font-size:11px;">⚠️ ${ev.threat || "ANOMALY"}</td>
-        <td style="font-family:monospace; font-size:11px; color:#38bdf8;">${ev.path || "/"}</td>
-        <td><span style="${badgeStyle}">${ev.action || "BLOCKED"}</span></td>
-        <td style="font-size:11px; color:#cbd5e1; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(ev.details || "").replace(/"/g, '&quot;')}">${ev.details || "—"}</td>
+        <td style="color:#f59e0b; font-weight:700; font-size:11px;">⚠️ ${_admEsc(ev.threat || "ANOMALY")}</td>
+        <td style="font-family:monospace; font-size:11px; color:#38bdf8;">${_admEsc(ev.path || "/")}</td>
+        <td><span style="${badgeStyle}">${_admEsc(ev.action || "BLOCKED")}</span></td>
+        <td style="font-size:11px; color:#cbd5e1; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${_admEsc(ev.details || "")}">${_admEsc(ev.details || "—")}</td>
       </tr>`;
     }).join("");
   } catch (err) {
@@ -1437,6 +1473,8 @@ async function handleAdminLoginSubmit(e) {
       }
       // Trigger full data reload
       await tick();
+      if (typeof loadCoinDcxLiveAdmin === "function") loadCoinDcxLiveAdmin();
+      if (typeof fetchInstitutionalAI === "function") fetchInstitutionalAI();
       if (typeof loadUpiGatewayConfig === "function") loadUpiGatewayConfig();
       if (typeof loadSlackConfig === "function") loadSlackConfig();
     } else {
@@ -1567,7 +1605,7 @@ async function runAdminPrompt() {
     if (btn) { btn.disabled = true; btn.innerHTML = "<span>⚙️ EXECUTING PROMPT...</span>"; }
     if (term) {
       term.style.display = "block";
-      term.innerHTML = `<span style="color:#38bdf8;">[ARAA-AI INTERPRETER]</span> Parsing prompt: <i>"${promptText}"</i>...`;
+      term.innerHTML = `<span style="color:#38bdf8;">[ARAA-AI INTERPRETER]</span> Parsing prompt: <i>"${_admEsc(promptText)}"</i>...`;
     }
 
     const adminUser = sessionStorage.getItem("tradepro_admin_user") || "Master Administrator";
@@ -1578,11 +1616,11 @@ async function runAdminPrompt() {
       const ts = new Date().toLocaleTimeString();
       let outputHtml = `
         <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:6px; margin-bottom:6px;">
-          <span style="color:#10b981; font-weight:800;">✓ PROMPT EXECUTED SUCCESSFULLY (${ts})</span>
+          <span style="color:#10b981; font-weight:800;">✓ PROMPT EXECUTED SUCCESSFULLY (${_admEsc(ts)})</span>
         </div>
-        <div style="color:#fff; margin-bottom:6px;">• <b>Action:</b> ${r.action_summary}</div>
-        <div style="color:#38bdf8; margin-bottom:6px;">• <b>System Updates Applied:</b> ${r.updates && r.updates.length ? r.updates.join(" · ") : "Platform logic updated"}</div>
-        <div style="color:#E01E5A;">• <b>Slack Bridge:</b> ${r.slack_dispatched ? 'Dispatched to Slack Channel' : 'Logged to Slack Audit Stream'} (${r.slack_status})</div>
+        <div style="color:#fff; margin-bottom:6px;">• <b>Action:</b> ${_admEsc(r.action_summary)}</div>
+        <div style="color:#38bdf8; margin-bottom:6px;">• <b>System Updates Applied:</b> ${r.updates && r.updates.length ? r.updates.map(u => _admEsc(u)).join(" · ") : "Platform logic updated"}</div>
+        <div style="color:#E01E5A;">• <b>Slack Bridge:</b> ${r.slack_dispatched ? 'Dispatched to Slack Channel' : 'Logged to Slack Audit Stream'} (${_admEsc(r.slack_status)})</div>
       `;
       if (term) term.innerHTML = outputHtml;
       if (inp) inp.value = "";
@@ -1877,6 +1915,215 @@ window.openCreateAdminModal = function() {
   });
 };
 
+window._admUsdtInrRate = window._admUsdtInrRate || 90.0;
+
+function _admEsc(v) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function _admFmtInr(usd) {
+  const rate = Number(window._admUsdtInrRate || 90.0);
+  const val = Number(usd || 0) * rate;
+  const sign = val < 0 ? "-" : "";
+  return `${sign}₹${Math.abs(val).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+window.adminClosePosition = async function(pid, sym) {
+  if (!confirm(`Force close position #${pid} (${sym}) immediately at market price?`)) return;
+  try {
+    const res = await post(`/api/admin/positions/${pid}/close`, {});
+    if (res && res.success) {
+      await Promise.all([loadStorage(), loadOverview(), loadUsers(), loadCoinDcxLiveAdmin()]);
+    } else {
+      alert((res && res.error) || `Failed to close ${sym}`);
+    }
+  } catch (e) {
+    alert("Error closing position: " + e.message);
+  }
+};
+
+window.adminToggleUserBot = async function(uid, enable) {
+  try {
+    const res = await post(`/api/admin/user/${uid}/bot-toggle`, { enable: Boolean(enable) });
+    if (res && res.success) {
+      await Promise.all([loadUsers(), loadOverview(), loadStorage(), loadCoinDcxLiveAdmin()]);
+    } else {
+      alert((res && res.error) || "Failed to toggle user bot");
+    }
+  } catch (e) {
+    alert("Bot toggle error: " + e.message);
+  }
+};
+
+window.adminResetEmergency = async function(uid) {
+  if (!confirm(`Clear emergency shutdown lock for User #${uid}?`)) return;
+  try {
+    const res = await post(`/api/admin/user/${uid}/emergency-reset`, {});
+    if (res && res.success) {
+      await Promise.all([loadUsers(), loadCoinDcxLiveAdmin()]);
+    } else {
+      alert((res && res.error) || "Failed to reset emergency lock");
+    }
+  } catch (e) {
+    alert("Reset error: " + e.message);
+  }
+};
+
+window.fetchInstitutionalAI = async function() {
+  try {
+    const res = await get("/api/admin/institutional-intelligence");
+    const mi = res && res.market_intelligence;
+    if (!mi) return;
+
+    const shocks = Array.isArray(mi.active_shocks) ? mi.active_shocks : [];
+    const acc = mi.prediction_accuracy || {};
+    const fw = mi.firewall_stats || {};
+    const gt = mi.global_trades || {};
+    const threats = Array.isArray(mi.recent_security_threats) ? mi.recent_security_threats : [];
+
+    if ($("adm_shock_status")) {
+      $("adm_shock_status").textContent = shocks.length ? `${shocks.length} ACTIVE SHOCK(S)` : "NO ACTIVE SHOCKS";
+      $("adm_shock_status").style.color = shocks.length ? "#ef4444" : "#10b981";
+    }
+    if ($("adm_pred_hitrate")) {
+      const hit = acc.directional_accuracy_pct ?? acc.accuracy_pct ?? acc.hit_rate_pct;
+      $("adm_pred_hitrate").textContent = hit !== undefined ? `${Number(hit).toFixed(1)}% Directional` : "--% Directional";
+    }
+    if ($("adm_waf_blocked")) {
+      const blocked = Number(fw.threats_blocked || 0);
+      $("adm_waf_blocked").textContent = `ACTIVE (${num(blocked)} Blocked)`;
+    }
+    if ($("adm_global_winrate")) {
+      $("adm_global_winrate").textContent = `${Number(gt.win_rate_pct || 0).toFixed(1)}% (${num(gt.total_trades || 0)} Trades · ${signed(gt.total_net_pnl_usd || 0)})`;
+    }
+    if ($("adm_anomaly_stream")) {
+      const lines = [];
+      shocks.forEach(s => lines.push(`<div style="color:#f87171;">[SHOCK] ${_admEsc(JSON.stringify(s))}</div>`));
+      threats.slice(0, 12).forEach(t => {
+        const ts = t.timestamp ? new Date(t.timestamp * 1000).toLocaleTimeString() : "--:--";
+        lines.push(`<div>[${_admEsc(ts)}] <b style="color:#fbbf24;">${_admEsc(t.threat || "WAF")}</b> ${_admEsc(t.ip || "")} ${_admEsc(t.path || "")} · ${_admEsc(t.details || "")}</div>`);
+      });
+      if (!lines.length) {
+        lines.push("[SYSTEM] Security Firewall Active. Zero active market shocks or hostile anomalies detected.");
+      }
+      $("adm_anomaly_stream").innerHTML = lines.join("");
+    }
+  } catch (err) {
+    console.warn("Institutional AI telemetry load error:", err);
+  }
+};
+
+window.loadCoinDcxLiveAdmin = async function() {
+  try {
+    const res = await get("/api/admin/coindcx-live");
+    if (!res) return;
+    const rate = Number(res.usdt_inr_rate || 90.0);
+    window._admUsdtInrRate = rate;
+
+    if ($("adm_usdt_inr_pill")) $("adm_usdt_inr_pill").textContent = `1 USDT ≈ ₹${rate.toFixed(2)} INR`;
+
+    const ms = res.market_stats || {};
+    if ($("admin_feed_stats") && ms.total_symbols) {
+      $("admin_feed_stats").textContent = `🟢 ${num(ms.live_count || 0)}/${num(ms.total_symbols)} LIVE · COINDCX+TV`;
+    }
+
+    const conns = Array.isArray(res.coindcx_connections) ? res.coindcx_connections : [];
+    const activeConns = conns.filter(c => c.is_live_active || String(c.status || "").toUpperCase() === "CONNECTED");
+    const totalEqUsd = conns.reduce((s, c) => s + Number(c.live_equity || c.live_balance || 0), 0);
+    const totalFreeUsd = conns.reduce((s, c) => s + Number(c.verified_margin || c.live_balance || 0), 0);
+    const commSum = res.committee_summary || {};
+    const posSum = res.positions_summary || {};
+
+    if ($("adm_cdx_conn_val")) $("adm_cdx_conn_val").textContent = `${activeConns.length} Live / ${conns.length} Connected`;
+    if ($("adm_cdx_conn_sub")) $("adm_cdx_conn_sub").textContent = activeConns.length ? "CoinDCX Futures Direct API Synced" : "Awaiting live exchange activation";
+    if ($("adm_cdx_equity_val")) $("adm_cdx_equity_val").textContent = `${inr(totalEqUsd)} (${_admFmtInr(totalEqUsd)})`;
+    if ($("adm_cdx_equity_sub")) $("adm_cdx_equity_sub").textContent = `Free margin: ${inr(totalFreeUsd)} (${_admFmtInr(totalFreeUsd)})`;
+    if ($("adm_cdx_comm_val")) $("adm_cdx_comm_val").textContent = `${num(commSum.approved_count || 0)} Approved / ${num(commSum.total_scans || 0)} Scans`;
+    if ($("adm_cdx_comm_sub")) $("adm_cdx_comm_sub").textContent = `Avg consensus: ${Number(commSum.avg_consensus || 0).toFixed(1)}% · Skipped: ${num(commSum.skipped_count || 0)}`;
+    if ($("adm_committee_summary_pill")) $("adm_committee_summary_pill").textContent = `COMMITTEE AVG ${Number(commSum.avg_consensus || 0).toFixed(1)}%`;
+
+    if ($("adm_cdx_pos_val")) $("adm_cdx_pos_val").textContent = `${num(posSum.live_open || 0)} Live / ${num(posSum.paper_open || 0)} Paper · Max ${Math.round(posSum.max_leverage || 100)}x`;
+    if ($("adm_cdx_pos_sub")) {
+      const liveToday = Number(posSum.today_live_realized_usd || 0);
+      $("adm_cdx_pos_sub").textContent = `Today Live Realized: ${signed(liveToday)} (${_admFmtInr(liveToday)}) · Floating: ${signed(posSum.live_unrealized_usd || 0)}`;
+    }
+
+    const acctBody = $("adm_cdx_accounts_tbody");
+    if (acctBody) {
+      acctBody.innerHTML = conns.length ? conns.map(c => {
+        const isLive = Boolean(c.is_live_active);
+        const botOn = Boolean(c.bot_enabled) && String(c.real_bot_status || "").toUpperCase() === "RUNNING";
+        const eq = Number(c.live_equity || c.live_balance || 0);
+        const freeM = Number(c.verified_margin || c.live_balance || 0);
+        const pnl = Number(c.today_live_pnl || 0);
+        const statusPill = isLive
+          ? `<span class="pill live" style="font-size:9.5px; padding:1px 6px; border-color:#ef4444; color:#fca5a5; background:rgba(239,68,68,0.18);">🔴 LIVE ACTIVE</span>`
+          : `<span class="pill" style="font-size:9.5px; padding:1px 6px;">${_admEsc(c.status || "CONNECTED")}</span>`;
+        const lockBtn = c.emergency_shutdown
+          ? `<button onclick="adminResetEmergency(${c.user_id})" class="btn sm danger" style="font-size:9.5px; padding:2px 6px; margin-left:4px;">🚨 UNLOCK</button>`
+          : "";
+        return `<tr>
+          <td><b>${_admEsc(c.name || "Trader")}</b><div class="sub" style="font-size:10px;">${_admEsc(c.email)}</div></td>
+          <td><code style="font-size:10.5px;">${_admEsc(c.api_key_masked || "—")}</code><div>${statusPill}</div></td>
+          <td><span style="font-weight:700; color:${botOn ? "#10b981" : "#94a3b8"};">${botOn ? "RUNNING" : _admEsc(c.real_bot_status || "PAUSED")}</span><div class="sub" style="font-size:10px;">${_admEsc(c.strategy_mode || "PURE_CRYPTO")} · ${Math.round(c.bot_leverage || 100)}x</div></td>
+          <td class="r">${inr(freeM)}<div style="font-size:10px; color:#94a3b8;">${_admFmtInr(freeM)}</div></td>
+          <td class="r">${inr(eq)}<div style="font-size:10px; color:#34d399;">${_admFmtInr(eq)}</div></td>
+          <td class="r">${num(c.live_open_positions || 0)}</td>
+          <td class="r ${pnl >= 0 ? "up" : "down"}">${signed(pnl)}<div style="font-size:10px; color:#94a3b8;">${_admFmtInr(pnl)}</div></td>
+          <td style="text-align:center; white-space:nowrap;">
+            <button onclick="adminToggleUserBot(${c.user_id}, ${!c.bot_enabled})" class="btn sm ${c.bot_enabled ? "danger" : "ok"}" style="font-size:10px; padding:2px 8px;">${c.bot_enabled ? "⏸ Pause" : "▶ Start"}</button>
+            ${lockBtn}
+          </td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="8" style="text-align:center; padding:14px; color:#64748b;">No CoinDCX broker connections configured yet.</td></tr>`;
+    }
+
+    const commBody = $("adm_committee_logs_body");
+    const comms = Array.isArray(res.committee_logs) ? res.committee_logs : [];
+    if (commBody) {
+      commBody.innerHTML = comms.length ? comms.slice(0, 20).map(cm => {
+        const ts = cm.created_at ? new Date(cm.created_at * 1000).toLocaleTimeString() : "--";
+        const act = String(cm.final_action || "WAIT").toUpperCase();
+        const isExec = act === "BUY" || act === "SELL" || act.includes("EXECUTE");
+        const actClr = isExec ? "#10b981" : "#fbbf24";
+        return `<tr title="${_admEsc(cm.explainable_rationale || "")}">
+          <td style="color:#94a3b8; font-family:monospace;">${_admEsc(ts)}</td>
+          <td><b>${_admEsc(cm.symbol)}</b><div class="sub" style="font-size:9.5px;">${_admEsc(cm.direction || "WAIT")}</div></td>
+          <td>${Number(cm.alpha_score || 0).toFixed(0)}% <span class="sub" style="font-size:9px;">${_admEsc(cm.alpha_verdict || "")}</span></td>
+          <td>${Number(cm.beta_score || 0).toFixed(0)}% <span class="sub" style="font-size:9px;">${_admEsc(cm.beta_verdict || "")}</span></td>
+          <td>${Number(cm.gamma_score || 0).toFixed(0)}% <span class="sub" style="font-size:9px;">${_admEsc(cm.gamma_verdict || "")}</span></td>
+          <td><b style="color:#c084fc;">${Number(cm.consensus_score || 0).toFixed(1)}%</b></td>
+          <td>${Number(cm.risk_reward || 0).toFixed(1)}:1</td>
+          <td><span style="color:${actClr}; font-weight:800;">${_admEsc(act)}</span></td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="8" style="text-align:center; padding:12px; color:#64748b;">No 3-Agent AI Committee votes logged yet.</td></tr>`;
+    }
+
+    const auditBody = $("adm_live_audit_body");
+    const audits = Array.isArray(res.live_audit_logs) ? res.live_audit_logs : [];
+    if (auditBody) {
+      auditBody.innerHTML = audits.length ? audits.slice(0, 30).map(a => {
+        const ts = a.created_at ? new Date(a.created_at * 1000).toLocaleTimeString() : "--";
+        const sev = String(a.severity || "INFO").toUpperCase();
+        const sevClr = (sev === "CRITICAL" || sev === "ERROR") ? "#ef4444" : sev === "WARNING" ? "#fbbf24" : "#10b981";
+        return `<tr>
+          <td style="color:#94a3b8; font-family:monospace;">${_admEsc(ts)}</td>
+          <td class="sub">${_admEsc(a.user_email || "SYSTEM")}</td>
+          <td><span class="pill" style="font-size:9.5px; padding:1px 5px; border-color:${sevClr}; color:${sevClr};">${_admEsc(a.event_type)}</span></td>
+          <td style="word-break:break-word; color:#cbd5e1;">${_admEsc(a.message || "")}</td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="4" style="text-align:center; padding:12px; color:#64748b;">No live execution audit events recorded yet.</td></tr>`;
+    }
+  } catch (err) {
+    console.warn("CoinDCX live admin fetch failed:", err);
+  }
+};
+
 // Auto-load Central Admin telemetry whenever view switches to super-admin
 const origSwitchAdminView = window.switchAdminView;
 window.switchAdminView = function(viewName) {
@@ -1885,6 +2132,12 @@ window.switchAdminView = function(viewName) {
   }
   if (typeof loadAdminSmcDna === "function") {
     loadAdminSmcDna();
+  }
+  if (viewName === "coindcx-live" || viewName === "overview" || viewName === "all") {
+    loadCoinDcxLiveAdmin();
+  }
+  if (viewName === "institutional-ai" || viewName === "all") {
+    fetchInstitutionalAI();
   }
   if (viewName === "super-admin" || viewName === "all") {
     loadCentralAdminData();

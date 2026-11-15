@@ -3045,14 +3045,17 @@ class Bot:
     # ---------- reporting ----------
     def storage(self):
         opens = query("SELECT p.*, u.email FROM positions p JOIN users u ON u.id=p.user_id "
-                      "WHERE p.status='OPEN' ORDER BY p.opened_at DESC")
+                      "WHERE p.status IN ('OPEN','PENDING_BROKER') ORDER BY p.is_live DESC, p.opened_at DESC")
         closed = query("SELECT p.*, u.email FROM positions p JOIN users u ON u.id=p.user_id "
                        "WHERE p.status='CLOSED' ORDER BY p.closed_at DESC LIMIT 40")
-        unreal = sum(p["unrealized_pnl"] for p in opens)
-        wins = [c for c in closed if c["realized_pnl"] > 0]
+        unreal = sum(float(p.get("unrealized_pnl") or 0) for p in opens)
+        wins = [c for c in closed if (c.get("realized_pnl") or 0) > 0]
+        live_cnt = sum(1 for p in opens if p.get("is_live"))
         return {
             "open": opens, "closed": closed,
             "open_count": len(opens),
+            "live_open_count": live_cnt,
+            "paper_open_count": len(opens) - live_cnt,
             "unrealized_pnl": round(unreal, 2),
             "realized_today": round(query_one(
                 "SELECT COALESCE(SUM(realized_pnl),0) s FROM positions WHERE status='CLOSED' "
