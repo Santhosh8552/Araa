@@ -209,13 +209,18 @@ class InstitutionalRiskEngine:
             cls._suspend_user_bot(user_id, f"Monthly loss circuit breaker triggered (${monthly_pnl:.2f} <= -${max_monthly:.2f})")
             return False, f"MONTHLY_LOSS_LIMIT_REACHED: Settled 30d P&L (${monthly_pnl:.2f}) breached limit (-${max_monthly:.2f}).", {}
 
-        # 6. Consecutive Losses Check
+        # 6. Consecutive Losses Check (300s cooldown after N consecutive strategy losses)
         recent_closed = query(
-            "SELECT realized_pnl FROM positions WHERE user_id=? AND status='CLOSED' ORDER BY closed_at DESC LIMIT ?",
+            "SELECT realized_pnl, closed_at FROM positions WHERE user_id=? AND status='CLOSED' "
+            "AND COALESCE(close_reason,'') NOT IN ('USER_STOPPED_BOT','DIRECTION_SWITCH_LONG','DIRECTION_SWITCH_SHORT','POSITION_LIMIT_REDUCED') "
+            "ORDER BY closed_at DESC LIMIT ?",
             (user_id, limits["max_consecutive_losses"])
         )
         if len(recent_closed) >= limits["max_consecutive_losses"] and all(float(r["realized_pnl"] or 0) < 0 for r in recent_closed):
-            return False, f"CONSECUTIVE_LOSS_COOLDOWN: {limits['max_consecutive_losses']} consecutive losing trades detected. Risk cooldown active.", {}
+            last_loss_at = float(recent_closed[0].get("closed_at") or 0.0)
+            if last_loss_at > 0 and (now - last_loss_at) < 300.0:
+                rem_s = int(300.0 - (now - last_loss_at))
+                return False, f"CONSECUTIVE_LOSS_COOLDOWN: {limits['max_consecutive_losses']} consecutive losing trades detected. Cooldown active ({rem_s}s remaining).", {}
 
         # 7. Stop-Loss & Risk/Reward Validation
         entry = float(entry_price or 0.0)
