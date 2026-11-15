@@ -5023,14 +5023,17 @@ if ($("btn_connect_coindcx_offline")) {
 
 async function refreshCoinDcxAuditLogs() {
   const container = $("coindcx_audit_logs_list");
-  if (!container) return;
+  const tabContainer = $("tab_coindcx_audit_logs_list");
+  if (!container && !tabContainer) return;
   try {
-    const res = await call("/api/coindcx/audit-logs?limit=30").catch(() => null);
+    const res = await call("/api/coindcx/audit-logs?limit=40").catch(() => null);
     if (!res || !res.logs || !res.logs.length) {
-      container.innerHTML = `<div style="text-align:center; padding:16px; color:#64748b;">No audit events recorded yet. Connect API or activate bot to begin logging.</div>`;
+      const emptyHtml = `<div style="text-align:center; padding:16px; color:#64748b;">No audit events recorded yet. Connect API or activate bot to begin logging.</div>`;
+      if (container) container.innerHTML = emptyHtml;
+      if (tabContainer) tabContainer.innerHTML = emptyHtml;
       return;
     }
-    container.innerHTML = res.logs.map(log => {
+    const html = res.logs.map(log => {
       const timeStr = log.created_at ? new Date(log.created_at * 1000).toLocaleTimeString() : "--:--";
       const isCritical = log.severity === "CRITICAL" || log.event_type.includes("EMERGENCY") || log.event_type.includes("GUARD");
       const isWarn = log.severity === "WARNING" || log.event_type.includes("REJECTED") || log.event_type.includes("SKIP") || log.event_type.includes("BLOCK");
@@ -5038,16 +5041,18 @@ async function refreshCoinDcxAuditLogs() {
       const color = isCritical ? "#ef4444" : isWarn ? "#f59e0b" : isSuccess ? "#10b981" : "#38bdf8";
       const bg = isCritical ? "rgba(239,68,68,0.15)" : isWarn ? "rgba(245,158,11,0.12)" : isSuccess ? "rgba(16,185,129,0.12)" : "rgba(56,189,248,0.08)";
       return `
-        <div style="background:${bg}; border-left:3px solid ${color}; padding:6px 10px; border-radius:4px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-            <span style="color:#94a3b8; font-size:10px;">${timeStr}</span>
-            <span style="background:${color}; color:#0f172a; font-weight:800; font-size:9px; padding:1px 5px; border-radius:3px;">${log.event_type}</span>
-            <span style="color:#e2e8f0; font-size:11px;">${log.message}</span>
+        <div style="background:${bg}; border-left:3px solid ${color}; padding:8px 12px; border-radius:5px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="color:#94a3b8; font-size:10.5px;">${timeStr}</span>
+            <span style="background:${color}; color:#0f172a; font-weight:800; font-size:9.5px; padding:2px 6px; border-radius:3px;">${log.event_type}</span>
+            <span style="color:#e2e8f0; font-size:11.5px;">${log.message}</span>
           </div>
-          <span style="color:${color}; font-size:9.5px; font-weight:700;">${log.severity}</span>
+          <span style="color:${color}; font-size:10px; font-weight:700;">${log.severity}</span>
         </div>
       `;
     }).join("");
+    if (container) container.innerHTML = html;
+    if (tabContainer) tabContainer.innerHTML = html;
   } catch (err) {
     console.warn("Could not refresh CoinDCX audit logs:", err);
   }
@@ -7890,7 +7895,7 @@ function showTab(t) {
   S.tab = t;
   document.querySelectorAll("#tabnav button").forEach(x => x.classList.toggle("active", x.dataset.tab === t));
   document.querySelectorAll("#tp_subnav .tp-subnav-list button").forEach(x => x.classList.toggle("active", x.dataset.page === t));
-  ["positions", "orders", "history", "analytics", "az_analysis", "auto_scalping", "eod", "ai_oracle"].forEach(x => {
+  ["positions", "orders", "history", "analytics", "az_analysis", "auto_scalping", "eod", "ai_oracle", "ai_prediction_hub", "coindcx_audit"].forEach(x => {
     const el = $("tab_" + x);
     if (el) el.classList.toggle("hide", x !== t);
   });
@@ -7899,6 +7904,7 @@ function showTab(t) {
   if (t === "az_analysis") renderTabAZ();
   if (t === "auto_scalping") renderAutoScalpingTab();
   if (t === "eod") renderEOD(S.acct);
+  if (t === "coindcx_audit" && typeof refreshCoinDcxAuditLogs === "function") refreshCoinDcxAuditLogs();
   if (window.tpSyncPageTitle && document.getElementById("app")?.classList.contains("page-mode")) tpSyncPageTitle(t);
 }
 
