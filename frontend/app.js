@@ -4831,8 +4831,7 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
   S.pf.goal.gain = Number(S.pf.goal.gain || 0);
 
   if (S.user) {
-    S.user.bot_enabled = 1;
-    S.user.bot_mode = "PURE_CRYPTO";
+    S.user.bot_enabled = 0;
     S.user.bot_market_focus = "FUTURES_USD";
   }
 
@@ -4872,30 +4871,16 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
   if (typeof loadWatch === "function") loadWatch();
   if (typeof loadChart === "function") loadChart();
 
-  // Auto-save bot configuration with PURE_CRYPTO (Option A) and active bot
-  call("/api/bot/config", {
-    method: "POST",
-    body: {
-      enabled: 1,
-      mode: "PURE_CRYPTO",
-      market_focus: "FUTURES_USD",
-      leverage: 100,
-      risk_pct: 2,
-      max_positions: 20
-    }
-  }).catch(() => {});
+  // 5. Celebration toast (do NOT auto-enable bot or overwrite user's saved Bot Rules)
+  toast(successMsg || `🚀 CoinDCX Connected: ${profName} ($${balUsd.toFixed(2)} USDT)! Review your Bot Rules and switch Bot ON to trade.`, "green");
 
-  // 5. Celebration toast
-  toast(successMsg || `🚀 CoinDCX Connected: ${profName} ($${balUsd.toFixed(2)} USDT)! Trading Terminal ready with live funds.`, "green");
-
-  // 6. Smoothly open the Bot settings drawer so user can verify rules & start bot immediately
+  // 6. Smoothly open the Bot settings drawer so user can verify their rules & switch Bot ON when ready
   setTimeout(() => {
     openDrawer("drawer_bot");
-    if ($("b_enabled")) $("b_enabled").checked = true;
-    if ($("b_mode")) $("b_mode").value = "PURE_CRYPTO";
+    if ($("b_enabled")) $("b_enabled").checked = Boolean(S.user && Number(S.user.bot_enabled || 0) === 1);
     if ($("b_msg")) {
       $("b_msg").className = "msg green";
-      $("b_msg").textContent = `✓ CoinDCX Live Connected for ${profName} ($${balUsd.toFixed(2)} USDT) — Pure Crypto Scalper 24/7 Active!`;
+      $("b_msg").textContent = `✓ CoinDCX Live Connected for ${profName} ($${balUsd.toFixed(2)} USDT). Review your Bot Rules & Settings and switch Bot ON to analyze markets & trade.`;
     }
   }, 400);
 };

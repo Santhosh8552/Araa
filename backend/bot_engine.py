@@ -1791,6 +1791,9 @@ class Bot:
     def run_user(self, user, open_list):
         self._reconcile_live_coindcx_positions(user, open_list)
         self.manage_exits(user, open_list)
+        # Strict gate: never enter new trades unless user explicitly enabled the bot
+        if not int(user.get("bot_enabled") or 0):
+            return len(open_list), 0
         # After exits, re-query to get the latest state — any closed slots are now free
         all_opens = self.open_positions_for(user["id"])
         open_list = [p for p in all_opens if p.get("source") not in ("MANUAL", "USER")]
@@ -1839,7 +1842,12 @@ class Bot:
             "SELECT COALESCE(SUM(realized_pnl), 0.0) as daily_pnl FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at >= ?",
             (user["id"], today_start)
         )
-        rbc_cfg = query_one("SELECT max_daily_loss, stop_loss_pct, take_profit_pct FROM real_bot_configs WHERE user_id=?", (user["id"],))
+        rbc_cfg = query_one("SELECT max_daily_loss, stop_loss_pct, take_profit_pct, bot_status, emergency_shutdown FROM real_bot_configs WHERE user_id=?", (user["id"],))
+        if is_live_flag and rbc_cfg and (
+            str(rbc_cfg.get("bot_status") or "").upper() == "PAUSED"
+            or int(rbc_cfg.get("emergency_shutdown") or 0) == 1
+        ):
+            return len(open_list), 0
         max_daily_loss_lim = abs(float((rbc_cfg and rbc_cfg.get("max_daily_loss")) or 250.0))
         daily_loss = float(daily_pnl_row["daily_pnl"] or 0.0) if daily_pnl_row else 0.0
         if is_live_flag and daily_loss <= -max_daily_loss_lim:
@@ -2550,7 +2558,7 @@ class Bot:
                         custom_tp = rbc_tp or (float(tr_custom_rules.get("target_profit_pct") or 0.0) if tr_custom_rules else 0.0)
                         strat_sl_pct = max(0.30, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                         strat_tp_pct = max(strat_sl_pct * 1.8, custom_tp or float(strat.get("take_profit_pct") or 1.00))
-                    risk_pct = max(0.2, min(35.0, float(strat.get("risk_per_trade_pct") or 15.0)))
+                    risk_pct = max(0.2, min(35.0, float(user.get("bot_risk_pct") or strat.get("risk_per_trade_pct") or 2.0)))
                     if capital >= 25.0 and free < 10.0:
                         self._log(user["id"], "MARGIN_SKIP", f"Skipped {picked['symbol']}: free margin (${free:.2f}) below $10 scalp minimum.")
                         continue
@@ -2573,6 +2581,38 @@ class Bot:
                     tp_price = round(picked["price"] * (1.0 + strat_tp_pct / 100.0) if is_buy_dir else picked["price"] * (1.0 - strat_tp_pct / 100.0), 8)
                     pred["stop_price"] = sl_price
                     pred["target_price"] = tp_price
+
+                    # Full 3-Agent AI Committee (Alpha, Beta, Gamma) pre-entry analysis & gate
+                    try:
+                        comm_res = AICommitteeOrchestrator.evaluate_candidate(
+                            symbol=picked["symbol"],
+                            user_id=user["id"],
+                            quote_data=q_row or picked,
+                            equity_usd=capital,
+                            requested_leverage=effective_lev,
+                            is_live=bool(is_live_flag),
+                            persist=True,
+                        )
+                        a_sc = (comm_res.get("alpha") or {}).get("score", 0)
+                        b_sc = (comm_res.get("beta") or {}).get("score", 0)
+                        g_ok = (comm_res.get("gamma") or {}).get("approved", True)
+                        self._log(
+                            user["id"],
+                            "COMMITTEE_SCAN",
+                            f"3-Agent Committee on {picked['side']} {picked['symbol']}: Alpha={a_sc}, Beta={b_sc}, Gamma={'OK' if g_ok else 'VETO'} -> {comm_res.get('final_action', 'SKIP')} (consensus={comm_res.get('consensus_score', 0)})",
+                        )
+                        if not comm_res.get("approved"):
+                            self._log(
+                                user["id"],
+                                "COMMITTEE_SKIP",
+                                f"AI Committee rejected {picked['side']} {picked['symbol']}: {comm_res.get('final_action')} ({(comm_res.get('gamma') or {}).get('veto_reason') or 'low consensus'})",
+                            )
+                            if pred_id:
+                                write("UPDATE ai_predictions SET post_entry_status='COMMITTEE_REJECTED', outcome='CANCELLED' WHERE id=?", (pred_id,))
+                            continue
+                    except Exception as comm_err:
+                        self._log(user["id"], "COMMITTEE_SKIP", f"AI Committee evaluation error for {picked['symbol']}: {comm_err}")
+                        continue
 
                     strat_eval = dict(strat)
                     strat_eval["leverage"] = effective_lev
@@ -2741,15 +2781,6 @@ class Bot:
                         "UPDATE positions SET order_uuid=?, fee_usd=?, slippage_bps=?, liquidation_price=? WHERE id=?",
                         (ord_uuid, fill_audit["fee_usd"], fill_audit["slippage_bps"], liq_p, pos_id)
                     )
-                AICommitteeOrchestrator.evaluate_candidate(
-                    symbol=picked["symbol"],
-                    user_id=user["id"],
-                    quote_data=q_row or picked,
-                    equity_usd=capital,
-                    requested_leverage=lev,
-                    is_live=bool(is_live_flag),
-                    persist=True,
-                )
             except Exception:
                 pass
 

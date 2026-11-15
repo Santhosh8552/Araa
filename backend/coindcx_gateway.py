@@ -2629,7 +2629,7 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
             ) VALUES (?, 'COINDCX', 'FUTURES_USD', ?, ?, ?, ?, ?, ?, ?, 'USDT', ?, ?, 1, ?, ?, ?, ?)
         """, (user_id, preserved_lev, enc_key, enc_secret, masked_key, usd_total, usd_total, usd_free, status_str, is_live_flag, profile_name, account_email, now, now))
 
-    write("UPDATE users SET bot_market_focus='FUTURES_USD', bot_leverage=? WHERE id=?", (preserved_lev, user_id))
+    write("UPDATE users SET bot_enabled=0, bot_market_focus='FUTURES_USD', bot_leverage=? WHERE id=?", (preserved_lev, user_id))
     write("UPDATE wallets SET deposit_balance=?, starting_balance=? WHERE user_id=?", (usd_total, usd_total, user_id))
 
     write("""
@@ -2641,6 +2641,7 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
         VALUES (?, 'COINDCX', 'PURE_CRYPTO', 25000.0, 250.0, 5, 'PAUSED', 0, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             provider_id='COINDCX',
+            bot_status='PAUSED',
             verified_funds=?,
             verified_margin=?,
             emergency_shutdown=0,
