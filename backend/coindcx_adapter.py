@@ -293,22 +293,6 @@ class CoinDCXExecutionAdapter:
         # Route by market type (Futures vs Spot vs Margin)
         if mkt_type == "FUTURES":
             endpoint = "/exchange/v1/derivatives/futures/orders/create"
-            elig = cdx.futures.check_eligibility()
-            if not elig.get("eligible"):
-                err = str(elig.get("reason") or "CoinDCX Futures not permitted on this API key.")
-                cls._record_order_mapping(
-                    user_id=user_id, client_order_id=cid, exchange_order_id="", position_id="",
-                    strategy_id=strategy_id, symbol=sym_up, market_type="FUTURES", side=side_up,
-                    mode="REAL", requested_qty=quantity, filled_qty=0.0, avg_fill_price=0.0,
-                    fee_usd=0.0, status="REJECTED", rejection_reason=err,
-                    endpoint=endpoint, sanitized_req={"symbol": sym_up, "side": order_side},
-                )
-                return {
-                    "success": False, "status": "REJECTED", "client_order_id": cid,
-                    "error": err, "endpoint": endpoint,
-                    "sanitized_request": {"symbol": sym_up, "side": order_side},
-                    "corrective_action": corrective_action_for(err),
-                }
 
             eff_lev = cdx.futures.resolve_leverage(sym_up, leverage, order_side)
             ref_price = float(price or 0.0)
