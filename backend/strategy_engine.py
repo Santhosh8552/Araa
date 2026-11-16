@@ -1477,8 +1477,15 @@ class StrategyEngine:
         default_sl = entry * (1.0 - sl_pct / 100.0) if is_long else entry * (1.0 + sl_pct / 100.0)
         current_sl = float(position.get("current_sl_price") or default_sl)
 
-        # Liquidation risk check
+        # Liquidation risk & fee-coverage floor for live CoinDCX scalps
+        is_live = int(position.get("is_live") or 0) == 1
         lev = max(1.0, float(position.get("leverage") or strat.get("leverage") or 10.0))
+        pos_margin = float(position.get("margin") or ((entry * qty) / max(1.0, lev)))
+        gross_pnl = (current_price - entry) * qty * direction
+        est_rt_fee = round(max(0.0, pos_margin) * lev * 0.0014, 4) if is_live else 0.0
+        min_live_profit = max(est_rt_fee * 1.15, est_rt_fee + max(0.02, pos_margin * 0.005)) if is_live else 0.0
+        live_fee_covered = (not is_live) or (gross_pnl >= min_live_profit)
+
         approx_liq_pct = 85.0 / lev
         if move_pct <= -approx_liq_pct:
             return {"action": "FULL_EXIT", "exit_reason": "LIQUIDATION_RISK", "close_qty": qty, "move_pct": round(move_pct, 4)}
@@ -1490,7 +1497,7 @@ class StrategyEngine:
         # Strategy invalidation / Opposite signal
         if strategy_invalidated:
             return {"action": "FULL_EXIT", "exit_reason": "STRATEGY_INVALIDATION", "close_qty": qty, "move_pct": round(move_pct, 4)}
-        if opposite_signal and bool(exit_rules.get("exit_on_opposite_signal", True)):
+        if opposite_signal and bool(exit_rules.get("exit_on_opposite_signal", True)) and (move_pct <= -(sl_pct * 0.5) or live_fee_covered):
             return {"action": "FULL_EXIT", "exit_reason": "OPPOSITE_SIGNAL", "close_qty": qty, "move_pct": round(move_pct, 4)}
 
         # Max holding time check
@@ -1499,8 +1506,8 @@ class StrategyEngine:
         if max_hold_sec > 0 and opened_at > 0 and (time.time() - opened_at) >= max_hold_sec:
             return {"action": "FULL_EXIT", "exit_reason": "MAX_HOLDING_TIME", "close_qty": qty, "move_pct": round(move_pct, 4)}
 
-        # Full Take-Profit trigger
-        if move_pct >= tp_pct:
+        # Full Take-Profit trigger (must clear CoinDCX taker fees + net gain when live)
+        if move_pct >= tp_pct and live_fee_covered:
             return {"action": "FULL_EXIT", "exit_reason": "TAKE_PROFIT", "close_qty": qty, "move_pct": round(move_pct, 4)}
 
         # Multi-stage R-multiple partial profit booking (TP1 = 1R -> default 30%, TP2 = 1.5R/2R -> default 30%)
@@ -1513,7 +1520,7 @@ class StrategyEngine:
         tp1_done = bool(position.get("tp1_booked") or int(position.get("partial_tp_booked") or 0) >= 1)
         tp2_done = bool(position.get("tp2_booked") or int(position.get("partial_tp_booked") or 0) >= 2)
 
-        if not tp1_done and current_r >= tp1_r:
+        if not tp1_done and current_r >= tp1_r and live_fee_covered:
             book_qty = round(qty * tp1_pct_book, 6)
             be_sl = round(entry * (1.0 + 0.001 * direction), 6)
             tightened_sl = max(current_sl, be_sl) if is_long else min(current_sl, be_sl)
@@ -1529,7 +1536,7 @@ class StrategyEngine:
                 "move_pct": round(move_pct, 4),
             }
 
-        if tp1_done and not tp2_done and current_r >= tp2_r:
+        if tp1_done and not tp2_done and current_r >= tp2_r and live_fee_covered:
             book_qty = round(qty * tp2_pct_book, 6)
             lock_1r_sl = round(entry + (r_dist_price * direction), 6)
             tightened_sl = max(current_sl, lock_1r_sl) if is_long else min(current_sl, lock_1r_sl)
@@ -1572,7 +1579,7 @@ class StrategyEngine:
         # Never widen protective stop: only tighten if candidate_sl improves upon current_sl
         improved_sl = round(max(current_sl, candidate_sl), 6) if is_long else round(min(current_sl, candidate_sl), 6)
 
-        if peak_pct >= (r_dist_pct * 0.8) and (peak_pct - move_pct) >= trail_pct and move_pct > 0.10:
+        if peak_pct >= (r_dist_pct * 0.8) and (peak_pct - move_pct) >= trail_pct and move_pct > 0.10 and live_fee_covered:
             return {
                 "action": "FULL_EXIT",
                 "exit_reason": "TRAILING_STOP",
@@ -1649,46 +1656,136 @@ class StrategyEngine:
         if close_qty <= 0:
             return {"success": False, "status": "INVALID_CLOSE_QTY", "error": "Close quantity must be positive."}
 
+        is_live_pos = int(pos.get("is_live") or 0) == 1
         direction = 1.0 if is_long else -1.0
         gross_pnl = (exec_px - entry_px) * close_qty * direction
-        fee_usd = (exec_px * close_qty) * 0.0005 * 2.0
+        fee_rate = 0.0007 if is_live_pos else 0.0005
+        fee_usd = round((exec_px * close_qty) * fee_rate * 2.0, 4)
         net_pnl = round(gross_pnl - fee_usd, 4)
         now = time.time()
 
         new_rem_qty = round(rem_qty - close_qty, 8)
-        is_live_pos = int(pos.get("is_live") or 0) == 1
+        is_full_exit = new_rem_qty <= 1e-8 or action == "FULL_EXIT"
 
         # CoinDCX Futures Live execution if live position
         exchange_order_id = ""
         if is_live_pos:
-            try:
-                close_side = "sell" if is_long else "buy"
-                ex_res = CoinDCXExecutionAdapter.submit_order(
-                    user_id=user_id,
-                    symbol=sym,
-                    side=close_side,
-                    market_type=str(pos.get("market_type") or "FUTURES"),
-                    quantity=close_qty,
-                    leverage=float(pos.get("leverage") or 20.0),
-                    order_type="market_order",
-                    price=exec_px,
-                    strategy_id=str(pos.get("strategy_id") or "auto_scalp"),
-                    client_order_id=f"exit_{position_id}_{int(time.time()*1000)}",
-                )
-                if ex_res.get("success"):
-                    exec_px = float(ex_res.get("avg_fill_price") or exec_px)
-                    exchange_order_id = str(ex_res.get("exchange_order_id") or "")
-                    if float(ex_res.get("fee_usd") or 0.0) > 0:
-                        fee_usd = float(ex_res.get("fee_usd"))
-                        net_pnl = round(gross_pnl - fee_usd, 4)
-            except Exception as e:
-                logger.error(f"Live exit submission exception on {sym}: {e}")
+            if is_full_exit:
+                try:
+                    from real_broker import close_real_order
+                    close_res = close_real_order(
+                        symbol=sym,
+                        side=side,
+                        qty=close_qty,
+                        user_id=user_id,
+                        ticket_id=pos.get("magic_id") or pos.get("command_id"),
+                        price=exec_px,
+                        reason=reason,
+                        leverage=float(pos.get("leverage") or 20.0),
+                    )
+                    exchange_order_id = str(
+                        (close_res or {}).get("order_id")
+                        or (close_res or {}).get("exchange_position_id")
+                        or ""
+                    )
+                    confirmed = bool(close_res and close_res.get("closed"))
+                    is_override = ("EMERGENCY" in reason.upper()) or ("MANUAL" in reason.upper())
+                    if not confirmed and (close_res or {}).get("mode") != "FALLBACK_PAPER" and not is_override:
+                        err_msg = str((close_res or {}).get("error") or "CoinDCX did not confirm futures exit")
+                        cls.log_bot_activity(
+                            user_id=user_id,
+                            event_type="Live Exit Retry Needed",
+                            symbol=sym,
+                            message=f"Exchange exit pending for {sym}: {err_msg}",
+                            details={"position_id": position_id, "close_res": close_res},
+                        )
+                        return {
+                            "success": False,
+                            "status": "EXCHANGE_CLOSE_FAILED",
+                            "error": err_msg,
+                            "position_id": position_id,
+                        }
+                    if close_res and close_res.get("exchange_settled") and close_res.get("realized_pnl") is not None:
+                        settled_pnl = round(float(close_res["realized_pnl"]), 4)
+                        if float(close_res.get("fee_usd") or 0.0) > 0:
+                            fee_usd = float(close_res["fee_usd"])
+                        pos_margin = max(
+                            0.0,
+                            float(pos.get("margin") or ((entry_px * close_qty) / max(1.0, float(pos.get("leverage") or 20.0)))),
+                        )
+                        is_liq_exit = bool(close_res.get("liquidated")) or ("LIQUIDAT" in reason.upper())
+                        if pos_margin > 0 and (not is_liq_exit) and settled_pnl <= -(pos_margin * 0.85) and gross_pnl >= -(pos_margin * 0.25):
+                            net_pnl = round(gross_pnl - fee_usd, 4)
+                        else:
+                            net_pnl = settled_pnl
+                except Exception as e:
+                    logger.error(f"Live full exit exception on {sym}: {e}")
+            else:
+                try:
+                    close_side = "sell" if is_long else "buy"
+                    ex_res = CoinDCXExecutionAdapter.submit_order(
+                        user_id=user_id,
+                        symbol=sym,
+                        side=close_side,
+                        market_type=str(pos.get("market_type") or "FUTURES"),
+                        quantity=close_qty,
+                        leverage=float(pos.get("leverage") or 20.0),
+                        order_type="market_order",
+                        price=exec_px,
+                        strategy_id=str(pos.get("strategy_id") or "auto_scalp"),
+                        client_order_id=f"exit_{position_id}_{int(time.time()*1000)}",
+                    )
+                    if ex_res.get("success"):
+                        exec_px = float(ex_res.get("avg_fill_price") or exec_px)
+                        exchange_order_id = str(ex_res.get("exchange_order_id") or "")
+                        if float(ex_res.get("fee_usd") or 0.0) > 0:
+                            fee_usd = float(ex_res.get("fee_usd"))
+                            net_pnl = round(((exec_px - entry_px) * close_qty * direction) - fee_usd, 4)
+                except Exception as e:
+                    logger.error(f"Live partial exit submission exception on {sym}: {e}")
 
-        if new_rem_qty <= 1e-8 or action == "FULL_EXIT":
+        if is_full_exit:
             write(
-                "UPDATE positions SET status='CLOSED', current_price=?, realized_pnl=COALESCE(realized_pnl,0)+?, close_reason=?, closed_at=? WHERE id=? AND user_id=?",
-                (exec_px, net_pnl, reason, now, int(position_id), int(user_id)),
+                "UPDATE positions SET status='CLOSED', current_price=?, realized_pnl=COALESCE(realized_pnl,0)+?, fee_usd=COALESCE(fee_usd,0)+?, close_reason=?, closed_at=? WHERE id=? AND user_id=?",
+                (exec_px, net_pnl, round(fee_usd, 4), reason, now, int(position_id), int(user_id)),
             )
+            pos_margin = float(pos.get("margin") or 0.0)
+            if not is_live_pos and pos_margin > 0:
+                write(
+                    "UPDATE wallets SET locked_balance=MAX(0, locked_balance-?), deposit_balance=deposit_balance+? WHERE user_id=?",
+                    (pos_margin, round(pos_margin + min(0.0, net_pnl), 4), int(user_id)),
+                )
+                if net_pnl >= 0:
+                    write("UPDATE wallets SET profit_balance=profit_balance+? WHERE user_id=?", (net_pnl, int(user_id)))
+            write(
+                "UPDATE broker_connections SET live_balance=round(live_balance+?,4), live_equity=round(live_equity+?,4), today_pnl=round(today_pnl+?,4) WHERE user_id=?",
+                (net_pnl, net_pnl, net_pnl, int(user_id)),
+            )
+            if is_live_pos:
+                try:
+                    CoinDCXExecutionAdapter.cancel_obsolete_protection(user_id, str(position_id), sym)
+                except Exception:
+                    pass
+                try:
+                    from coindcx_gateway import get_user_coindcx_client
+                    cdx = get_user_coindcx_client(user_id)
+                    if cdx:
+                        inv_fn = getattr(cdx, "invalidate_balance_cache", None)
+                        if callable(inv_fn):
+                            inv_fn()
+                        ok_b, b_info = cdx.get_balances(force=True)
+                        if ok_b and isinstance(b_info, dict) and not cdx.is_offline:
+                            rate = float(b_info.get("usdt_inr_rate") or 90.0)
+                            real_total = float(b_info.get("total_portfolio_usd") or (float(b_info.get("total_portfolio_inr") or 0.0) / max(1.0, rate)))
+                            real_free = float(b_info.get("usdt_free") if b_info.get("usdt_free") is not None else (float(b_info.get("inr_free") or 0.0) / max(1.0, rate)))
+                            if real_total >= 0:
+                                write(
+                                    "UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=?",
+                                    (round(real_total, 2), round(real_total, 2), round(max(0.0, real_free), 2), now, int(user_id)),
+                                )
+                                write("UPDATE wallets SET deposit_balance=? WHERE user_id=?", (round(real_total, 2), int(user_id)))
+                except Exception:
+                    pass
             # Record confirmed completed trade into TradeLearningEngine
             try:
                 from trade_learning_engine import TradeLearningEngine
@@ -1731,9 +1828,24 @@ class StrategyEngine:
             }
         else:
             partial_count = int(pos.get("partial_tp_booked") or 0) + 1
+            pos_margin = float(pos.get("margin") or 0.0)
+            rem_ratio = (new_rem_qty / rem_qty) if rem_qty > 0 else 0.0
+            new_margin = round(max(0.0, pos_margin * rem_ratio), 4)
+            released_margin = round(max(0.0, pos_margin - new_margin), 4)
             write(
-                "UPDATE positions SET qty=?, current_price=?, realized_pnl=COALESCE(realized_pnl,0)+?, partial_tp_booked=? WHERE id=? AND user_id=?",
-                (new_rem_qty, exec_px, net_pnl, partial_count, int(position_id), int(user_id)),
+                "UPDATE positions SET qty=?, margin=?, current_price=?, realized_pnl=COALESCE(realized_pnl,0)+?, fee_usd=COALESCE(fee_usd,0)+?, partial_tp_booked=? WHERE id=? AND user_id=?",
+                (new_rem_qty, new_margin, exec_px, net_pnl, round(fee_usd, 4), partial_count, int(position_id), int(user_id)),
+            )
+            if not is_live_pos and released_margin > 0:
+                write(
+                    "UPDATE wallets SET locked_balance=MAX(0, locked_balance-?), deposit_balance=deposit_balance+? WHERE user_id=?",
+                    (released_margin, round(released_margin + min(0.0, net_pnl), 4), int(user_id)),
+                )
+                if net_pnl >= 0:
+                    write("UPDATE wallets SET profit_balance=profit_balance+? WHERE user_id=?", (net_pnl, int(user_id)))
+            write(
+                "UPDATE broker_connections SET live_balance=round(live_balance+?,4), live_equity=round(live_equity+?,4), today_pnl=round(today_pnl+?,4) WHERE user_id=?",
+                (net_pnl, net_pnl, net_pnl, int(user_id)),
             )
             cls.log_bot_activity(
                 user_id=user_id,
@@ -1919,6 +2031,7 @@ class StrategyEngine:
 
         # Step 1: Receive live market data across timeframes
         candles_by_tf = {}
+        latest_live_px = 0.0
         for tf in [entry_tf, setup_tf, trend_tf]:
             c_list, _, _, _ = BacktestEngine.generate_historical_candles(symbol=sym, timeframe=tf, count=65)
             live_px = 0.0
@@ -1927,6 +2040,8 @@ class StrategyEngine:
                     live_px = float(feed.live_price(sym) or feed.price(sym) or 0.0)
                 except Exception:
                     pass
+            if live_px > 0:
+                latest_live_px = live_px
             if live_px > 0 and c_list:
                 c_list[-1]["c"] = live_px
                 c_list[-1]["h"] = max(float(c_list[-1]["h"]), live_px)
@@ -1956,21 +2071,32 @@ class StrategyEngine:
         opp = scalp_analysis.get("opportunity")
         status_rec["last_signal"] = opp
 
-        # Auto position exit evaluation on existing open positions (Auto Exit lifecycle)
+        # Auto position exit evaluation on existing open positions using LIVE quote first (never stale closed candle)
         open_scalp_pos = query("SELECT * FROM positions WHERE user_id=? AND status='OPEN' AND symbol=?", (user_id, sym))
-        curr_price = float(primary_ta.get("current_price") or 0.0)
+        curr_price = float(latest_live_px or primary_ta.get("current_price") or 0.0)
+        fut_mark_px = 0.0
+        if any(int(p.get("is_live") or 0) == 1 for p in (open_scalp_pos or [])):
+            try:
+                cdx_live = CoinDCXExecutionAdapter._client(user_id)
+                if cdx_live and not cdx_live.is_offline:
+                    fpos = cdx_live.futures.find_open_position(sym)
+                    if isinstance(fpos, dict):
+                        fut_mark_px = float(fpos.get("mark_price") or fpos.get("avg_price") or 0.0)
+            except Exception:
+                pass
         atr_val = float((primary_ta.get("indicators") or {}).get("atr") or (curr_price * 0.005))
         exit_results = []
         for pos in open_scalp_pos or []:
+            pos_px = fut_mark_px if (fut_mark_px > 0 and int(pos.get("is_live") or 0) == 1) else (curr_price or float(pos.get("current_price") or pos.get("entry_price") or 0.0))
             exit_decision = cls.evaluate_v2_smart_profit_and_exit(
                 user_id=user_id,
                 position=pos,
-                current_price=curr_price,
+                current_price=pos_px,
                 atr_value=atr_val,
                 opposite_signal=bool(opp and opp.get("side") and opp.get("side") != pos.get("side")),
             )
             if exit_decision.get("action") != "HOLD":
-                res_exit = cls.execute_auto_exit(user_id, pos["id"], exit_decision, curr_price)
+                res_exit = cls.execute_auto_exit(user_id, pos["id"], exit_decision, pos_px)
                 exit_results.append(res_exit)
 
         # Step 3.5: Market Shock & Rapid Price Surge / Crash Detection

@@ -575,6 +575,7 @@ def close_real_order(symbol, side, qty, user_id=None, ticket_id=None, price=None
                             "exchange_settled": bool(settle),
                             "realized_pnl": float((settle or {}).get("net_pnl") or 0.0),
                             "fee_usd": float((settle or {}).get("fee_usd") or 0.0),
+                            "liquidated": bool((settle or {}).get("liquidated")),
                         }
                     return {"mode": "LIVE_ERROR", "closed": False, "exchange": "COINDCX",
                             "error": (res or {}).get("message", "futures exit failed")}
@@ -614,6 +615,7 @@ def close_real_order(symbol, side, qty, user_id=None, ticket_id=None, price=None
                     "exchange_settled": bool(settle),
                     "realized_pnl": float((settle or {}).get("net_pnl") or 0.0),
                     "fee_usd": float((settle or {}).get("fee_usd") or 0.0),
+                    "liquidated": bool((settle or {}).get("liquidated")),
                 }
 
             sell_qty = (qty / lev) * 0.95 if (lev > 1.0 and close_side == "sell") else qty

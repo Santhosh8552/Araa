@@ -237,6 +237,145 @@ class CoinDCXSettlementAndBalanceTests(unittest.TestCase):
             self.assertEqual(seen_levs, [100, 25])
             self.assertEqual(float(res["leverage"]), 25.0)
 
+    def test_7_settlement_ignores_entry_margin_debit_and_unposted_exit(self):
+        # 1) Unposted exit: ONLY "default" margin debit row present -> MUST return None (never -margin!)
+        def only_default_req(endpoint, method="GET", body=None, **kw):
+            return True, [{"stage": "default", "amount": -6.11, "fee_amount": 0.09, "settlement_amount": -6.20}]
+
+        fut = coindcx_gateway.CoinDCXFuturesAdapter("k", "s", user_id=self.uid, is_offline=False)
+        with patch.object(coindcx_gateway, "_request", side_effect=only_default_req):
+            self.assertIsNone(fut.get_position_settlement("pos_cookie_1"))
+
+        # 2) Both default margin debit (-6.11) AND Exit (+0.35 gross, 0.09 fee) -> ignores -6.11!
+        def default_plus_exit_req(endpoint, method="GET", body=None, **kw):
+            return True, [
+                {"stage": "default", "amount": -6.11, "fee_amount": 0.09, "settlement_amount": -6.20},
+                {"stage": "Exit", "amount": 0.35, "fee_amount": 0.09, "settlement_amount": 0.26},
+            ]
+
+        with patch.object(coindcx_gateway, "_request", side_effect=default_plus_exit_req):
+            settle = fut.get_position_settlement("pos_cookie_1")
+            self.assertIsNotNone(settle)
+            self.assertAlmostEqual(settle["net_pnl"], 0.17, places=2)
+            self.assertAlmostEqual(settle["fee_usd"], 0.18, places=2)
+
+        # 3) INR-margined transaction rows are converted to USDT instead of treated 1:1 as USD
+        def inr_rows_req(endpoint, method="GET", body=None, **kw):
+            return True, [
+                {"stage": "default", "margin_currency_short_name": "INR", "amount": -550.0, "fee_amount": 9.0, "settlement_amount": -559.0},
+                {"stage": "Exit", "margin_currency_short_name": "INR", "amount": 270.0, "fee_amount": 9.0, "settlement_amount": 261.0},
+            ]
+
+        with patch.object(coindcx_gateway, "_request", side_effect=inr_rows_req):
+            settle_inr = fut.get_position_settlement("pos_inr_1", usdt_inr_rate=90.0)
+            self.assertIsNotNone(settle_inr)
+            self.assertAlmostEqual(settle_inr["net_pnl"], 2.80, places=2)
+
+    def test_8_profitable_manual_close_never_books_minus_100pct_margin_loss(self):
+        now = time.time()
+        qty_cookie = round((6.11 * 30.0) / 0.00833, 4)
+        pid = write(
+            """INSERT INTO positions(
+                 user_id, symbol, source, side, qty, entry_price, margin,
+                 target_pct, stop_pct, status, current_price, unrealized_pnl,
+                 opened_at, is_live, leverage, magic_id
+               ) VALUES(?, 'COOKIEUSDT', 'COINDCX', 'LONG', ?, 0.00833, 6.11, 0.5, 0.3, 'OPEN', 0.008334, 0.09, ?, 1, 30.0, 'pos_cookie_live')""",
+            (self.uid, qty_cookie, now - 65.0),
+        )
+        pos_row = query_one("SELECT * FROM positions WHERE id=?", (pid,))
+        bot = Bot(PriceFeed())
+
+        # Case A: Exchange closes via close_real_order and ledger has anomalous -margin (-6.11) on a +0.05% exit
+        with patch.object(
+            real_broker,
+            "close_real_order",
+            return_value={
+                "mode": "LIVE_REAL",
+                "closed": True,
+                "exchange": "COINDCX",
+                "market_type": "FUTURES",
+                "exchange_settled": True,
+                "realized_pnl": -6.11,
+                "fee_usd": 0.18,
+                "liquidated": False,
+            },
+        ), patch.object(coindcx_gateway, "get_user_coindcx_client", return_value=None):
+            net = bot.close(pos_row, 0.008334, "MANUAL_CLOSE")
+            self.assertGreater(net, -0.50)
+            self.assertNotAlmostEqual(net, -6.11, places=1)
+
+    def test_9_auto_scalping_live_fee_gate_and_full_exit_via_close_real_order(self):
+        from strategy_engine import StrategyEngine
+
+        # Sub-fee live move must NOT trigger TAKE_PROFIT premature loss-making exit
+        live_pos = {
+            "id": 888,
+            "user_id": self.uid,
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": 80000.0,
+            "current_sl_price": 79760.0,
+            "stop_pct": 0.30,
+            "target_pct": 0.15,
+            "qty": 0.0125,  # $1000 notional -> margin=$10 @ 100x -> est_fee=$1.40
+            "margin": 10.0,
+            "leverage": 100.0,
+            "partial_tp_booked": 0,
+            "is_live": 1,
+        }
+        # +0.15% = +$1.50 gross on $1000 notional, est_fee=$1.40, min_live_profit=$1.61 -> must NOT close or partial-exit!
+        dec_sub = StrategyEngine.evaluate_v2_smart_profit_and_exit(self.uid, live_pos, current_price=80120.0)
+        self.assertNotIn(dec_sub["action"], ("FULL_EXIT", "PARTIAL_EXIT"))
+        # +0.05% = +$0.50 gross (<0.5R, below fee) -> holds cleanly!
+        dec_small = StrategyEngine.evaluate_v2_smart_profit_and_exit(self.uid, live_pos, current_price=80040.0)
+        self.assertEqual(dec_small["action"], "HOLD")
+        # Stop-loss still fires immediately regardless of fee floor
+        dec_sl = StrategyEngine.evaluate_v2_smart_profit_and_exit(self.uid, live_pos, current_price=79750.0)
+        self.assertEqual(dec_sl["action"], "FULL_EXIT")
+        self.assertEqual(dec_sl["exit_reason"], "STOP_LOSS")
+
+        # Full live auto-exit must route via close_real_order (not submit_order) and cancel protections
+        now = time.time()
+        pid = write(
+            """INSERT INTO positions(
+                 user_id, symbol, source, side, qty, entry_price, margin,
+                 target_pct, stop_pct, status, current_price, unrealized_pnl,
+                 opened_at, is_live, leverage, magic_id
+               ) VALUES(?, 'BTCUSDT', 'COINDCX_ARAA_SCALP', 'LONG', 0.01, 80000.0, 8.0, 0.6, 0.3, 'OPEN', 80480.0, 4.80, ?, 1, 100.0, 'pos_scalp_uuid')""",
+            (self.uid, now - 30.0),
+        )
+        close_calls = []
+
+        def fake_close_real(**kw):
+            close_calls.append(kw)
+            return {
+                "mode": "LIVE_REAL",
+                "closed": True,
+                "exchange": "COINDCX",
+                "market_type": "FUTURES",
+                "order_id": "ord_exit_1",
+                "exchange_settled": True,
+                "realized_pnl": 3.68,
+                "fee_usd": 1.12,
+                "liquidated": False,
+            }
+
+        with patch.object(real_broker, "close_real_order", side_effect=fake_close_real), \
+             patch.object(CoinDCXExecutionAdapter, "cancel_obsolete_protection") as mock_cancel, \
+             patch.object(coindcx_gateway, "get_user_coindcx_client", return_value=None):
+            res = StrategyEngine.execute_auto_exit(
+                self.uid,
+                pid,
+                {"action": "FULL_EXIT", "exit_reason": "TAKE_PROFIT", "close_qty": 0.01},
+                80480.0,
+            )
+            self.assertTrue(res["success"], res)
+            self.assertEqual(len(close_calls), 1)
+            self.assertEqual(close_calls[0]["symbol"], "BTCUSDT")
+            self.assertAlmostEqual(res["realized_pnl_usdt"], 3.68, places=2)
+            mock_cancel.assert_called_once()
+
+
 
 if __name__ == "__main__":
     unittest.main()

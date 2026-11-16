@@ -2299,7 +2299,7 @@ function histTable(trades) {
           <div style="font-size:10px; font-weight:700; margin-top:1px;" class="${pnlClass}">
             ${roiSign}${item.roi_pct.toFixed(2)}% ROI
           </div>
-          ${(isCoinDcx || String(item.source||'').includes('COINDCX')) ? `<div style="font-size:9.5px; color:#10b981; font-weight:700; margin-top:2px;" title="Real Settled Futures P&L">🟢 Settled: ${signed(item.pnl)}</div>` : ''}
+          ${(isCoinDcx || String(item.source||'').includes('COINDCX')) ? `<div style="font-size:9.5px; color:${item.pnl >= 0 ? '#10b981' : '#ef4444'}; font-weight:700; margin-top:2px;" title="Real Settled Futures P&L">${item.pnl >= 0 ? '🟢' : '🔴'} Settled: ${signed(item.pnl)}</div>` : ''}
         </td>
 
         <td class="txt" style="vertical-align:middle;">
@@ -9211,7 +9211,11 @@ async function pingFeed() {
     $("live_dot").className = "dot" + (live ? "" : " off");
     $("live_dot").title = "crypto " + h.feed + " · other markets " + h.market_feed;
     S.syms = h.symbols_tracked;
-    $("ws_badge").textContent = "● WS CONNECTED · " + h.symbols_tracked + " SYMBOLS · PAPER";
+    const isRealLive = Boolean((S.pf && S.pf.is_live_mode) || (S.broker && S.broker.is_live));
+    const modeTag = isRealLive
+      ? ((S.broker && (S.broker.is_coindcx || S.broker.name === "COINDCX" || S.broker.broker_name === "COINDCX")) ? "COINDCX LIVE" : "LIVE")
+      : "PAPER";
+    $("ws_badge").textContent = "● WS CONNECTED · " + h.symbols_tracked + " SYMBOLS · " + modeTag;
     $("ws_badge").style.color = live ? "var(--green)" : "var(--amber)";
     $("s_feed").textContent = "FEED " + (h.market_feed || h.feed);
     S.running = !!h.bot_running;
@@ -10454,7 +10458,7 @@ async function renderAutoScalpingTab() {
     const sigTxt = $("scalp_active_signal_txt");
     if (sigTxt) {
       if (sig && sig.side) {
-        sigTxt.textContent = `🎯 ${sig.side} ${sig.symbol} @ $${Number(sig.entry_price || 0).toFixed(2)} [SL: $${Number(sig.suggested_sl || 0).toFixed(2)} | TP: $${Number(sig.suggested_tp || 0).toFixed(2)}]`;
+        sigTxt.textContent = `🎯 ${sig.side} ${sig.symbol} @ $${priceFmt(sig.entry_price || 0)} [SL: $${priceFmt(sig.suggested_sl || 0)} | TP: $${priceFmt(sig.suggested_tp || 0)}]`;
         sigTxt.style.color = sig.side === "LONG" ? "#10b981" : "#ef4444";
       } else {
         sigTxt.textContent = `Scanning ${sym} (${entryTf}/${setupTf}/${trendTf}) — awaiting strategy setup trigger.`;
@@ -10486,11 +10490,11 @@ async function renderAutoScalpingTab() {
             <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
               <td style="padding:10px 12px; font-weight:700;"><b>${p.symbol}</b> ${p.is_live ? '<span style="font-size:9px; color:#10b981; border:1px solid #10b981; padding:0 3px; border-radius:3px;">LIVE</span>' : '<span style="font-size:9px; color:var(--muted); border:1px solid var(--line); padding:0 3px; border-radius:3px;">PAPER</span>'}</td>
               <td style="padding:10px 12px; font-weight:700; color:${dirColor};">${p.direction}</td>
-              <td style="padding:10px 12px;">$${Number(p.entry_price).toFixed(2)}</td>
-              <td style="padding:10px 12px;">$${Number(p.mark_price).toFixed(2)}</td>
+              <td style="padding:10px 12px;">$${priceFmt(p.entry_price)}</td>
+              <td style="padding:10px 12px;">$${priceFmt(p.mark_price)}</td>
               <td style="padding:10px 12px;">${Number(p.quantity).toFixed(4)}</td>
-              <td style="padding:10px 12px; color:#ef4444;">$${Number(p.stop_loss).toFixed(2)}</td>
-              <td style="padding:10px 12px; color:#10b981;">$${Number(p.take_profit).toFixed(2)}</td>
+              <td style="padding:10px 12px; color:#ef4444;">$${priceFmt(p.stop_loss)}</td>
+              <td style="padding:10px 12px; color:#10b981;">$${priceFmt(p.take_profit)}</td>
               <td style="padding:10px 12px; color:#eab308;">$${Number(p.trading_fees).toFixed(4)}</td>
               <td style="padding:10px 12px; font-weight:700; color:${pnlColor};">${pnlSign}$${Number(p.unrealized_pnl).toFixed(2)}</td>
               <td style="padding:10px 12px;"><span style="background:rgba(16,185,129,0.15); color:#10b981; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600;">${p.partial_booking_status}</span></td>

@@ -1545,38 +1545,75 @@ class CoinDCXFuturesAdapter:
         self,
         position_id: str,
         margin_currency: str = "USDT",
+        usdt_inr_rate: float = 90.0,
     ) -> Optional[Dict[str, Any]]:
         """Compute confirmed CoinDCX net settlement P&L and fees from position transactions."""
         ok, rows = self.get_position_transactions(position_id, stage="all", margin_currency=margin_currency)
         if not ok or not rows:
             return None
+        inr_rate = max(1.0, float(usdt_inr_rate or 90.0))
         realized_amt = 0.0
         settlement_amt = 0.0
         total_fees = 0.0
+        unaccounted_entry_fee = 0.0
         has_exit_tx = False
+        has_liq_tx = False
         for tx in rows:
             if not isinstance(tx, dict):
                 continue
-            stage = str(tx.get("stage") or "").lower()
-            amt = float(tx.get("amount") or 0.0)
-            s_amt = float(tx.get("settlement_amount") or 0.0)
-            fee = float(tx.get("fee_amount") or 0.0)
+            stage = str(tx.get("stage") or "").strip().lower()
+            tx_ccy = str(tx.get("margin_currency_short_name") or margin_currency or "USDT").strip().upper()
+            div = inr_rate if tx_ccy == "INR" else 1.0
+            amt = float(tx.get("amount") or 0.0) / div
+            s_amt = float(tx.get("settlement_amount") or 0.0) / div
+            fee = abs(float(tx.get("fee_amount") or 0.0)) / div
             total_fees += fee
-            if stage in ("exit", "tpsl_exit", "liquidation", "funding") or abs(amt) > 1e-12 or abs(s_amt) > 1e-12:
-                if stage in ("exit", "tpsl_exit", "liquidation"):
-                    has_exit_tx = True
+            if stage in ("exit", "tpsl_exit", "liquidation"):
+                has_exit_tx = True
+                if stage == "liquidation":
+                    has_liq_tx = True
                 realized_amt += amt
                 settlement_amt += s_amt
-        if not has_exit_tx and abs(realized_amt) < 1e-12 and abs(settlement_amt) < 1e-12:
+            elif stage == "funding":
+                realized_amt += amt
+                settlement_amt += s_amt
+            elif stage == "default":
+                # Only count entry row's settlement_amount when it is strictly the entry fee debit
+                # (never sum initial margin allocation/blocking debits as realized P&L losses).
+                is_fee_only_entry = (
+                    abs(amt) < 1e-9
+                    and fee > 0.0
+                    and s_amt < 0.0
+                    and abs(s_amt) <= (fee * 2.0 + 0.05)
+                )
+                if is_fee_only_entry:
+                    settlement_amt += s_amt
+                else:
+                    unaccounted_entry_fee += fee
+
+        # Never treat entry-only / unclosed ledger rows as exit settlement
+        if not has_exit_tx:
             return None
-        # Note: CoinDCX settlement_amount reflects wallet delta (amount - fee_amount); use settlement_amount when non-zero else amount - fees
-        net_pnl = settlement_amt if abs(settlement_amt) > 1e-9 else (realized_amt - total_fees)
+
+        adjusted_settle = settlement_amt - unaccounted_entry_fee
+        gross_net = realized_amt - total_fees
+        if abs(settlement_amt) > 1e-9:
+            # If settlement_amount includes principal margin movement (diverges from gross - fees),
+            # fall back to realized_amt - total_fees so released/locked margin is never booked as P&L.
+            if abs(realized_amt) > 1e-9 and abs(adjusted_settle - gross_net) > max(0.5, abs(realized_amt) + total_fees):
+                net_pnl = gross_net
+            else:
+                net_pnl = adjusted_settle
+        else:
+            net_pnl = gross_net
+
         return {
             "position_id": str(position_id),
             "gross_pnl": round(realized_amt, 4),
             "fee_usd": round(total_fees, 4),
             "settlement_amount": round(settlement_amt, 4),
             "net_pnl": round(net_pnl, 4),
+            "liquidated": has_liq_tx,
             "tx_count": len(rows),
         }
 

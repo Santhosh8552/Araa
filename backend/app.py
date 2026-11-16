@@ -4789,14 +4789,16 @@ def api_v2_scalping_dashboard():
         side_p = str(p.get("side") or "LONG").upper()
         dir_mult = 1.0 if side_p in ("BUY", "LONG") else -1.0
         gross_pnl = (mark_px - ent_px) * p_qty * dir_mult if (mark_px > 0 and ent_px > 0) else 0.0
-        fees = (mark_px * p_qty) * 0.0005 * 2.0
+        is_live_p = bool(p.get("is_live"))
+        fee_rate = 0.0007 if is_live_p else 0.0005
+        fees = (mark_px * p_qty) * fee_rate * 2.0
         funding = float(p.get("funding_fee_usd") or 0.0)
         net_unrealized = round(gross_pnl - fees - funding, 4)
 
         sl_pct = float(p.get("stop_pct") or 0.35)
         tp_pct = float(p.get("target_pct") or 0.70)
-        sl_price = round(ent_px * (1.0 - sl_pct / 100.0) if dir_mult > 0 else ent_px * (1.0 + sl_pct / 100.0), 6)
-        tp_price = round(ent_px * (1.0 + tp_pct / 100.0) if dir_mult > 0 else ent_px * (1.0 - tp_pct / 100.0), 6)
+        sl_price = round(ent_px * (1.0 - sl_pct / 100.0) if dir_mult > 0 else ent_px * (1.0 + sl_pct / 100.0), 8)
+        tp_price = round(ent_px * (1.0 + tp_pct / 100.0) if dir_mult > 0 else ent_px * (1.0 - tp_pct / 100.0), 8)
 
         live_scalping_positions.append({
             "id": p["id"],
@@ -6654,9 +6656,9 @@ def manual_close():
                       already_closed=True,
                       message="Position already closed")
         return fail("No open position with that id", 404)
-    # Settle on the market's own quote; before one lands, the last mark the bot recorded is the
-    # only honest price, and the entry is the fallback for a position never marked at all.
-    price = feed.live_price(p["symbol"]) or p["current_price"] or p["entry_price"]
+    # Settle on CoinDCX Futures mark price first for live positions, then feed live/last quote.
+    mark_px, _ = bot._live_position_mark_price(p)
+    price = mark_px or feed.live_price(p["symbol"]) or p["current_price"] or p["entry_price"]
     pnl = bot.close(p, price, "MANUAL_CLOSE")
     if pnl is None:
         # Manual close safety override: if exchange retry was delayed, close position immediately

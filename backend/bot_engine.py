@@ -1536,9 +1536,23 @@ class Bot:
 
             # Book true exchange-settled net P&L (after exchange fees & GST) when available
             if close_res and close_res.get("exchange_settled") and close_res.get("realized_pnl") is not None:
-                pnl = round(float(close_res["realized_pnl"]), 2)
+                settled_pnl = round(float(close_res["realized_pnl"]), 2)
                 if float(close_res.get("fee_usd") or 0.0) > 0:
                     real_fee_usd = float(close_res["fee_usd"])
+                pos_margin = max(0.0, float(p.get("margin") or 0.0))
+                pos_lev = max(1.0, float(p.get("leverage") or 1.0))
+                est_rt_fee = round(pos_margin * pos_lev * 0.0014, 4)
+                is_liq_exit = bool(close_res.get("liquidated")) or ("LIQUIDAT" in str(reason).upper())
+                if pos_margin > 0 and (not is_liq_exit) and settled_pnl <= -(pos_margin * 0.85) and raw_pnl >= -(pos_margin * 0.25):
+                    self._log(
+                        p["user_id"],
+                        "SETTLEMENT_ANOMALY_GUARD",
+                        f"{p['symbol']} ledger returned anomalous {settled_pnl:+.2f} while exit mark raw_pnl={raw_pnl:+.2f}; using verified mark P&L minus fees",
+                    )
+                    real_fee_usd = max(real_fee_usd, est_rt_fee)
+                    pnl = round(raw_pnl - real_fee_usd, 2)
+                else:
+                    pnl = settled_pnl
             elif close_res and close_res.get("exchange") == "COINDCX" and close_res.get("mode") != "FALLBACK_PAPER":
                 est_rt_fee = round(max(0.0, float(p.get("margin") or 0.0)) * max(1.0, float(p.get("leverage") or 1.0)) * 0.0014, 4)
                 real_fee_usd = max(real_fee_usd, est_rt_fee)
