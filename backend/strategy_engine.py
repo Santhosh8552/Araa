@@ -1431,6 +1431,7 @@ class StrategyEngine:
         atr_value: float = 0.0,
         opposite_signal: bool = False,
         strategy_invalidated: bool = False,
+        smc_dna: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         AraaBot V2.0 Smart Profit Booking & Auto Exit Engine:
@@ -1509,6 +1510,24 @@ class StrategyEngine:
         # Full Take-Profit trigger (must clear CoinDCX taker fees + net gain when live)
         if move_pct >= tp_pct and live_fee_covered:
             return {"action": "FULL_EXIT", "exit_reason": "TAKE_PROFIT", "close_qty": qty, "move_pct": round(move_pct, 4)}
+
+        # Immediate SMC + DNA + All-Indicator Profit Auto-Close (sec-off once fee floor is cleared)
+        if smc_dna and move_pct > 0 and live_fee_covered:
+            smc_ex = smc_dna.get("exit_signal") or {}
+            if is_long and smc_ex.get("close_long"):
+                return {
+                    "action": "FULL_EXIT",
+                    "exit_reason": f"SMC_DNA_AUTO_CLOSE_{smc_ex.get('reason_long') or 'BSL_TARGET'}",
+                    "close_qty": qty,
+                    "move_pct": round(move_pct, 4),
+                }
+            if (not is_long) and smc_ex.get("close_short"):
+                return {
+                    "action": "FULL_EXIT",
+                    "exit_reason": f"SMC_DNA_AUTO_CLOSE_{smc_ex.get('reason_short') or 'SSL_TARGET'}",
+                    "close_qty": qty,
+                    "move_pct": round(move_pct, 4),
+                }
 
         # Multi-stage R-multiple partial profit booking (TP1 = 1R -> default 30%, TP2 = 1.5R/2R -> default 30%)
         # Remaining 40% managed with trailing stop or strategy exit
@@ -2085,6 +2104,13 @@ class StrategyEngine:
             except Exception:
                 pass
         atr_val = float((primary_ta.get("indicators") or {}).get("atr") or (curr_price * 0.005))
+        smc_dna = None
+        try:
+            from quantum_engine import SMCDNAEngine
+            smc_dna = SMCDNAEngine.analyze_candles(sym, primary_candles, entry_tf, curr_price)
+        except Exception:
+            smc_dna = None
+
         exit_results = []
         for pos in open_scalp_pos or []:
             pos_px = fut_mark_px if (fut_mark_px > 0 and int(pos.get("is_live") or 0) == 1) else (curr_price or float(pos.get("current_price") or pos.get("entry_price") or 0.0))
@@ -2094,6 +2120,7 @@ class StrategyEngine:
                 current_price=pos_px,
                 atr_value=atr_val,
                 opposite_signal=bool(opp and opp.get("side") and opp.get("side") != pos.get("side")),
+                smc_dna=smc_dna,
             )
             if exit_decision.get("action") != "HOLD":
                 res_exit = cls.execute_auto_exit(user_id, pos["id"], exit_decision, pos_px)
@@ -2134,11 +2161,32 @@ class StrategyEngine:
                 "step": "SCANNING",
                 "message": f"Scanning {sym} ({entry_tf}/{setup_tf}/{trend_tf}) — awaiting strategy setup trigger.",
                 "scalp_analysis": scalp_analysis,
+                "smc_dna": smc_dna,
                 "open_positions_evaluated": len(open_scalp_pos or []),
                 "exits_triggered": exit_results,
             }
 
         cand_side = opp.get("side")
+
+        # Alpha + Beta + Gamma + SMC/DNA Pre-Entry Committee Check
+        committee_res = None
+        try:
+            from ai_committee import AICommitteeOrchestrator
+            strat_tmp = cls.get_strategy(user_id, "araa_ai_scalp") or {}
+            real_mode_on, _ = cls.is_real_mode_active(user_id)
+            committee_res = AICommitteeOrchestrator.evaluate_candidate(
+                symbol=sym,
+                user_id=user_id,
+                candles=primary_candles,
+                quote_data={"price": curr_price, "change_pct": 0.0, "volume": float((primary_ta.get("indicators") or {}).get("volume_sma20") or 100000.0)},
+                requested_leverage=float(strat_tmp.get("leverage") or 20.0),
+                timeframe=entry_tf,
+                is_live=bool(real_mode_on),
+                persist=False,
+                intended_side=cand_side,
+            )
+        except Exception:
+            committee_res = None
 
         # Step 5 to 12: Evaluate our Python rules, Risk Limits, Sizing, Margin, Spread & Idempotency
         strat_id_map = {
@@ -2168,6 +2216,27 @@ class StrategyEngine:
         status_rec["rule_validation"] = rule_res.get("rules_panel")
         status_rec["risk_approval"] = rule_res.get("execution_approval")
 
+        if committee_res and not committee_res.get("approved"):
+            veto = committee_res.get("veto_reason") or "AI Committee Alpha/Beta/Gamma + SMC/DNA rejected setup"
+            status_rec["execution_status"] = "REJECTED_BY_AI_COMMITTEE"
+            cls.log_bot_activity(
+                user_id=user_id,
+                event_type="Scalp Entry Rejected",
+                symbol=sym,
+                message=f"Auto Scalp {sym} ({cand_side}) blocked by Alpha/Beta/Gamma + SMC/DNA: {veto}",
+                details={"opportunity": opp, "committee": committee_res},
+            )
+            return {
+                "success": False,
+                "status": "REJECTED_BY_AI_COMMITTEE",
+                "reasons": [veto],
+                "rule_evaluation": rule_res,
+                "committee": committee_res,
+                "smc_dna": smc_dna,
+                "opportunity": opp,
+                "exits_triggered": exit_results,
+            }
+
         if not rule_res.get("approved"):
             status_rec["execution_status"] = "REJECTED_BY_PYTHON_RULES"
             reasons = rule_res.get("rejection_reasons") or ["Python rules validation failed"]
@@ -2183,6 +2252,7 @@ class StrategyEngine:
                 "status": "REJECTED_BY_RULES",
                 "reasons": reasons,
                 "rule_evaluation": rule_res,
+                "smc_dna": smc_dna,
                 "opportunity": opp,
                 "exits_triggered": exit_results,
             }
@@ -2203,7 +2273,7 @@ class StrategyEngine:
             quantity=qty,
             margin_usd=margin_usd,
             source_label="AUTO_SCALPER",
-            reason=f"Auto Scalp V2.1 [{strategy_code}] {cand_side} {sym} (Passed 10 Python Rules)",
+            reason=f"Auto Scalp V2.1 [{strategy_code}] {cand_side} {sym} (Alpha/Beta/Gamma + SMC/DNA + 10 Rules)",
         )
 
         status_rec["execution_status"] = exec_res.get("status") or "EXECUTED"
@@ -2220,6 +2290,8 @@ class StrategyEngine:
             "status": "ENTRY_FILLED",
             "execution": exec_res,
             "rule_evaluation": rule_res,
+            "committee": committee_res,
+            "smc_dna": smc_dna,
             "opportunity": opp,
             "exits_triggered": exit_results,
         }

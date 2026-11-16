@@ -7084,11 +7084,15 @@ function drawChart(candles) {
     projPts.forEach(pt => ctx.lineTo(XP(pt.step), Y(pt.price)));
     ctx.stroke();
 
-    // Top DNA banner label
+    // Top DNA + All Indicators banner label
     const dna = smc.dna || {};
+    const entSig = smc.entry_signal || {};
+    const allInd = smc.all_indicators || {};
+    const stTag = allInd.supertrend ? ` · ST:${allInd.supertrend}` : "";
+    const sigTag = entSig.recommended_side && entSig.recommended_side !== "WAIT" ? ` · PRED:${entSig.recommended_side}` : "";
     ctx.fillStyle = "#60a5fa";
     ctx.font = `bold ${8.5 * dpr}px monospace`;
-    ctx.fillText(`🧬 DNA ${dna.similarity_pct || 0}% · ${dna.setup_status || "NEUTRAL"}`, x0 + 6 * dpr, 18 * dpr);
+    ctx.fillText(`🧬 DNA ${dna.similarity_pct || 0}% · ${dna.setup_status || "NEUTRAL"}${stTag}${sigTag}`, x0 + 6 * dpr, 18 * dpr);
     ctx.restore();
   }
 }

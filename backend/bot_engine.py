@@ -1159,12 +1159,15 @@ class Bot:
         smc_dna_status = ob.get("type") if (ob and ob.get("found")) else "SMC_STRUCTURE"
         smc_dna_sim = 86.0 if (ob and ob.get("retest_active")) else 78.0
         smc_dna_bias = ob.get("bias") if (ob and ob.get("found")) else side
+        _smc_fast = None
         try:
             if cat == "CRYPTO" and len(candles_1m) >= 12:
                 from quantum_engine import SMCDNAEngine
-                _smc_fast = SMCDNAEngine.analyze_candles(symbol, candles_1m[-30:], "1m", price)
+                _smc_fast = SMCDNAEngine.analyze_candles(symbol, candles_1m[-45:], "1m", price)
                 if _smc_fast:
                     _dna = _smc_fast.get("dna") or {}
+                    _ind = _smc_fast.get("all_indicators") or {}
+                    _ent = _smc_fast.get("entry_signal") or {}
                     smc_dna_status = str(_dna.get("setup_status") or smc_dna_status)
                     smc_dna_sim = float(_dna.get("similarity_pct") or smc_dna_sim)
                     _sig_g = _smc_fast.get("bot_signal") or {}
@@ -1172,6 +1175,22 @@ class Bot:
                         smc_dna_bias = "SHORT"
                     elif _sig_g.get("block_short"):
                         smc_dna_bias = "LONG"
+                    if (side == "LONG" and _sig_g.get("block_long")) or (side == "SHORT" and _sig_g.get("block_short")):
+                        return None
+                    # Integrate All CoinDCX Indicator + SMC + DNA Confluence into score & note
+                    st_dir = _ind.get("supertrend")
+                    if (side == "LONG" and st_dir == "BULL") or (side == "SHORT" and st_dir == "BEAR"):
+                        score += 0.06
+                        parts.append(("SMC+DNA", 0.06, f"SuperTrend={st_dir} · Zone={_ent.get('zone', 'EQ')} · DNA {smc_dna_sim:.0f}%"))
+                    if side == "LONG" and _ent.get("tp_long"):
+                        smc_tp_pct = round(((float(_ent["tp_long"]) - price) / max(1e-9, price)) * 100.0, 3)
+                        if 0.35 <= smc_tp_pct <= tp * 1.25:
+                            tp = max(tp, min(cal_tp * 1.15 if str(mode or "").upper() in SCALP_MODE_PRESETS else tp * 1.2, smc_tp_pct))
+                    elif side == "SHORT" and _ent.get("tp_short"):
+                        smc_tp_pct = round(((price - float(_ent["tp_short"])) / max(1e-9, price)) * 100.0, 3)
+                        if 0.35 <= smc_tp_pct <= tp * 1.25:
+                            tp = max(tp, min(cal_tp * 1.15 if str(mode or "").upper() in SCALP_MODE_PRESETS else tp * 1.2, smc_tp_pct))
+                    confidence = round(min(0.99, 0.58 + max(0.0, score)), 3)
         except Exception:
             pass
         if (side == "SHORT" and smc_dna_status == "QUALIFIED_BULLISH") or (side == "LONG" and smc_dna_status == "QUALIFIED_BEARISH"):
@@ -1190,6 +1209,8 @@ class Bot:
                 "smc_dna_status": smc_dna_status,
                 "smc_dna_similarity": round(smc_dna_sim, 1),
                 "smc_dna_bias": smc_dna_bias,
+                "smc_dna": _smc_fast,
+                "all_indicators": (_smc_fast or {}).get("all_indicators"),
                 "slope_z": round(slope_z, 4),
                 "feed": "TRADINGVIEW_LIVE",
                 "order_block": ob,
@@ -1313,8 +1334,29 @@ class Bot:
         roi_pct = round((pnl / margin) * 100.0, 2) if margin > 0 else 0.0
         return pnl, move_pct, roi_pct, cur_qty
 
+    def _smc_dna_snapshot(self, symbol, current_price=None):
+        """Cached 1.5s SMC + DNA + All-Indicators snapshot for real-time profit exits."""
+        now = time.time()
+        cache = getattr(self, "_smc_exit_cache", None)
+        if cache is None:
+            cache = {}
+            self._smc_exit_cache = cache
+        cached = cache.get(symbol)
+        if cached and (now - cached[0]) < 1.5:
+            return cached[1]
+        try:
+            candles = self._candles(symbol, "1m", limit=45) if hasattr(self, "_candles") else []
+            if not candles or len(candles) < 15:
+                return None
+            from quantum_engine import SMCDNAEngine
+            res = SMCDNAEngine.analyze_candles(symbol, candles, "1m", current_price)
+            cache[symbol] = (now, res)
+            return res
+        except Exception:
+            return None
+
     def _evaluate_bot_exit_signal(self, p, price, raw_pnl, move_pct, peak_cash, peak_pct, time_held):
-        """Evaluate profit-maximizing trailing, target-profit, and stop exits for a bot position."""
+        """Evaluate profit-maximizing SMC+DNA, trailing, target-profit, and instant sec-off exits."""
         pos_margin = max(0.0001, float(p.get("margin") or 1.0))
         pos_lev = max(1.0, float(p.get("leverage") or 100.0))
         pnl = max(-pos_margin, float(raw_pnl))
@@ -1331,20 +1373,20 @@ class Bot:
         tp_pct = max(0.25, float(p.get("target_pct") or 0.60))
         tp_roi = tp_pct * pos_lev
 
-        # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (Fee-safe in Real Mode)
+        # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (sec-off immediate when fee-safe!)
         live_scalp_floor = round(max(1.00, est_fee + max(0.25, pos_margin * 0.04)), 4) if is_live else 1.00
-        if pnl >= live_scalp_floor and time_held >= (1.0 if is_live else 0.0):
+        if pnl >= live_scalp_floor:
             return f"SCALP_TARGET_$1_HIT (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
         live_auto_peak = round(max(0.90, est_fee + 0.25), 4) if is_live else 0.90
         live_auto_min = round(max(0.85, est_fee + 0.15), 4) if is_live else 0.85
-        if peak_cash >= live_auto_peak and pnl >= live_auto_min and time_held >= 2.0:
+        if peak_cash >= live_auto_peak and pnl >= live_auto_min:
             if pnl <= round(peak_cash * 0.96, 4) or pnl >= live_auto_peak:
                 return f"SCALP_AUTO_CLOSE_+0.90 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0.5: Profit Lock Ladder (Locks net green profits strictly above CoinDCX round-trip fees + GST in Real Mode)
+        # RULE 0.5: Profit Lock Ladder (Locks net green profits strictly above CoinDCX round-trip fees + GST; sec-off)
         min_lock_peak = max(0.28, round(est_fee * 2.1 + 0.15, 4)) if is_live else 0.10
-        if peak_cash >= min_lock_peak and time_held >= 1.5:
+        if peak_cash >= min_lock_peak:
             if peak_cash >= 0.50:
                 lock_floor = 0.35
             elif peak_cash >= 0.25:
@@ -1357,26 +1399,36 @@ class Bot:
             if pnl <= lock_floor and pnl > min_live_green:
                 return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 1: Immediate Target-Profit Execution when percentage target hit
-        min_hold_tp = 2.0 if is_live else 0.0
-        if move_pct >= tp_pct and pnl >= min_net_profit and time_held >= min_hold_tp:
+        # RULE 0C: SMC + DNA + All-Indicator Immediate Profit Auto-Close (sec-off once fees are cleared)
+        if pnl >= min_net_profit:
+            smc_snap = self._smc_dna_snapshot(p.get("symbol"), price)
+            if smc_snap:
+                ex_sig = smc_snap.get("exit_signal") or {}
+                is_long_p = str(p.get("side") or "LONG").upper() in ("BUY", "LONG")
+                if is_long_p and ex_sig.get("close_long"):
+                    return f"SMC_DNA_AUTO_CLOSE ({ex_sig.get('reason_long') or 'BSL_OB_TARGET'} | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+                if (not is_long_p) and ex_sig.get("close_short"):
+                    return f"SMC_DNA_AUTO_CLOSE ({ex_sig.get('reason_short') or 'SSL_OB_TARGET'} | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
+
+        # RULE 1: Immediate Target-Profit Execution when percentage target hit (zero second delay)
+        if move_pct >= tp_pct and pnl >= min_net_profit:
             return f"STRATEGY_TAKE_PROFIT_HIT (+{move_pct:.2f}% | +${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0A: High-Velocity Scalp ROI Harvest (fee-safe across Live & Paper, 1x–500x leverage)
+        # RULE 0A: High-Velocity Scalp ROI Harvest (fee-safe across Live & Paper, zero artificial hold delay)
         scalp_roi_goal = 12.0 if pos_lev >= 20.0 else 9.0
         min_quick_move = 0.25 if is_live else 0.18
-        if (time_held >= 3.0 and move_pct >= min_quick_move and roi_pct >= scalp_roi_goal
+        if (move_pct >= min_quick_move and roi_pct >= scalp_roi_goal
                 and pnl >= (max(0.25, est_fee * 2.0) if is_live else min_net_profit)):
             if move_pct >= max(0.35, tp_pct * 0.75) or (peak_cash > 0 and pnl <= round(peak_cash * 0.88, 4)):
                 return f"SCALP_QUICK_WIN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # Fast Scalp Velocity Lock: harvest net profit if momentum fades after reaching real net gain
+        # Fast Scalp Velocity Lock: harvest net profit immediately if momentum fades after reaching net gain
         fast_lock_peak = max(0.30, round(est_fee * 2.2, 4)) if is_live else 0.12
-        if time_held >= 10.0 and peak_cash >= fast_lock_peak and pnl > (round(est_fee * 1.5, 4) if is_live else 0.02):
+        if peak_cash >= fast_lock_peak and pnl > (round(est_fee * 1.5, 4) if is_live else 0.02):
             if pnl <= round(peak_cash * 0.78, 4):
                 return f"SCALP_FAST_PROFIT_LOCK (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0B: Progressive ROI & Fee-Aware Trailing Stop Ladder (works from +10% ROI upward)
+        # RULE 0B: Progressive ROI & Fee-Aware Trailing Stop Ladder (works from +10% ROI upward, sec-off)
         trail_floor = None
         trail_label = "TRAILING_PROFIT_LOCKED"
         min_shield_peak = max(min_net_profit * 1.35, pos_margin * 0.10) if is_live else max(0.02, pos_margin * 0.10)
@@ -1386,11 +1438,11 @@ class Bot:
             trail_floor = max(min_net_profit, round(peak_cash * 0.84, 4))
         elif peak_roi >= 18.0 and peak_cash >= min_shield_peak:
             trail_floor = max(min_net_profit, round(peak_cash * 0.76, 4))
-        elif (peak_roi >= 10.0 or peak_pct >= tp_pct * 0.55) and peak_cash >= min_shield_peak and time_held >= 5.0:
+        elif (peak_roi >= 10.0 or peak_pct >= tp_pct * 0.55) and peak_cash >= min_shield_peak:
             trail_floor = min_net_profit
             trail_label = "SCALP_PROFIT_SHIELD"
 
-        if trail_floor is not None and pnl <= trail_floor and pnl >= min_net_profit and time_held >= 3.0:
+        if trail_floor is not None and pnl <= trail_floor and pnl >= min_net_profit:
             return f"{trail_label} (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
         # Mandatory Stop-Loss Protection Guards: Enforce on BOTH Paper and Live modes
@@ -1428,7 +1480,7 @@ class Bot:
         if (not is_live) and pos_lev <= 5.0:
             if (move_pct >= tp_pct or roi_pct >= 12.0) and pnl > 0:
                 return f"TARGET_PROFIT_HIT (+${pnl:.2f} | +{move_pct:.2f}% | +{roi_pct:.1f}% ROI)"
-            if time_held >= 10.0 and pnl >= min_take_profit and roi_pct >= 6.0:
+            if pnl >= min_take_profit and roi_pct >= 6.0:
                 return f"SCALP_QUICK_WIN (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
         return None
@@ -2740,10 +2792,14 @@ class Bot:
                         a_sc = (comm_res.get("alpha") or {}).get("score", 0)
                         b_sc = (comm_res.get("beta") or {}).get("score", 0)
                         g_ok = (comm_res.get("gamma") or {}).get("approved", True)
+                        _smc_c = comm_res.get("smc_dna") or {}
+                        _ind_c = comm_res.get("all_indicators") or {}
                         self._log(
                             user["id"],
                             "COMMITTEE_SCAN",
-                            f"3-Agent Committee on {picked['side']} {picked['symbol']}: Alpha={a_sc}, Beta={b_sc}, Gamma={'OK' if g_ok else 'VETO'} -> {comm_res.get('final_action', 'SKIP')} (consensus={comm_res.get('consensus_score', 0)})",
+                            f"3-Agent Committee on {picked['side']} {picked['symbol']}: Alpha={a_sc}, Beta={b_sc}, Gamma={'OK' if g_ok else 'VETO'} | "
+                            f"ST={_ind_c.get('supertrend', 'NA')}, Zone={((_smc_c.get('liquidity') or {}).get('zone', 'EQ'))}, "
+                            f"DNA={((_smc_c.get('dna') or {}).get('similarity_pct', 0))}% -> {comm_res.get('final_action', 'SKIP')} (consensus={comm_res.get('consensus_score', 0)})",
                         )
                         if not comm_res.get("approved"):
                             veto_msg = comm_res.get("veto_reason") or (comm_res.get("gamma") or {}).get("rejection_reason") or "low consensus"
@@ -2755,6 +2811,20 @@ class Bot:
                             if pred_id:
                                 write("UPDATE ai_predictions SET post_entry_status='COMMITTEE_REJECTED', outcome='CANCELLED' WHERE id=?", (pred_id,))
                             continue
+                        # Adopt Gamma + SMC structural SL/TP when strictly inside strategy bounds
+                        if comm_res.get("stop_loss") and comm_res.get("take_profit") and picked.get("price", 0) > 0:
+                            c_sl_pct = abs(picked["price"] - float(comm_res["stop_loss"])) / picked["price"] * 100.0
+                            c_tp_pct = abs(float(comm_res["take_profit"]) - picked["price"]) / picked["price"] * 100.0
+                            if 0.20 <= c_sl_pct <= max(strat_sl_pct * 1.25, 0.85):
+                                strat_sl_pct = round(c_sl_pct, 3)
+                                sl_price = float(comm_res["stop_loss"])
+                                picked["stop_pct"] = strat_sl_pct
+                                pred["stop_price"] = sl_price
+                            if max(0.35, strat_tp_pct * 0.8) <= c_tp_pct <= max(strat_tp_pct * 1.5, 1.5):
+                                strat_tp_pct = round(c_tp_pct, 3)
+                                tp_price = float(comm_res["take_profit"])
+                                picked["target_pct"] = strat_tp_pct
+                                pred["target_price"] = tp_price
                     except Exception as comm_err:
                         self._log(user["id"], "COMMITTEE_SKIP", f"AI Committee evaluation error for {picked['symbol']}: {comm_err}")
                         continue

@@ -481,6 +481,48 @@ def predict_and_advise(symbol: str, category: str, candles: List[Dict[str, Any]]
             contradicting_evidence.append(f"Institutional {ob_type} ({status_txt} at {ob['zone_low']}-{ob['zone_high']} · {disp}x Displacement)")
             ob_bias_score = -0.8 if retest else -0.4
 
+    # 0.5 Unified SMC + Market DNA + All CoinDCX Indicators Engine
+    smc_dna = None
+    smc_bias_score = 0.0
+    try:
+        from quantum_engine import SMCDNAEngine
+        smc_dna = SMCDNAEngine.analyze_candles(symbol, candles, tf, curr_p)
+        if smc_dna:
+            _dna = smc_dna.get("dna") or {}
+            _liq = smc_dna.get("liquidity") or {}
+            _ind = smc_dna.get("all_indicators") or {}
+            _ent = smc_dna.get("entry_signal") or {}
+            _dna_bias = str(_dna.get("historical_bias") or "NEUTRAL").upper()
+            _dna_sim = float(_dna.get("similarity_pct") or 0.0)
+            if _dna.get("setup_status") == "QUALIFIED_BULLISH":
+                supporting_evidence.append(f"SMC + DNA Qualified Bullish ({_dna_sim:.1f}% twin match · Zone: {_liq.get('zone', 'EQUILIBRIUM')})")
+                smc_bias_score += 0.55
+            elif _dna.get("setup_status") == "QUALIFIED_BEARISH":
+                contradicting_evidence.append(f"SMC + DNA Qualified Bearish ({_dna_sim:.1f}% twin match · Zone: {_liq.get('zone', 'EQUILIBRIUM')})")
+                smc_bias_score -= 0.55
+            if (_liq.get("ssl") or {}).get("swept"):
+                supporting_evidence.append(f"SMC Sell-Side Liquidity (SSL ${_liq['ssl']['price']}) swept -> institutional bounce")
+                smc_bias_score += 0.40
+            if (_liq.get("bsl") or {}).get("swept"):
+                contradicting_evidence.append(f"SMC Buy-Side Liquidity (BSL ${_liq['bsl']['price']}) swept -> distribution trap")
+                smc_bias_score -= 0.40
+            if _ind.get("supertrend") == "BULL":
+                supporting_evidence.append(f"SuperTrend BULLISH + VWAP {'above' if _ind.get('above_vwap') else 'watch'}")
+                smc_bias_score += 0.30
+            elif _ind.get("supertrend") == "BEAR":
+                contradicting_evidence.append(f"SuperTrend BEARISH + MACD Hist {float(_ind.get('macd_hist') or 0.0):+.5f}")
+                smc_bias_score -= 0.30
+            if float(_ind.get("macd_hist") or 0.0) > 0:
+                smc_bias_score += 0.18
+            elif float(_ind.get("macd_hist") or 0.0) < 0:
+                smc_bias_score -= 0.18
+            if _ent.get("zone") == "DISCOUNT":
+                smc_bias_score += 0.15
+            elif _ent.get("zone") == "PREMIUM":
+                smc_bias_score -= 0.15
+    except Exception:
+        smc_dna = None
+
     # 1. Sequence GRU Prediction
     gru_drift, gru_p_up = run_gru_sequence_forecast(returns, horizon_steps=4)
     if gru_p_up > 0.60:
@@ -538,6 +580,7 @@ def predict_and_advise(symbol: str, category: str, candles: List[Dict[str, Any]]
     log_odds += ((rsi - 50.0) / 25.0) * 0.5
     log_odds += (book_imbalance - 0.5) * 1.2
     log_odds += ob_bias_score
+    log_odds += smc_bias_score
 
     prob_up_raw = sigmoid(log_odds)
     # Range / flat probability derived from Bollinger Bandwidth and ROC
@@ -586,32 +629,46 @@ def predict_and_advise(symbol: str, category: str, candles: List[Dict[str, Any]]
         if ob.get("tight_sl_pct"):
             min_stop_pct = max(0.18, float(ob["tight_sl_pct"]))
 
+    px_dec = 8 if curr_p < 1 else (4 if curr_p < 100 else 2)
+    smc_ent = (smc_dna or {}).get("entry_signal") or {}
     if prediction == "UP" and prob_up >= 52.0 and len(supporting_evidence) >= len(contradicting_evidence):
         decision = "BUY"
         status = "BUY SETUP"
-        entry_low = round(curr_p * 0.9990, 4 if curr_p < 100 else 2)
-        entry_high = round(curr_p * 1.0012, 4 if curr_p < 100 else 2)
-        stop_price = round(curr_p * (1.0 - min_stop_pct / 100.0), 4 if curr_p < 100 else 2)
+        entry_low = round(float(smc_ent.get("entry_zone_low") or (curr_p * 0.9990)), px_dec)
+        entry_high = round(float(smc_ent.get("entry_zone_high") or (curr_p * 1.0012)), px_dec)
+        if entry_low > entry_high:
+            entry_low, entry_high = round(curr_p * 0.9990, px_dec), round(curr_p * 1.0012, px_dec)
+        stop_price = round(curr_p * (1.0 - min_stop_pct / 100.0), px_dec)
+        if smc_ent.get("sl_long") and 0.002 <= (curr_p - float(smc_ent["sl_long"])) / max(1e-9, curr_p) <= 0.03:
+            stop_price = round(float(smc_ent["sl_long"]), px_dec)
         target_mult = 3.0 if (ob and ob.get("retest_active")) else 2.2
-        t1 = round(curr_p * (1.0 + (min_stop_pct * 1.5) / 100.0), 4 if curr_p < 100 else 2)
-        t2 = round(curr_p * (1.0 + (min_stop_pct * target_mult) / 100.0), 4 if curr_p < 100 else 2)
-        t3 = round(curr_p * (1.0 + (min_stop_pct * 4.0) / 100.0), 4 if curr_p < 100 else 2)
+        t1 = round(curr_p * (1.0 + (min_stop_pct * 1.5) / 100.0), px_dec)
+        if smc_ent.get("tp_long") and (float(smc_ent["tp_long"]) - curr_p) / max(1e-9, curr_p) >= max(0.004, min_stop_pct / 100.0):
+            t1 = round(float(smc_ent["tp_long"]), px_dec)
+        t2 = round(max(t1 * 1.003, curr_p * (1.0 + (min_stop_pct * target_mult) / 100.0)), px_dec)
+        t3 = round(max(t2 * 1.004, curr_p * (1.0 + (min_stop_pct * 4.0) / 100.0)), px_dec)
         invalidation = f"Candle close below invalidation support {stop_price}"
-        rr = round((t2 - curr_p) / max(curr_p - stop_price, 1e-6), 2)
+        rr = round((t2 - curr_p) / max(curr_p - stop_price, 1e-9), 2)
         conf_score = min(96, int(55 + (prob_up - 50) * 1.3 + (15 if ob and ob.get('retest_active') else 0)))
         horizon_str = "15 to 45 mins" if tf in ("1m", "3m", "5m", "15m") else "1 to 4 hours"
     elif prediction == "DOWN" and prob_down >= 52.0 and len(contradicting_evidence) >= len(supporting_evidence):
         decision = "SELL"
         status = "SELL SETUP"
-        entry_low = round(curr_p * 0.9988, 4 if curr_p < 100 else 2)
-        entry_high = round(curr_p * 1.0010, 4 if curr_p < 100 else 2)
-        stop_price = round(curr_p * (1.0 + min_stop_pct / 100.0), 4 if curr_p < 100 else 2)
+        entry_low = round(float(smc_ent.get("entry_zone_low") or (curr_p * 0.9988)), px_dec)
+        entry_high = round(float(smc_ent.get("entry_zone_high") or (curr_p * 1.0010)), px_dec)
+        if entry_low > entry_high:
+            entry_low, entry_high = round(curr_p * 0.9988, px_dec), round(curr_p * 1.0010, px_dec)
+        stop_price = round(curr_p * (1.0 + min_stop_pct / 100.0), px_dec)
+        if smc_ent.get("sl_short") and 0.002 <= (float(smc_ent["sl_short"]) - curr_p) / max(1e-9, curr_p) <= 0.03:
+            stop_price = round(float(smc_ent["sl_short"]), px_dec)
         target_mult = 3.0 if (ob and ob.get("retest_active")) else 2.2
-        t1 = round(curr_p * (1.0 - (min_stop_pct * 1.5) / 100.0), 4 if curr_p < 100 else 2)
-        t2 = round(curr_p * (1.0 - (min_stop_pct * target_mult) / 100.0), 4 if curr_p < 100 else 2)
-        t3 = round(curr_p * (1.0 - (min_stop_pct * 4.0) / 100.0), 4 if curr_p < 100 else 2)
+        t1 = round(curr_p * (1.0 - (min_stop_pct * 1.5) / 100.0), px_dec)
+        if smc_ent.get("tp_short") and (curr_p - float(smc_ent["tp_short"])) / max(1e-9, curr_p) >= max(0.004, min_stop_pct / 100.0):
+            t1 = round(float(smc_ent["tp_short"]), px_dec)
+        t2 = round(max(1e-8, min(t1 * 0.997, curr_p * (1.0 - (min_stop_pct * target_mult) / 100.0))), px_dec)
+        t3 = round(max(1e-8, min(t2 * 0.996, curr_p * (1.0 - (min_stop_pct * 4.0) / 100.0))), px_dec)
         invalidation = f"Candle close above invalidation resistance {stop_price}"
-        rr = round((curr_p - t2) / max(stop_price - curr_p, 1e-6), 2)
+        rr = round((curr_p - t2) / max(stop_price - curr_p, 1e-9), 2)
         conf_score = min(96, int(55 + (prob_down - 50) * 1.3 + (15 if ob and ob.get('retest_active') else 0)))
         horizon_str = "15 to 45 mins" if tf in ("1m", "3m", "5m", "15m") else "1 to 4 hours"
     elif prediction == "SIDEWAYS":
@@ -619,12 +676,12 @@ def predict_and_advise(symbol: str, category: str, candles: List[Dict[str, Any]]
         status = "WAIT (RANGE CONSOLIDATION)"
         # Provide tight boundary guidance for users trading the range
         lean_up = prob_up >= prob_down
-        stop_price = round(curr_p * (0.992 if lean_up else 1.008), 4 if curr_p < 100 else 2)
-        t1 = round(curr_p * (1.012 if lean_up else 0.988), 4 if curr_p < 100 else 2)
-        t2 = round(curr_p * (1.018 if lean_up else 0.982), 4 if curr_p < 100 else 2)
-        t3 = round(curr_p * (1.025 if lean_up else 0.975), 4 if curr_p < 100 else 2)
-        entry_low = round(curr_p * 0.9990, 4 if curr_p < 100 else 2)
-        entry_high = round(curr_p * 1.0010, 4 if curr_p < 100 else 2)
+        stop_price = round(curr_p * (0.992 if lean_up else 1.008), px_dec)
+        t1 = round(curr_p * (1.012 if lean_up else 0.988), px_dec)
+        t2 = round(curr_p * (1.018 if lean_up else 0.982), px_dec)
+        t3 = round(curr_p * (1.025 if lean_up else 0.975), px_dec)
+        entry_low = round(curr_p * 0.9990, px_dec)
+        entry_high = round(curr_p * 1.0010, px_dec)
         invalidation = "Wait for high-volume breakout beyond consolidation boundary."
         rr = 1.8
         conf_score = 62
@@ -693,15 +750,31 @@ def predict_and_advise(symbol: str, category: str, candles: List[Dict[str, Any]]
             "execution_recommendation": f"{decision}: Expected return 15m {expected_ret_15m:+.2f}%. Uncertainty is {forecast_uncertainty}."
         },
         "indicators": {
-            "ema9": round(feat["ema_9"], 4),
-            "ema20": round(feat["ema_20"], 4),
-            "ema50": round(feat["ema_50"], 4),
-            "ema200": round(feat["ema_200"], 4),
+            "ema9": round(feat["ema_9"], 6),
+            "ema20": round(feat["ema_20"], 6),
+            "ema50": round(feat["ema_50"], 6),
+            "ema200": round(feat["ema_200"], 6),
             "rsi14": feat["rsi"],
-            "atr": round(feat["atr"], 4),
+            "atr": round(feat["atr"], 6),
             "bandwidth_bb": round(feat["bandwidth_bb"], 4),
-            "volume_ratio": round(feat["vol_ratio"], 2)
-        }
+            "volume_ratio": round(feat["vol_ratio"], 2),
+            "macd_hist": ((smc_dna or {}).get("all_indicators") or {}).get("macd_hist", 0.0),
+            "supertrend": ((smc_dna or {}).get("all_indicators") or {}).get("supertrend", "NEUTRAL"),
+            "vwap": ((smc_dna or {}).get("all_indicators") or {}).get("vwap", curr_p),
+            "bb_pct": ((smc_dna or {}).get("all_indicators") or {}).get("bb_pct", 0.5),
+            "obv_slope": ((smc_dna or {}).get("all_indicators") or {}).get("obv_slope", 0.0),
+            "bsl": (((smc_dna or {}).get("liquidity") or {}).get("bsl") or {}).get("price"),
+            "ssl": (((smc_dna or {}).get("liquidity") or {}).get("ssl") or {}).get("price"),
+            "smc_zone": ((smc_dna or {}).get("liquidity") or {}).get("zone", "EQUILIBRIUM"),
+            "dna_similarity_pct": ((smc_dna or {}).get("dna") or {}).get("similarity_pct", 0.0),
+        },
+        "smc_dna": smc_dna,
+        "auto_close_plan": {
+            "bsl_target": (((smc_dna or {}).get("liquidity") or {}).get("bsl") or {}).get("price"),
+            "ssl_target": (((smc_dna or {}).get("liquidity") or {}).get("ssl") or {}).get("price"),
+            "entry_zone": (smc_dna or {}).get("entry_signal"),
+            "exit_triggers": (smc_dna or {}).get("exit_signal"),
+        },
     }
 
 # -------------------------------------------------------------
