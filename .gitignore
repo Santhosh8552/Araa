@@ -13,3 +13,14 @@ logs/
 .env
 *.db
 *.sqlite
+
+# generated QA binary/report artifacts
+reports/screenshots/*
+reports/videos/*
+reports/traces/*
+reports/*.xlsx
+reports/*.pdf
+reports/*.html
+reports/*.json
+reports/*.log
+!reports/**/.gitkeep

@@ -197,8 +197,10 @@ class SecurityFirewall:
                     "code": 403
                 }), 403
 
-        # Aggregate inputs to inspect (Query string + Form + JSON)
-        sample_texts = [request.query_string.decode("utf-8", errors="ignore")]
+        # Aggregate inputs to inspect (Query string raw + URL-decoded + Form + JSON)
+        from urllib.parse import unquote_plus
+        qs_raw = request.query_string.decode("utf-8", errors="ignore")
+        sample_texts = [qs_raw, unquote_plus(qs_raw)]
         if request.is_json:
             try:
                 body_str = json.dumps(request.get_json(silent=True) or {})

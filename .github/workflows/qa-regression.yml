@@ -1,0 +1,68 @@
+name: AraaBot Enterprise QA Regression Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  qa-regression:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"
+      COMPANY_WORKER_ENABLED: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python QA & App Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Static JS & HTML Script Check
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: |
+          node -c admin/admin.js
+          node -e 'const fs=require("fs"),vm=require("vm");const html=fs.readFileSync("admin/index.html","utf8");const rx=/<script\b[^>]*>([\s\S]*?)<\/script>/gi;let m,i=0;while((m=rx.exec(html))){if(m[1].trim()){new vm.Script(m[1],{filename:`inline_${i++}.js`});}}console.log("HTML inline scripts OK:",i);'
+
+      - name: Run Core & QA Pytest Suites with Coverage
+        run: |
+          pytest tests/test_qa_automation_system.py tests/test_security_and_close.py tests/test_panel_access_restriction.py tests/test_v3_enterprise_ecosystem.py tests/test_v3_platform.py tests/test_central_admin_ecosystem.py --cov=backend --cov-report=term-missing -v
+
+      - name: Execute Isolated Deployment Regression Gate
+        run: |
+          python - <<'PY'
+          import os, sys, tempfile, shutil
+          tmp = tempfile.mkdtemp(prefix="ci_reg_")
+          os.environ["DB_PATH"] = os.path.join(tmp, "ci_reg.db")
+          sys.path.insert(0, os.path.abspath("backend"))
+          import database
+          database.init_schema()
+          import qa_automation_engine as qa
+          qa.ensure_qa_ready(force=True)
+          res = qa.run_sync(trigger_type="CI", suite_ids=["REGRESSION"], triggered_by="github-actions")
+          print("CI REGRESSION:", res["run_id"], res["summary"]["status"], res["summary"]["passed_cases"], "/", res["summary"]["total_cases"])
+          assert res["summary"]["status"] == "PASSED", res
+          shutil.rmtree(tmp, ignore_errors=True)
+          PY
+
+      - name: Upload Failure Screenshots / Reports on Failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-artifacts
+          path: |
+            reports/screenshots/
+            reports/traces/
+          if-no-files-found: ignore

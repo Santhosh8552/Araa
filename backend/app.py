@@ -82,7 +82,7 @@ try:
 except ImportError:
     from backend.enterprise_v1_api import v1_api
 api.register_blueprint(v1_api, url_prefix="/api/v1")
-api.register_blueprint(v1_api, url_prefix="/api", name="enterprise_v1_api_alias")
+# Note: /api alias for enterprise_v1_api is registered after core @api.route handlers so native /api/admin/overview is not shadowed.
 user_app = Flask(__name__, static_folder=FRONTEND_DIR)
 admin_app = Flask(__name__, static_folder=ADMIN_DIR)
 CORS(user_app, resources={r"/*": {"origins": "*"}})
@@ -351,10 +351,12 @@ def current_user():
 
 
 def resolve_user():
-    """Returns the authenticated user or the active logged-in user from the current session/system."""
+    """Returns the authenticated user or active session; never falls back if an invalid/revoked X-Token was explicitly provided."""
     u = current_user()
     if u:
         return u
+    if request.headers.get("X-Token"):
+        return None
     # Check Authorization header
     auth_hdr = request.headers.get("Authorization", "")
     if auth_hdr.startswith("Bearer "):
@@ -8663,6 +8665,335 @@ def admin_system_validation_get(run_id):
 def admin_system_validation_history():
     rows = query("SELECT * FROM system_monitoring_runs ORDER BY created_at DESC LIMIT 50")
     return ok(history=rows)
+
+
+# =============================================================================
+# ADMIN TESTING & QUALITY CENTER (ENTERPRISE QA AUTOMATION FRAMEWORK)
+# =============================================================================
+def _qa_engine():
+    try:
+        import qa_automation_engine as qa
+    except ImportError:
+        from backend import qa_automation_engine as qa
+    qa.ensure_qa_ready()
+    return qa
+
+
+def _qa_reports():
+    try:
+        import qa_reports as qr
+    except ImportError:
+        from backend import qa_reports as qr
+    return qr
+
+
+def _qa_actor() -> str:
+    tok = request.headers.get("X-Admin-Token", "")
+    raw = get_state(f"admin_session_{tok}")
+    if raw:
+        try:
+            return str(json.loads(raw).get("user") or "admin")
+        except Exception:
+            pass
+    return "admin"
+
+
+@api.route("/api/admin/qa/dashboard", methods=["GET"])
+def admin_qa_dashboard():
+    qa = _qa_engine()
+    return ok(**qa.get_qa_dashboard_data())
+
+
+@api.route("/api/admin/qa/suites", methods=["GET"])
+def admin_qa_suites():
+    qa = _qa_engine()
+    q_search = (request.args.get("search") or "").strip().lower()
+    q_cat = (request.args.get("category") or "").strip().upper()
+    q_suite = (request.args.get("suite_id") or "").strip().upper()
+
+    suites = query("SELECT * FROM qa_test_suites ORDER BY sort_order ASC, suite_id ASC")
+    cases = query("SELECT * FROM qa_test_cases ORDER BY case_id ASC")
+    latest_run = query_one("SELECT run_id FROM qa_test_runs ORDER BY created_at DESC LIMIT 1")
+    latest_map = {}
+    if latest_run:
+        for res_row in query(
+            "SELECT case_id, status, duration_ms, error_message, defect_id FROM qa_test_results WHERE run_id=?",
+            (latest_run["run_id"],),
+        ):
+            latest_map[res_row["case_id"]] = dict(res_row)
+
+    cases_by_suite = {}
+    for c in cases:
+        cd = dict(c)
+        last = latest_map.get(cd["case_id"], {})
+        cd["last_status"] = last.get("status", "NOT_RUN")
+        cd["last_duration_ms"] = last.get("duration_ms", 0.0)
+        cd["last_error"] = last.get("error_message", "")
+        cd["last_defect_id"] = last.get("defect_id", "")
+        if q_search and q_search not in cd["name"].lower() and q_search not in cd["case_id"].lower():
+            continue
+        cases_by_suite.setdefault(cd["suite_id"], []).append(cd)
+
+    out_suites = []
+    for s in suites:
+        sd = dict(s)
+        if q_cat and sd["category"].upper() != q_cat:
+            continue
+        if q_suite and sd["suite_id"].upper() != q_suite:
+            continue
+        sd["cases"] = cases_by_suite.get(sd["suite_id"], [])
+        if q_search and not sd["cases"] and q_search not in sd["name"].lower():
+            continue
+        out_suites.append(sd)
+    return ok(suites=out_suites, latest_run_id=latest_run["run_id"] if latest_run else None)
+
+
+@api.route("/api/admin/qa/endpoints", methods=["GET"])
+def admin_qa_endpoints():
+    qa = _qa_engine()
+    return ok(endpoints=qa.list_discovered_api_endpoints(api))
+
+
+@api.route("/api/admin/qa/runs", methods=["GET", "POST"])
+def admin_qa_runs():
+    qa = _qa_engine()
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        mode = str(d.get("mode") or d.get("trigger_type") or "ALL").upper()
+        suite_ids = d.get("suite_ids") or ([] if mode != "REGRESSION" else ["REGRESSION"])
+        case_ids = d.get("case_ids") or None
+        overrides = d.get("overrides") if isinstance(d.get("overrides"), dict) else None
+        sync_flag = bool(d.get("sync", False))
+        actor = _qa_actor()
+        if sync_flag:
+            res = qa.run_sync(trigger_type=mode, suite_ids=suite_ids, case_ids=case_ids, triggered_by=actor)
+        else:
+            res = qa.enqueue_run(
+                trigger_type=mode, suite_ids=suite_ids, case_ids=case_ids, triggered_by=actor, overrides=overrides
+            )
+        code = 409 if res.get("duplicate_blocked") else (400 if not res.get("success") else 200)
+        return jsonify(res), code
+
+    limit = max(1, min(int(request.args.get("limit") or 25), 100))
+    offset = max(0, int(request.args.get("offset") or 0))
+    st_f = (request.args.get("status") or "").strip().upper()
+    tr_f = (request.args.get("trigger_type") or "").strip().upper()
+    clauses, params = [], []
+    if st_f:
+        clauses.append("status=?")
+        params.append(st_f)
+    if tr_f:
+        clauses.append("trigger_type=?")
+        params.append(tr_f)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = query(f"SELECT * FROM qa_test_runs {where} ORDER BY created_at DESC LIMIT ? OFFSET ?", (*params, limit, offset))
+    tot = int((query_one(f"SELECT COUNT(*) c FROM qa_test_runs {where}", tuple(params)) or {}).get("c") or 0)
+    return ok(runs=rows, total=tot, limit=limit, offset=offset)
+
+
+@api.route("/api/admin/qa/runs/<run_id>", methods=["GET"])
+def admin_qa_run_detail(run_id):
+    qa = _qa_engine()
+    run_row = query_one("SELECT * FROM qa_test_runs WHERE run_id=?", (run_id,))
+    if not run_row:
+        return fail("Test run not found", 404)
+
+    since_log_id = int(request.args.get("since_log_id") or 0)
+    st_f = (request.args.get("status") or "").strip().upper()
+    sev_f = (request.args.get("severity") or "").strip()
+    search_q = (request.args.get("search") or "").strip()
+
+    clauses = ["run_id=?"]
+    params: list = [run_id]
+    if st_f:
+        clauses.append("status=?")
+        params.append(st_f)
+    if sev_f:
+        clauses.append("severity=?")
+        params.append(sev_f)
+    if search_q:
+        clauses.append("(LOWER(case_id) LIKE ? OR LOWER(case_name) LIKE ? OR LOWER(module) LIKE ?)")
+        like_q = f"%{search_q.lower()}%"
+        params.extend([like_q, like_q, like_q])
+
+    results = query("SELECT * FROM qa_test_results WHERE " + " AND ".join(clauses) + " ORDER BY created_at ASC", tuple(params))
+    logs = query("SELECT * FROM qa_test_logs WHERE run_id=? AND log_id > ? ORDER BY log_id ASC LIMIT 300", (run_id, since_log_id))
+    artifacts = query("SELECT * FROM qa_test_artifacts WHERE run_id=? ORDER BY created_at DESC", (run_id,))
+    comp = _qa_reports().compute_historical_comparison(run_id)
+    return ok(run=run_row, results=results, logs=logs, artifacts=artifacts, historical_comparison=comp)
+
+
+@api.route("/api/admin/qa/runs/<run_id>/stop", methods=["POST"])
+def admin_qa_run_stop(run_id):
+    res = _qa_engine().stop_run(run_id, actor=_qa_actor())
+    return jsonify(res), (200 if res.get("success") else 404)
+
+
+@api.route("/api/admin/qa/runs/<run_id>/logs", methods=["GET"])
+def admin_qa_run_logs(run_id):
+    _qa_engine()
+    if request.args.get("download") == "1":
+        out = _qa_reports().generate_logs_report(run_id)
+        if not out:
+            return fail("Test run not found", 404)
+        raw, mime, fname = out
+        return Response(raw, mimetype=mime, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+    since = int(request.args.get("since_log_id") or 0)
+    logs = query("SELECT * FROM qa_test_logs WHERE run_id=? AND log_id > ? ORDER BY log_id ASC LIMIT 500", (run_id, since))
+    return ok(logs=logs)
+
+
+@api.route("/api/admin/qa/runs/<run_id>/export/<fmt>", methods=["GET"])
+def admin_qa_run_export(run_id, fmt):
+    _qa_engine()
+    qr = _qa_reports()
+    f = (fmt or "json").lower().strip()
+    generators = {
+        "excel": qr.generate_excel_report,
+        "xlsx": qr.generate_excel_report,
+        "pdf": qr.generate_pdf_report,
+        "html": qr.generate_html_report,
+        "json": qr.generate_json_report,
+        "logs": qr.generate_logs_report,
+        "log": qr.generate_logs_report,
+    }
+    gen = generators.get(f)
+    if not gen:
+        return fail(f"Unsupported report format: {f}", 400)
+    out = gen(run_id)
+    if not out:
+        return fail("Test run not found", 404)
+    raw, mime, fname = out
+    disp = "inline" if f == "html" and request.args.get("preview") == "1" else "attachment"
+    return Response(raw, mimetype=mime, headers={"Content-Disposition": f'{disp}; filename="{fname}"'})
+
+
+@api.route("/api/admin/qa/artifacts/<artifact_id>", methods=["GET"])
+def admin_qa_artifact_download(artifact_id):
+    _qa_engine()
+    if ".." in artifact_id or "/" in artifact_id or "\\" in artifact_id:
+        return fail("Forbidden artifact path", 403)
+    row = query_one("SELECT * FROM qa_test_artifacts WHERE artifact_id=?", (artifact_id,))
+    if not row:
+        return fail("Artifact not found", 404)
+    reports_root = os.path.realpath(os.path.join(BASE_DIR, "reports"))
+    target = os.path.realpath(os.path.join(BASE_DIR, row["file_path"]))
+    if not target.startswith(reports_root + os.sep) or not os.path.exists(target):
+        return fail("Forbidden or missing artifact file", 403)
+    return send_from_directory(os.path.dirname(target), os.path.basename(target), mimetype=row.get("mime_type") or "application/octet-stream")
+
+
+@api.route("/api/admin/qa/defects", methods=["GET", "POST"])
+def admin_qa_defects():
+    qa = _qa_engine()
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        title = qa.sanitize_text(d.get("title") or "")
+        if not title:
+            return fail("Defect title is required", 400)
+        sev = str(d.get("severity") or "High")
+        if sev not in ("Critical", "High", "Medium", "Low"):
+            sev = "High"
+        prio = str(d.get("priority") or ("P1" if sev == "Critical" else "P2"))
+        now = time.time()
+        did = f"DEF-{time.strftime('%Y%m%d', time.gmtime(now))}-{secrets.token_hex(3).upper()}"
+        write(
+            "INSERT INTO qa_defects(defect_id, title, description, module, run_id, case_id, severity, priority, "
+            "status, assigned_admin, evidence, created_by, created_at, updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,'Open',?,?,?,?,?)",
+            (
+                did, title, qa.sanitize_text(d.get("description") or ""),
+                qa.sanitize_text(d.get("module") or "PLATFORM"),
+                qa.sanitize_text(d.get("run_id") or ""), qa.sanitize_text(d.get("case_id") or ""),
+                sev, prio, qa.sanitize_text(d.get("assigned_admin") or _qa_actor()),
+                qa.sanitize_text(d.get("evidence") or ""), _qa_actor(), now, now,
+            ),
+        )
+        return ok(defect=query_one("SELECT * FROM qa_defects WHERE defect_id=?", (did,)))
+
+    st = (request.args.get("status") or "").strip()
+    sev = (request.args.get("severity") or "").strip()
+    mod = (request.args.get("module") or "").strip()
+    clauses, params = [], []
+    if st:
+        clauses.append("status=?")
+        params.append(st)
+    if sev:
+        clauses.append("severity=?")
+        params.append(sev)
+    if mod:
+        clauses.append("LOWER(module) LIKE ?")
+        params.append(f"%{mod.lower()}%")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = query(f"SELECT * FROM qa_defects {where} ORDER BY created_at DESC LIMIT 200", tuple(params))
+    return ok(defects=rows)
+
+
+@api.route("/api/admin/qa/defects/<defect_id>", methods=["PATCH", "POST"])
+def admin_qa_defect_update(defect_id):
+    d = request.get_json(silent=True) or {}
+    res = _qa_engine().update_defect(defect_id, d)
+    code = 404 if res.get("error") == "Defect not found" else (400 if not res.get("success") else 200)
+    return jsonify(res), code
+
+
+@api.route("/api/admin/qa/defects/<defect_id>/retest", methods=["POST"])
+def admin_qa_defect_retest(defect_id):
+    res = _qa_engine().retest_defect(defect_id, triggered_by=_qa_actor())
+    return jsonify(res), (200 if res.get("success") else 400)
+
+
+@api.route("/api/admin/qa/config", methods=["GET", "POST"])
+def admin_qa_config():
+    qa = _qa_engine()
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        return jsonify(qa.update_qa_config(d, actor=_qa_actor()))
+    return ok(config=qa.get_qa_config())
+
+
+@api.route("/api/admin/qa/schedules", methods=["GET", "POST"])
+def admin_qa_schedules():
+    qa = _qa_engine()
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        sid = str(d.get("schedule_id") or f"SCHED-{secrets.token_hex(4).upper()}")
+        iv = max(5, min(int(float(d.get("interval_minutes") or 60)), 1440))
+        enabled = 1 if d.get("is_enabled") else 0
+        now = time.time()
+        write(
+            "INSERT INTO qa_test_schedules(schedule_id, name, suite_ids_json, trigger_mode, interval_minutes, "
+            "is_enabled, next_run_at, created_by, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(schedule_id) DO UPDATE SET name=excluded.name, suite_ids_json=excluded.suite_ids_json, "
+            "interval_minutes=excluded.interval_minutes, is_enabled=excluded.is_enabled, next_run_at=excluded.next_run_at, updated_at=excluded.updated_at",
+            (
+                sid, qa.sanitize_text(d.get("name") or "Scheduled Regression"),
+                json.dumps(d.get("suite_ids") or ["REGRESSION"]),
+                str(d.get("trigger_mode") or "INTERVAL"), iv, enabled,
+                (now + iv * 60) if enabled else None, _qa_actor(), now, now,
+            ),
+        )
+        return ok(schedule=query_one("SELECT * FROM qa_test_schedules WHERE schedule_id=?", (sid,)))
+    return ok(schedules=query("SELECT * FROM qa_test_schedules ORDER BY created_at ASC"))
+
+
+@api.route("/api/admin/qa/schedules/deployment-hook", methods=["POST"])
+def admin_qa_deployment_regression_hook():
+    """Run automated deployment regression gate (Real Mode remains strictly locked off)."""
+    qa = _qa_engine()
+    d = request.get_json(silent=True) or {}
+    sync_flag = bool(d.get("sync", False))
+    actor = f"DEPLOY_HOOK:{_qa_actor()}"
+    if sync_flag:
+        res = qa.run_sync(trigger_type="DEPLOYMENT", suite_ids=["REGRESSION"], triggered_by=actor)
+    else:
+        res = qa.enqueue_run(trigger_type="DEPLOYMENT", suite_ids=["REGRESSION"], triggered_by=actor)
+    res["real_mode_auto_enabled"] = False
+    return jsonify(res), (200 if res.get("success", False) or res.get("queued") else 400)
+
+
+# Register v1_api fallback alias after explicit @api.route handlers
+api.register_blueprint(v1_api, url_prefix="/api", name="enterprise_v1_api_alias")
 
 
 if __name__ == "__main__":

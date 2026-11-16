@@ -1622,3 +1622,178 @@ CREATE TABLE IF NOT EXISTS wallet_immutable_ledger(
 """
 
 MIGRATIONS.append(("010", "araa_wallet_infrastructure_and_ledger", _MIGRATION_010_SQL))
+
+# =============================================================================
+# MIGRATION 011 — ENTERPRISE QA AUTOMATION FRAMEWORK (TESTING & QUALITY CENTER)
+# =============================================================================
+_MIGRATION_011_SQL = """
+CREATE TABLE IF NOT EXISTS qa_test_suites(
+  suite_id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  module_path TEXT NOT NULL DEFAULT '',
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  is_safe_live INTEGER NOT NULL DEFAULT 1,
+  requires_isolated_db INTEGER NOT NULL DEFAULT 1,
+  default_timeout_sec INTEGER NOT NULL DEFAULT 60,
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  created_by TEXT NOT NULL DEFAULT 'SYSTEM',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_qa_suites_cat ON qa_test_suites(category, sort_order);
+
+CREATE TABLE IF NOT EXISTS qa_test_cases(
+  case_id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL DEFAULT 'High',
+  test_type TEXT NOT NULL DEFAULT 'AUTOMATED',
+  target_ref TEXT NOT NULL DEFAULT '',
+  expected_behavior TEXT NOT NULL DEFAULT '',
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  is_destructive_isolated INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL DEFAULT 'SYSTEM',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  FOREIGN KEY (suite_id) REFERENCES qa_test_suites(suite_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_qa_cases_suite ON qa_test_cases(suite_id, is_enabled);
+
+CREATE TABLE IF NOT EXISTS qa_test_runs(
+  run_id TEXT PRIMARY KEY,
+  trigger_type TEXT NOT NULL DEFAULT 'MANUAL',
+  environment TEXT NOT NULL DEFAULT 'ISOLATED_STAGING',
+  status TEXT NOT NULL DEFAULT 'QUEUED',
+  suite_filter_json TEXT NOT NULL DEFAULT '[]',
+  case_filter_json TEXT NOT NULL DEFAULT '[]',
+  total_cases INTEGER NOT NULL DEFAULT 0,
+  passed_cases INTEGER NOT NULL DEFAULT 0,
+  failed_cases INTEGER NOT NULL DEFAULT 0,
+  blocked_cases INTEGER NOT NULL DEFAULT 0,
+  skipped_cases INTEGER NOT NULL DEFAULT 0,
+  pending_cases INTEGER NOT NULL DEFAULT 0,
+  pass_rate_pct REAL NOT NULL DEFAULT 0.0,
+  duration_ms REAL NOT NULL DEFAULT 0.0,
+  deployment_readiness TEXT NOT NULL DEFAULT 'PENDING',
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  triggered_by TEXT NOT NULL DEFAULT 'admin',
+  started_at REAL,
+  finished_at REAL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_qa_runs_status ON qa_test_runs(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_qa_runs_trigger ON qa_test_runs(trigger_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS qa_test_results(
+  result_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  suite_id TEXT NOT NULL,
+  case_id TEXT NOT NULL,
+  case_name TEXT NOT NULL,
+  module TEXT NOT NULL DEFAULT '',
+  environment TEXT NOT NULL DEFAULT 'ISOLATED_STAGING',
+  status TEXT NOT NULL DEFAULT 'QUEUED',
+  severity TEXT NOT NULL DEFAULT 'High',
+  attempt_num INTEGER NOT NULL DEFAULT 1,
+  started_at REAL,
+  finished_at REAL,
+  duration_ms REAL NOT NULL DEFAULT 0.0,
+  expected_result TEXT NOT NULL DEFAULT '',
+  actual_result TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  stack_trace TEXT NOT NULL DEFAULT '',
+  api_response_sanitized TEXT NOT NULL DEFAULT '',
+  defect_id TEXT DEFAULT '',
+  metrics_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES qa_test_runs(run_id) ON DELETE CASCADE,
+  FOREIGN KEY (suite_id) REFERENCES qa_test_suites(suite_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_qa_results_run ON qa_test_results(run_id, status);
+CREATE INDEX IF NOT EXISTS ix_qa_results_case ON qa_test_results(case_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS qa_test_logs(
+  log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  result_id TEXT DEFAULT '',
+  level TEXT NOT NULL DEFAULT 'INFO',
+  source TEXT NOT NULL DEFAULT 'QA_RUNNER',
+  message TEXT NOT NULL,
+  logged_at REAL NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES qa_test_runs(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_qa_logs_run ON qa_test_logs(run_id, log_id);
+
+CREATE TABLE IF NOT EXISTS qa_test_artifacts(
+  artifact_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  result_id TEXT DEFAULT '',
+  artifact_type TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL DEFAULT 'QA_RUNNER',
+  created_at REAL NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES qa_test_runs(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_qa_artifacts_run ON qa_test_artifacts(run_id, artifact_type);
+
+CREATE TABLE IF NOT EXISTS qa_defects(
+  defect_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  module TEXT NOT NULL DEFAULT '',
+  run_id TEXT DEFAULT '',
+  case_id TEXT DEFAULT '',
+  result_id TEXT DEFAULT '',
+  severity TEXT NOT NULL DEFAULT 'High',
+  priority TEXT NOT NULL DEFAULT 'P1',
+  status TEXT NOT NULL DEFAULT 'Open',
+  assigned_admin TEXT NOT NULL DEFAULT 'UNASSIGNED',
+  evidence TEXT NOT NULL DEFAULT '',
+  screenshot_artifact_id TEXT DEFAULT '',
+  root_cause TEXT NOT NULL DEFAULT '',
+  resolution_notes TEXT NOT NULL DEFAULT '',
+  retest_run_id TEXT DEFAULT '',
+  retest_passed INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL DEFAULT 'QA_RUNNER',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  resolved_at REAL
+);
+CREATE INDEX IF NOT EXISTS ix_qa_defects_status ON qa_defects(status, severity, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS qa_test_config(
+  config_key TEXT PRIMARY KEY,
+  config_value TEXT NOT NULL,
+  value_type TEXT NOT NULL DEFAULT 'string',
+  description TEXT NOT NULL DEFAULT '',
+  updated_by TEXT NOT NULL DEFAULT 'SYSTEM',
+  updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS qa_test_schedules(
+  schedule_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  suite_ids_json TEXT NOT NULL DEFAULT '[]',
+  trigger_mode TEXT NOT NULL DEFAULT 'INTERVAL',
+  interval_minutes INTEGER NOT NULL DEFAULT 60,
+  is_enabled INTEGER NOT NULL DEFAULT 0,
+  last_run_id TEXT DEFAULT '',
+  last_run_at REAL,
+  next_run_at REAL,
+  created_by TEXT NOT NULL DEFAULT 'admin',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_qa_sched_enabled ON qa_test_schedules(is_enabled, next_run_at);
+"""
+
+MIGRATIONS.append(("011", "qa_automation_framework", _MIGRATION_011_SQL))

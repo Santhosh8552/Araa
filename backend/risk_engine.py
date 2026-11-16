@@ -377,6 +377,26 @@ class InstitutionalRiskEngine:
         return cls.calculate_liquidation_price(entry_price, side, leverage, maintenance_margin_rate)
 
     @staticmethod
+    def _log_risk_event(user_id, symbol, event_type, severity, rule_name, details):
+        """Persist risk circuit-breaker & rule violation events into risk_events & bot_log."""
+        now = time.time()
+        try:
+            write(
+                "INSERT INTO risk_events(user_id, symbol, event_type, severity, rule_name, details_json, created_at) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                (int(user_id or 0), str(symbol or ""), str(event_type), str(severity), str(rule_name), json.dumps({"detail": str(details)}), now),
+            )
+        except Exception:
+            pass
+        try:
+            write(
+                "INSERT INTO bot_log(at, user_id, level, message) VALUES(?,?,?,?)",
+                (now, int(user_id or 0), str(severity), f"[{rule_name}] {symbol or ''}: {details}"),
+            )
+        except Exception:
+            pass
+
+    @staticmethod
     def _suspend_user_bot(user_id, reason):
         now = time.time()
         write("UPDATE users SET bot_enabled=0 WHERE id=?", (user_id,))

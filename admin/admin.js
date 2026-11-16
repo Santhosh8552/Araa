@@ -5,6 +5,7 @@ const API = (window.location.hostname === "araabot.in")
       : window.location.origin);
 const $ = (id) => document.getElementById(id);
 const inr = (n) => "$" + Number(n || 0).toLocaleString("en-IN", {maximumFractionDigits: 2, minimumFractionDigits: 2});
+const signed = (n) => { const v = Number(n || 0); return (v >= 0 ? "+$" : "-$") + Math.abs(v).toLocaleString("en-IN", {maximumFractionDigits: 2, minimumFractionDigits: 2}); };
 const num = (n) => Number(n || 0).toLocaleString("en-IN");
 const priceFmt = (p) => Number(p) >= 1000 ? Number(p).toLocaleString("en-IN", {maximumFractionDigits: 2})
                      : Number(p) >= 1 ? Number(p).toFixed(4) : Number(p).toFixed(8);
@@ -1010,7 +1011,7 @@ if ($("adm_hub_search")) {
   };
 }
 
-preview(); if (getAdminToken()) { tick(); if (typeof loadCoinDcxLiveAdmin === "function") loadCoinDcxLiveAdmin(); if (typeof fetchInstitutionalAI === "function") fetchInstitutionalAI(); }
+preview(); if (getAdminToken()) { tick(); if (typeof loadCoinDcxLiveAdmin === "function") loadCoinDcxLiveAdmin(); if (typeof fetchInstitutionalAI === "function") fetchInstitutionalAI(); if (typeof loadQADashboard === "function") loadQADashboard(); }
 setInterval(async () => { if (!getAdminToken()) return; try { await loadOverview(); await loadStorage(); await loadGatekeeperAudit(); if (typeof loadCoinDcxLiveAdmin === "function") await loadCoinDcxLiveAdmin(); } catch (e) {} }, 4000);
 setInterval(async () => { if (!getAdminToken()) return; try { await loadWithdrawals(); await loadUsers(); await loadLogs(); await loadFirewall(); if (typeof fetchInstitutionalAI === "function") await fetchInstitutionalAI(); } catch (e) {} }, 8000);
 setInterval(async () => { if (!getAdminToken()) return; try { await loadDeposits(); await loadLedger(); } catch (e) {} }, 15000);
@@ -1477,6 +1478,7 @@ async function handleAdminLoginSubmit(e) {
       if (typeof fetchInstitutionalAI === "function") fetchInstitutionalAI();
       if (typeof loadUpiGatewayConfig === "function") loadUpiGatewayConfig();
       if (typeof loadSlackConfig === "function") loadSlackConfig();
+      if (typeof loadQADashboard === "function") loadQADashboard();
     } else {
       if (errDiv) {
         errDiv.textContent = (res && res.error) || "Invalid administrator credentials. Access denied.";
@@ -2145,6 +2147,9 @@ window.switchAdminView = function(viewName) {
   if (viewName === "system-diagnostics" || viewName === "all") {
     loadAdminDiagnostics();
   }
+  if (viewName === "testing-quality-center" || viewName === "all") {
+    if (typeof loadQADashboard === "function") loadQADashboard();
+  }
 };
 
 // =============================================================================
@@ -2280,4 +2285,707 @@ window.approveAdminProductionDeployment = function() {
     }
   });
 };
+
+// =============================================================================
+// ENTERPRISE TESTING & QUALITY CENTER (ADMIN QA AUTOMATION FRAMEWORK v1.0)
+// =============================================================================
+(function() {
+  let _qaState = {
+    activeSubmenu: "qa-dashboard",
+    focusedSuite: "",
+    activeRunId: "",
+    latestRunId: "",
+    suites: [],
+    runs: [],
+    execResults: [],
+    defects: [],
+    pollTimer: null,
+  };
+
+  function _qaBadgeHtml(st) {
+    const u = String(st || "NOT_RUN").toUpperCase();
+    const cls = (u === "PASSED" || u === "HEALTHY" || u === "CONNECTED" || u === "READY_FOR_DEPLOYMENT" || u === "VERIFIED" || u === "CLOSED")
+      ? "ok"
+      : (u === "FAILED" || u === "UNHEALTHY" || u === "DEGRADED" || u === "CRITICAL" || u === "BLOCKED_FAILURES")
+      ? "fail"
+      : (u === "RUNNING" || u === "QUEUED" || u === "RETESTING")
+      ? "info"
+      : "warn";
+    return `<span class="qa-badge ${cls}">${_admEsc(u)}</span>`;
+  }
+
+  function _qaFmtTs(sec) {
+    if (!sec) return "—";
+    try {
+      return new Date(Number(sec) * 1000).toLocaleString("en-IN");
+    } catch (e) { return "—"; }
+  }
+
+  function _qaStopPolling() {
+    if (_qaState.pollTimer) {
+      clearInterval(_qaState.pollTimer);
+      _qaState.pollTimer = null;
+    }
+  }
+
+  function _qaEnsurePolling(runId) {
+    _qaState.activeRunId = runId;
+    if (_qaState.pollTimer) return;
+    _qaState.pollTimer = setInterval(async () => {
+      if (!getAdminToken() || !_qaState.activeRunId) {
+        _qaStopPolling();
+        return;
+      }
+      await qaLoadExecutionDetail(_qaState.activeRunId, true);
+    }, 1500);
+  }
+
+  window.qaCloseModal = function(id) {
+    const el = $(id);
+    if (el) { el.classList.add("hide"); el.style.display = "none"; }
+  };
+
+  function _qaShowModal(id) {
+    const el = $(id);
+    if (el) { el.classList.remove("hide"); el.style.display = "flex"; }
+  }
+
+  window.openQASubmenu = function(submenuId) {
+    _qaState.activeSubmenu = submenuId;
+    const sec = document.querySelector(".adm-sec[data-adm-sec='testing-quality-center']");
+    if (sec && sec.style.display === "none" && typeof window.switchAdminView === "function") {
+      window.switchAdminView("testing-quality-center");
+    }
+    document.querySelectorAll("[data-qa-submenu], [data-qa-nav]").forEach(btn => {
+      const target = btn.getAttribute("data-qa-submenu") || btn.getAttribute("data-qa-nav");
+      btn.classList.toggle("active", target === submenuId);
+    });
+
+    const isSuitePanel = submenuId === "qa-suites" || submenuId.startsWith("qa-suite-");
+    const panelKey = isSuitePanel ? "qa-suites" : submenuId;
+    _qaState.focusedSuite = submenuId.startsWith("qa-suite-") ? submenuId.replace("qa-suite-", "") : "";
+
+    document.querySelectorAll("[data-qa-panel]").forEach(p => {
+      p.style.display = (p.getAttribute("data-qa-panel") === panelKey) ? "" : "none";
+    });
+
+    if (submenuId === "qa-dashboard") {
+      loadQADashboard();
+    } else if (isSuitePanel) {
+      qaLoadSuites(_qaState.focusedSuite);
+    } else if (submenuId === "qa-execution") {
+      qaLoadExecutionDetail(_qaState.activeRunId || _qaState.latestRunId);
+    } else if (submenuId === "qa-regression") {
+      qaLoadRegressionPanel();
+    } else if (submenuId === "qa-reports") {
+      qaLoadReportArtifacts();
+    } else if (submenuId === "qa-defects") {
+      qaLoadDefects();
+    } else if (submenuId === "qa-system-health") {
+      qaLoadSystemHealthPanel();
+    } else if (submenuId === "qa-test-config") {
+      qaLoadConfig();
+    }
+  };
+
+  window.loadQADashboard = async function(refreshSub = false) {
+    try {
+      const res = await get("/api/admin/qa/dashboard");
+      if (!res || res.success === false) return;
+      const m = res.metrics || {};
+      const h = res.health || {};
+      const lr = res.latest_run;
+
+      if ($("qa_kpi_total")) $("qa_kpi_total").textContent = num(m.total_test_cases || 0);
+      if ($("qa_kpi_registered")) $("qa_kpi_registered").textContent = `${num(m.registered_test_cases || 0)} cases registered`;
+      if ($("qa_kpi_passed")) $("qa_kpi_passed").textContent = num(m.passed_tests || 0);
+      if ($("qa_kpi_failed")) $("qa_kpi_failed").textContent = num(m.failed_tests || 0);
+      if ($("qa_kpi_blocked_skip")) $("qa_kpi_blocked_skip").textContent = `${num(m.blocked_tests || 0)} / ${num(m.skipped_tests || 0)}`;
+      if ($("qa_kpi_pending")) $("qa_kpi_pending").textContent = `${num(m.pending_tests || 0)} pending`;
+      if ($("qa_kpi_pass_pct")) $("qa_kpi_pass_pct").textContent = `${Number(m.pass_percentage || 0).toFixed(1)}%`;
+      if ($("qa_kpi_duration")) $("qa_kpi_duration").textContent = `Duration: ${Math.round(res.latest_execution_duration_ms || 0)} ms`;
+      if ($("qa_kpi_defects")) $("qa_kpi_defects").textContent = `${num(m.critical_defects || 0)} / ${num(m.high_severity_defects || 0)}`;
+      if ($("qa_kpi_open_def")) $("qa_kpi_open_def").textContent = `${num(m.open_defects || 0)} total open defects`;
+
+      if ($("qa_h_api")) $("qa_h_api").innerHTML = _qaBadgeHtml(h.api_health?.status || "NOT_TESTED");
+      if ($("qa_h_api_sub")) $("qa_h_api_sub").textContent = h.api_health?.suite?.total ? `${h.api_health.suite.passed}/${h.api_health.suite.total} passed` : "Pending API run";
+      if ($("qa_h_backend")) $("qa_h_backend").innerHTML = _qaBadgeHtml(h.backend_health?.status || "NOT_TESTED");
+      if ($("qa_h_backend_sub")) $("qa_h_backend_sub").textContent = h.backend_health?.suite?.total ? `${h.backend_health.suite.passed}/${h.backend_health.suite.total} passed` : "13 Python modules";
+      if ($("qa_h_db")) $("qa_h_db").innerHTML = _qaBadgeHtml(h.database_health?.status || "HEALTHY");
+      if ($("qa_h_db_sub")) $("qa_h_db_sub").textContent = `WAL latency ${h.database_health?.latency_ms || 0}ms · ${h.database_health?.tables || 0} tables`;
+      if ($("qa_h_frontend")) $("qa_h_frontend").innerHTML = _qaBadgeHtml(h.frontend_health?.status || "NOT_TESTED");
+      if ($("qa_h_frontend_sub")) $("qa_h_frontend_sub").textContent = h.frontend_health?.suite?.total ? `${h.frontend_health.suite.passed}/${h.frontend_health.suite.total} passed` : "Playwright headless UI";
+      if ($("qa_h_engine")) $("qa_h_engine").innerHTML = _qaBadgeHtml(h.trading_engine_health?.status || "HEALTHY");
+      if ($("qa_h_engine_sub")) $("qa_h_engine_sub").textContent = `Bots: ${h.trading_engine_health?.active_bots || 0} · Open: ${h.trading_engine_health?.open_positions || 0}`;
+      if ($("qa_h_cdx")) $("qa_h_cdx").innerHTML = _qaBadgeHtml(h.coindcx_connectivity?.status || "CONFIGURED");
+      if ($("qa_h_cdx_sub")) $("qa_h_cdx_sub").textContent = `${h.coindcx_connectivity?.connected_accounts || 0} connected · Safe lock ON`;
+
+      _qaState.latestRunId = lr ? lr.run_id : "";
+      if ($("qa_meta_latest_run")) $("qa_meta_latest_run").textContent = lr ? `${lr.run_id} (${lr.status})` : "No run executed yet";
+      if ($("qa_meta_duration")) $("qa_meta_duration").textContent = lr ? `${Math.round(lr.duration_ms || 0)} ms (${_qaFmtTs(lr.finished_at || lr.created_at)})` : "—";
+      if ($("qa_meta_last_reg")) $("qa_meta_last_reg").innerHTML = res.last_regression_test ? `${_qaBadgeHtml(res.last_regression_test.status)} ${_admEsc(_qaFmtTs(res.last_regression_test.created_at))}` : "Not executed";
+      if ($("qa_meta_last_sec")) $("qa_meta_last_sec").innerHTML = res.last_security_test ? `${_qaBadgeHtml(res.last_security_test.status)} ${_admEsc(_qaFmtTs(res.last_security_test.created_at))}` : "Not executed";
+      if ($("qa_meta_readiness")) $("qa_meta_readiness").innerHTML = _qaBadgeHtml(res.deployment_readiness || "UNVERIFIED");
+
+      if ($("qa_hdr_status_badge")) {
+        $("qa_hdr_status_badge").textContent = lr ? `${lr.status} · ${Number(lr.pass_rate_pct || 0).toFixed(1)}%` : "IDLE";
+      }
+
+      // Active run polling
+      const activeRuns = Array.isArray(res.active_runs) ? res.active_runs : [];
+      if (activeRuns.length > 0) {
+        const ar = activeRuns[0];
+        if ($("qa_progress_bar_wrap")) $("qa_progress_bar_wrap").style.display = "block";
+        if ($("qa_prog_run_id")) $("qa_prog_run_id").textContent = ar.run_id;
+        _qaEnsurePolling(ar.run_id);
+      } else {
+        if ($("qa_progress_bar_wrap") && !_qaState.activeRunId) $("qa_progress_bar_wrap").style.display = "none";
+      }
+
+      // Trend bars
+      const trendWrap = $("qa_trend_bars");
+      const trend = res.historical_comparison?.pass_percentage_trend || [];
+      if (trendWrap) {
+        trendWrap.innerHTML = trend.length ? trend.map(pt => {
+          const pct = Math.max(4, Math.min(100, Number(pt.pass_rate_pct || 0)));
+          const clr = pct >= 90 ? "#22c55e" : (pct >= 60 ? "#f59e0b" : "#ef4444");
+          return `<div title="${_admEsc(pt.run_id)}: ${pct}%" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;">
+            <div style="font-size:9.5px; color:#cbd5e1; margin-bottom:2px;">${Math.round(pct)}%</div>
+            <div style="width:100%; max-width:28px; height:${pct}%; background:${clr}; border-radius:4px 4px 0 0;"></div>
+          </div>`;
+        }).join("") : `<div class="tiny" style="margin:auto;">Execute runs to populate pass % history chart</div>`;
+      }
+
+      // Recent runs table + Run selectors
+      _qaState.runs = Array.isArray(res.recent_runs) ? res.recent_runs : [];
+      const tb = $("qa_recent_runs_tbody");
+      if (tb) {
+        tb.innerHTML = _qaState.runs.length ? _qaState.runs.map(r => `<tr>
+          <td><code style="font-size:10.5px;">${_admEsc(r.run_id)}</code></td>
+          <td>${_admEsc(r.trigger_type)}</td>
+          <td>${_qaBadgeHtml(r.status)}</td>
+          <td>${num(r.passed_cases)} / ${num(r.total_cases)}</td>
+          <td><b>${Number(r.pass_rate_pct || 0).toFixed(1)}%</b></td>
+          <td>${Math.round(r.duration_ms || 0)}ms</td>
+          <td><button type="button" class="btn sm" onclick="qaInspectRun('${_admEsc(r.run_id)}')">Inspect</button></td>
+        </tr>`).join("") : `<tr><td colspan="7" class="tiny" style="text-align:center;">No automated test runs recorded yet. Click "Run All Tests" to start.</td></tr>`;
+      }
+
+      const optsHtml = _qaState.runs.map(r => `<option value="${_admEsc(r.run_id)}">${_admEsc(r.run_id)} · ${_admEsc(r.status)} (${Number(r.pass_rate_pct || 0).toFixed(0)}%)</option>`).join("");
+      ["qa_exec_run_select", "qa_report_run_select"].forEach(selId => {
+        const sel = $(selId);
+        if (sel) {
+          const prevVal = sel.value;
+          sel.innerHTML = optsHtml || `<option value="">No runs yet</option>`;
+          if (prevVal && _qaState.runs.some(x => x.run_id === prevVal)) sel.value = prevVal;
+        }
+      });
+
+      if (refreshSub) {
+        window.openQASubmenu(_qaState.activeSubmenu || "qa-dashboard");
+      }
+    } catch (e) {
+      console.warn("QA dashboard error:", e);
+    }
+  };
+
+  window.qaInspectRun = function(runId) {
+    _qaState.activeRunId = runId;
+    window.openQASubmenu("qa-execution");
+    qaLoadExecutionDetail(runId);
+  };
+
+  window.qaLoadSuites = async function(focusSuite = "") {
+    try {
+      const res = await get("/api/admin/qa/suites");
+      if (!res || !Array.isArray(res.suites)) return;
+      _qaState.suites = res.suites;
+
+      const sel = $("qa_suite_filter_select");
+      if (sel) {
+        sel.innerHTML = `<option value="">All Suites (${res.suites.length})</option>` +
+          res.suites.map(s => `<option value="${_admEsc(s.suite_id)}">${_admEsc(s.name)} (${(s.cases || []).length})</option>`).join("");
+        if (focusSuite) sel.value = focusSuite;
+      }
+
+      // Context banners for specialized submenus
+      const banner = $("qa_suite_context_banner");
+      const perfBox = $("qa_perf_knobs_box");
+      const apiBox = $("qa_api_discovery_box");
+      if (perfBox) perfBox.style.display = (focusSuite === "PERFORMANCE") ? "block" : "none";
+      if (apiBox) apiBox.style.display = (focusSuite === "API") ? "block" : "none";
+
+      const focusedObj = res.suites.find(s => s.suite_id === focusSuite);
+      if (banner) {
+        if (focusedObj) {
+          const safetyNote = focusSuite === "COINDCX"
+            ? `<div style="color:#fbbf24; margin-top:4px; font-weight:700;">🔒 Real Mode Safety: Mocked adapters & read-only checks only. Zero live exchange orders submitted.</div>`
+            : "";
+          banner.style.display = "block";
+          banner.innerHTML = `<b style="color:#38bdf8;">${_admEsc(focusedObj.name)}</b> <span class="tiny">(${_admEsc(focusedObj.module_path)})</span>
+            <div style="font-size:12px; color:#cbd5e1; margin-top:4px;">${_admEsc(focusedObj.description)}</div>${safetyNote}`;
+        } else {
+          banner.style.display = "none";
+        }
+      }
+
+      if (focusSuite === "API") {
+        const epRes = await get("/api/admin/qa/endpoints");
+        const eps = epRes?.endpoints || [];
+        if ($("qa_api_disc_count")) $("qa_api_disc_count").textContent = `${eps.length} routes discovered`;
+        if ($("qa_discovered_apis_tbody")) {
+          $("qa_discovered_apis_tbody").innerHTML = eps.slice(0, 120).map(e => `<tr>
+            <td><code>${_admEsc(e.path)}</code></td>
+            <td>${_admEsc((e.methods || []).join(", "))}</td>
+            <td><span class="qa-badge info">${_admEsc(e.auth_scope)}</span></td>
+            <td>${e.safety_class === "PROTECTED_FINANCIAL" ? `<span class="qa-badge warn">FINANCIAL PROTECTED</span>` : `<span class="qa-badge ok">SAFE PROBE</span>`}</td>
+          </tr>`).join("");
+        }
+      }
+      if (focusSuite === "PERFORMANCE") {
+        const cfgRes = await get("/api/admin/qa/config");
+        const cfg = cfgRes?.config || {};
+        if ($("qa_perf_conc")) $("qa_perf_conc").value = cfg.concurrent_users || "4";
+        if ($("qa_perf_reqs")) $("qa_perf_reqs").value = cfg.request_count || "24";
+        if ($("qa_perf_dur")) $("qa_perf_dur").value = cfg.duration_sec || "10";
+        if ($("qa_perf_ramp")) $("qa_perf_ramp").value = cfg.ramp_up_sec || "1";
+      }
+
+      qaFilterSuites();
+    } catch (e) {
+      console.warn("QA suites load error:", e);
+    }
+  };
+
+  window.qaFilterSuites = function() {
+    const q = ($("qa_suite_search")?.value || "").trim().toLowerCase();
+    const sidFilter = $("qa_suite_filter_select")?.value || "";
+    const tb = $("qa_suites_tbody");
+    if (!tb) return;
+
+    const rows = [];
+    (_qaState.suites || []).forEach(s => {
+      if (sidFilter && s.suite_id !== sidFilter) return;
+      (s.cases || []).forEach(c => {
+        if (q && !String(c.case_id).toLowerCase().includes(q) && !String(c.name).toLowerCase().includes(q) && !String(s.name).toLowerCase().includes(q)) {
+          return;
+        }
+        rows.push(`<tr>
+          <td><input type="checkbox" class="qa-case-chk" value="${_admEsc(c.case_id)}" data-suite="${_admEsc(s.suite_id)}"></td>
+          <td><b>${_admEsc(s.suite_id)}</b></td>
+          <td><code style="font-size:10.5px;">${_admEsc(c.case_id)}</code><div>${_admEsc(c.name)}</div></td>
+          <td><span class="qa-badge ${c.severity === "Critical" ? "fail" : (c.severity === "High" ? "warn" : "info")}">${_admEsc(c.severity)}</span></td>
+          <td>${_qaBadgeHtml(c.last_status || "NOT_RUN")}</td>
+          <td>${c.last_duration_ms ? `${Math.round(c.last_duration_ms)}ms` : "—"}</td>
+          <td class="tiny">${_admEsc(c.expected_behavior || "")}${c.last_error ? `<div style="color:#f87171;">Last Err: ${_admEsc(c.last_error.slice(0, 120))}</div>` : ""}</td>
+        </tr>`);
+      });
+    });
+    tb.innerHTML = rows.length ? rows.join("") : `<tr><td colspan="7" class="tiny" style="text-align:center;">No test cases match filter criteria.</td></tr>`;
+  };
+
+  window.qaToggleAllCaseChecks = function(checked) {
+    document.querySelectorAll(".qa-case-chk").forEach(cb => { cb.checked = !!checked; });
+  };
+
+  window.qaRunFocusedSuite = function() {
+    const sid = $("qa_suite_filter_select")?.value || _qaState.focusedSuite;
+    if (!sid) {
+      return qaRunTests("ALL");
+    }
+    return qaRunTests("SELECTED", [sid], []);
+  };
+
+  window.qaRunPerformanceWithKnobs = function() {
+    const overrides = {
+      concurrent_users: Number($("qa_perf_conc")?.value || 4),
+      request_count: Number($("qa_perf_reqs")?.value || 24),
+      duration_sec: Number($("qa_perf_dur")?.value || 10),
+      ramp_up_sec: Number($("qa_perf_ramp")?.value || 1),
+    };
+    return qaRunTests("SELECTED", ["PERFORMANCE"], [], overrides);
+  };
+
+  window.qaRunTests = async function(mode, suiteIdsOverride = null, caseIdsOverride = null, overrides = null) {
+    let suiteIds = suiteIdsOverride;
+    let caseIds = caseIdsOverride;
+    if (mode === "SELECTED" && !suiteIds && !caseIds) {
+      const checked = Array.from(document.querySelectorAll(".qa-case-chk:checked")).map(el => el.value);
+      if (checked.length > 0) {
+        caseIds = checked;
+      } else if (_qaState.focusedSuite) {
+        suiteIds = [_qaState.focusedSuite];
+      } else {
+        alert("Select at least one test case checkbox (or open a specific suite tab) before clicking Run Selected Tests.");
+        return;
+      }
+    }
+
+    const res = await post("/api/admin/qa/runs", { mode, suite_ids: suiteIds, case_ids: caseIds, overrides });
+    if (!res || !res.success) {
+      alert((res && res.error) || "Unable to start test run.");
+      return;
+    }
+    _qaState.activeRunId = res.run_id;
+    _qaState.latestRunId = res.run_id;
+    if ($("qa_progress_bar_wrap")) $("qa_progress_bar_wrap").style.display = "block";
+    if ($("qa_prog_run_id")) $("qa_prog_run_id").textContent = res.run_id;
+    if ($("qa_prog_status_txt")) $("qa_prog_status_txt").textContent = "QUEUED — Isolated QA worker running...";
+    if ($("qa_prog_fill")) $("qa_prog_fill").style.width = "8%";
+    _qaEnsurePolling(res.run_id);
+    window.openQASubmenu("qa-execution");
+  };
+
+  window.qaStopActiveRun = async function() {
+    const rid = _qaState.activeRunId || _qaState.latestRunId;
+    if (!rid) { alert("No active test run to stop."); return; }
+    const res = await post(`/api/admin/qa/runs/${encodeURIComponent(rid)}/stop`, {});
+    alert(res?.success ? `Stop requested for ${rid}` : (res?.error || "Unable to stop run"));
+    loadQADashboard();
+  };
+
+  window.qaLoadExecutionDetail = async function(runIdOverride = "", fromPoll = false) {
+    const rid = runIdOverride || $("qa_exec_run_select")?.value || _qaState.activeRunId || _qaState.latestRunId;
+    if (!rid) return;
+    const st = $("qa_exec_status_filter")?.value || "";
+    const sev = $("qa_exec_sev_filter")?.value || "";
+    const q = $("qa_exec_search")?.value || "";
+    const params = new URLSearchParams();
+    if (st) params.set("status", st);
+    if (sev) params.set("severity", sev);
+    if (q) params.set("search", q);
+
+    const res = await get(`/api/admin/qa/runs/${encodeURIComponent(rid)}?${params.toString()}`);
+    if (!res || !res.run) return;
+    const r = res.run;
+    if ($("qa_exec_run_select")) $("qa_exec_run_select").value = rid;
+
+    const doneCnt = (r.passed_cases || 0) + (r.failed_cases || 0) + (r.blocked_cases || 0) + (r.skipped_cases || 0);
+    const totalCnt = Math.max(1, r.total_cases || 1);
+    const pct = Math.round((doneCnt / totalCnt) * 100);
+    if ($("qa_progress_bar_wrap")) {
+      $("qa_progress_bar_wrap").style.display = (r.status === "QUEUED" || r.status === "RUNNING") ? "block" : (fromPoll ? "block" : "none");
+    }
+    if ($("qa_prog_run_id")) $("qa_prog_run_id").textContent = `${r.run_id} (${r.status})`;
+    if ($("qa_prog_counts")) $("qa_prog_counts").textContent = `${doneCnt} / ${r.total_cases || 0} done · Pass: ${r.passed_cases || 0} · Fail: ${r.failed_cases || 0}`;
+    if ($("qa_prog_fill")) $("qa_prog_fill").style.width = `${pct}%`;
+
+    if (r.status !== "QUEUED" && r.status !== "RUNNING") {
+      if (_qaState.activeRunId === rid) _qaState.activeRunId = "";
+      _qaStopPolling();
+      if (fromPoll) loadQADashboard();
+    }
+
+    const arts = Array.isArray(res.artifacts) ? res.artifacts : [];
+    const artByCase = {};
+    arts.forEach(a => {
+      if (a.artifact_type === "SCREENSHOT" && a.result_id) artByCase[a.result_id] = a.artifact_id;
+    });
+
+    const items = Array.isArray(res.results) ? res.results : [];
+    _qaState.execResults = items.map(it => Object.assign({}, it, { _shot_id: artByCase[it.case_id] || "" }));
+    const tb = $("qa_exec_results_tbody");
+    if (tb) {
+      tb.innerHTML = _qaState.execResults.length ? _qaState.execResults.map((it, idx) => `<tr>
+        <td><b>${_admEsc(it.suite_id)}</b></td>
+        <td><code style="font-size:10.5px;">${_admEsc(it.case_id)}</code><div>${_admEsc(it.case_name)}</div></td>
+        <td>${_qaBadgeHtml(it.status)}</td>
+        <td>${_admEsc(it.severity)}</td>
+        <td>${Math.round(it.duration_ms || 0)}ms</td>
+        <td class="tiny">${_admEsc(it.actual_result || "")}${it.error_message ? `<div style="color:#f87171;">${_admEsc(it.error_message.slice(0, 140))}</div>` : ""}</td>
+        <td><button type="button" class="btn sm" onclick="qaOpenResultDetail(${idx})">Inspect</button></td>
+      </tr>`).join("") : `<tr><td colspan="7" class="tiny" style="text-align:center;">No results match current filters.</td></tr>`;
+    }
+
+    const logBox = $("qa_live_logs_pre");
+    if (logBox && Array.isArray(res.logs)) {
+      logBox.textContent = res.logs.map(l => `[${_qaFmtTs(l.logged_at)}] [${l.level}] [${l.source}] ${l.message}`).join("\n") || "Waiting for execution logs...";
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+  };
+
+  window.qaOpenResultDetail = async function(idx) {
+    const it = _qaState.execResults[idx];
+    if (!it) return;
+    if ($("qa_det_title")) $("qa_det_title").textContent = `${it.case_id} — ${it.case_name}`;
+    if ($("qa_det_meta")) $("qa_det_meta").textContent = `Suite: ${it.suite_id} · Status: ${it.status} · Severity: ${it.severity} · Duration: ${Math.round(it.duration_ms || 0)}ms · Defect: ${it.defect_id || "None"}`;
+    if ($("qa_det_expected")) $("qa_det_expected").textContent = it.expected_result || "—";
+    if ($("qa_det_actual")) $("qa_det_actual").textContent = it.actual_result || "—";
+    if ($("qa_det_stack")) $("qa_det_stack").textContent = [it.error_message, it.stack_trace].filter(Boolean).join("\n\n") || "No errors or stack trace.";
+    if ($("qa_det_api")) $("qa_det_api").textContent = it.api_response_sanitized || "No API response captured.";
+
+    const shotWrap = $("qa_det_shot_wrap");
+    const shotImg = $("qa_det_shot_img");
+    if (shotWrap && shotImg) {
+      if (it._shot_id) {
+        shotWrap.style.display = "block";
+        try {
+          const resp = await fetch(`${API}/api/admin/qa/artifacts/${encodeURIComponent(it._shot_id)}`, { headers: adminHeaders() });
+          if (resp.ok) {
+            const blob = await resp.blob();
+            shotImg.src = URL.createObjectURL(blob);
+          } else {
+            shotWrap.style.display = "none";
+          }
+        } catch (e) { shotWrap.style.display = "none"; }
+      } else {
+        shotWrap.style.display = "none";
+        shotImg.src = "";
+      }
+    }
+    _qaShowModal("modal_qa_result_detail");
+  };
+
+  window.qaLoadRegressionPanel = async function() {
+    const dash = await get("/api/admin/qa/dashboard");
+    const hc = dash?.historical_comparison || {};
+    const cards = $("qa_reg_diff_cards");
+    if (cards) {
+      cards.innerHTML = `
+        <div class="card stat"><div class="sub">Current Run</div><div class="v" style="font-size:15px;">${_admEsc(hc.current_run?.run_id || "—")}</div><div class="tiny">Pass: ${hc.current_run?.pass_rate_pct ?? 0}%</div></div>
+        <div class="card stat"><div class="sub">Previous Run</div><div class="v" style="font-size:15px;">${_admEsc(hc.previous_run?.run_id || "—")}</div><div class="tiny">Pass: ${hc.previous_run?.pass_rate_pct ?? 0}%</div></div>
+        <div class="card stat"><div class="sub">Pass % Delta</div><div class="v ${(hc.pass_rate_delta_pct || 0) >= 0 ? "green" : "red"}">${(hc.pass_rate_delta_pct || 0) >= 0 ? "+" : ""}${Number(hc.pass_rate_delta_pct || 0).toFixed(2)}%</div><div class="tiny">Duration Δ: ${Math.round(hc.duration_delta_ms || 0)}ms</div></div>
+        <div class="card stat"><div class="sub">Newly Failed</div><div class="v red">${(hc.newly_failed_tests || []).length}</div><div class="tiny">Regressions: ${(hc.regression_defects || []).length}</div></div>
+        <div class="card stat"><div class="sub">Fixed / Verified</div><div class="v green">${(hc.fixed_tests || []).length}</div><div class="tiny">Fixed Defects: ${(hc.fixed_defects || []).length}</div></div>
+      `;
+    }
+    const tb = $("qa_reg_history_tbody");
+    if (tb) {
+      const regRuns = (_qaState.runs || []).filter(r => r.trigger_type === "REGRESSION" || r.trigger_type === "DEPLOYMENT" || r.trigger_type === "SCHEDULED" || String(r.suite_filter_json || "").includes("REGRESSION"));
+      tb.innerHTML = regRuns.length ? regRuns.map(r => `<tr>
+        <td><code>${_admEsc(r.run_id)}</code></td>
+        <td>${_admEsc(r.trigger_type)}</td>
+        <td>${_qaBadgeHtml(r.status)}</td>
+        <td>${_qaBadgeHtml(r.deployment_readiness)}</td>
+        <td>${Number(r.pass_rate_pct || 0).toFixed(1)}%</td>
+        <td>${Math.round(r.duration_ms || 0)}ms</td>
+        <td><span class="qa-badge ok">LOCKED OFF</span></td>
+      </tr>`).join("") : `<tr><td colspan="7" class="tiny" style="text-align:center;">No regression runs executed yet.</td></tr>`;
+    }
+  };
+
+  window.qaTriggerDeploymentRegression = async function() {
+    const res = await post("/api/admin/qa/schedules/deployment-hook", { sync: false });
+    if (!res || !res.success) {
+      alert((res && res.error) || "Unable to trigger regression gate.");
+      return;
+    }
+    _qaState.activeRunId = res.run_id;
+    _qaEnsurePolling(res.run_id);
+    window.openQASubmenu("qa-execution");
+  };
+
+  window.qaLoadReportArtifacts = async function() {
+    const rid = $("qa_report_run_select")?.value || _qaState.latestRunId;
+    if (!rid) return;
+    const res = await get(`/api/admin/qa/runs/${encodeURIComponent(rid)}`);
+    const arts = res?.artifacts || [];
+    const tb = $("qa_artifacts_tbody");
+    if (tb) {
+      tb.innerHTML = arts.length ? arts.map(a => `<tr>
+        <td><code>${_admEsc(a.artifact_id)}</code></td>
+        <td><span class="qa-badge info">${_admEsc(a.artifact_type)}</span></td>
+        <td>${_admEsc(a.file_name)}</td>
+        <td>${Math.round((a.size_bytes || 0) / 1024)} KB</td>
+        <td>${_admEsc(_qaFmtTs(a.created_at))}</td>
+        <td><button type="button" class="btn sm" onclick="qaViewArtifact('${_admEsc(a.artifact_id)}','${_admEsc(a.file_name)}')">Download / View</button></td>
+      </tr>`).join("") : `<tr><td colspan="6" class="tiny" style="text-align:center;">No artifacts stored for ${rid} yet. Generate an export or run Playwright.</td></tr>`;
+    }
+  };
+
+  async function _qaDownloadAuthBlob(path, fallbackName) {
+    const resp = await fetch(API + path, { headers: adminHeaders() });
+    if (!resp.ok) {
+      alert(`Download failed (HTTP ${resp.status})`);
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fallbackName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  window.qaViewArtifact = (aid, fname) => _qaDownloadAuthBlob(`/api/admin/qa/artifacts/${encodeURIComponent(aid)}`, fname || aid);
+  window.qaDownloadReportFmt = function(fmt) {
+    const rid = $("qa_report_run_select")?.value || _qaState.latestRunId;
+    if (!rid) { alert("No completed test run selected."); return; }
+    const ext = fmt === "excel" ? "xlsx" : (fmt === "logs" ? "log" : fmt);
+    return _qaDownloadAuthBlob(`/api/admin/qa/runs/${encodeURIComponent(rid)}/export/${encodeURIComponent(fmt)}`, `qa_${rid}.${ext}`);
+  };
+  window.qaDownloadLatestReport = function(fmt) {
+    const rid = _qaState.activeRunId || _qaState.latestRunId;
+    if (!rid) { alert("Run tests first before downloading a report."); return; }
+    const ext = fmt === "excel" ? "xlsx" : (fmt === "logs" ? "log" : fmt);
+    return _qaDownloadAuthBlob(`/api/admin/qa/runs/${encodeURIComponent(rid)}/export/${encodeURIComponent(fmt)}`, `qa_${rid}.${ext}`);
+  };
+
+  window.qaLoadDefects = async function() {
+    const st = $("qa_def_status_filter")?.value || "";
+    const sev = $("qa_def_sev_filter")?.value || "";
+    const mod = $("qa_def_mod_filter")?.value || "";
+    const params = new URLSearchParams();
+    if (st) params.set("status", st);
+    if (sev) params.set("severity", sev);
+    if (mod) params.set("module", mod);
+    const res = await get(`/api/admin/qa/defects?${params.toString()}`);
+    _qaState.defects = res?.defects || [];
+    const tb = $("qa_defects_tbody");
+    if (tb) {
+      tb.innerHTML = _qaState.defects.length ? _qaState.defects.map(d => `<tr>
+        <td><code>${_admEsc(d.defect_id)}</code></td>
+        <td><b>${_admEsc(d.title)}</b><div class="tiny">${_admEsc(d.run_id)} · ${_admEsc(d.case_id)}</div></td>
+        <td>${_admEsc(d.module)}</td>
+        <td><span class="qa-badge ${d.severity === "Critical" ? "fail" : "warn"}">${_admEsc(d.severity)}</span> <span class="tiny">${_admEsc(d.priority)}</span></td>
+        <td>${_qaBadgeHtml(d.status)}</td>
+        <td>${_admEsc(d.assigned_admin)}</td>
+        <td>${d.retest_passed ? `<span class="qa-badge ok">PASS VERIFIED</span>` : `<span class="qa-badge warn">NOT RETESTED</span>`}</td>
+        <td style="white-space:nowrap;">
+          <button type="button" class="btn sm" onclick="qaOpenDefectModal('${_admEsc(d.defect_id)}')">Triage</button>
+          ${d.case_id ? `<button type="button" class="btn sm ok" onclick="qaRetestDefect('${_admEsc(d.defect_id)}')">🧪 Retest</button>` : ""}
+          ${d.screenshot_artifact_id ? `<button type="button" class="btn sm" onclick="qaViewArtifact('${_admEsc(d.screenshot_artifact_id)}','defect_shot.png')">📷</button>` : ""}
+        </td>
+      </tr>`).join("") : `<tr><td colspan="8" class="tiny" style="text-align:center;">Zero defects match current filters.</td></tr>`;
+    }
+  };
+
+  window.qaOpenNewDefectModal = function() {
+    if ($("qa_def_modal_title")) $("qa_def_modal_title").textContent = "🐞 Log Manual Defect";
+    if ($("qa_def_id")) $("qa_def_id").value = "";
+    if ($("qa_def_title")) $("qa_def_title").value = "";
+    if ($("qa_def_sev")) $("qa_def_sev").value = "High";
+    if ($("qa_def_prio")) $("qa_def_prio").value = "P2";
+    if ($("qa_def_status")) $("qa_def_status").value = "Open";
+    if ($("qa_def_module")) $("qa_def_module").value = "PLATFORM";
+    if ($("qa_def_assigned")) $("qa_def_assigned").value = "admin";
+    if ($("qa_def_root")) $("qa_def_root").value = "";
+    if ($("qa_def_res")) $("qa_def_res").value = "";
+    if ($("qa_def_evidence")) $("qa_def_evidence").textContent = "";
+    _qaShowModal("modal_qa_defect");
+  };
+
+  window.qaOpenDefectModal = function(defectId) {
+    const d = (_qaState.defects || []).find(x => x.defect_id === defectId);
+    if (!d) return;
+    if ($("qa_def_modal_title")) $("qa_def_modal_title").textContent = `🐞 Triage ${d.defect_id}`;
+    if ($("qa_def_id")) $("qa_def_id").value = d.defect_id;
+    if ($("qa_def_title")) $("qa_def_title").value = d.title || "";
+    if ($("qa_def_sev")) $("qa_def_sev").value = d.severity || "High";
+    if ($("qa_def_prio")) $("qa_def_prio").value = d.priority || "P2";
+    if ($("qa_def_status")) $("qa_def_status").value = d.status || "Open";
+    if ($("qa_def_module")) $("qa_def_module").value = d.module || "";
+    if ($("qa_def_assigned")) $("qa_def_assigned").value = d.assigned_admin || "";
+    if ($("qa_def_root")) $("qa_def_root").value = d.root_cause || "";
+    if ($("qa_def_res")) $("qa_def_res").value = d.resolution_notes || "";
+    if ($("qa_def_evidence")) $("qa_def_evidence").textContent = d.evidence || "";
+    _qaShowModal("modal_qa_defect");
+  };
+
+  window.qaSaveDefect = async function(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    const did = $("qa_def_id")?.value || "";
+    const payload = {
+      title: $("qa_def_title")?.value || "",
+      severity: $("qa_def_sev")?.value || "High",
+      priority: $("qa_def_prio")?.value || "P2",
+      status: $("qa_def_status")?.value || "Open",
+      module: $("qa_def_module")?.value || "PLATFORM",
+      assigned_admin: $("qa_def_assigned")?.value || "admin",
+      root_cause: $("qa_def_root")?.value || "",
+      resolution_notes: $("qa_def_res")?.value || "",
+    };
+    const res = did
+      ? await post(`/api/admin/qa/defects/${encodeURIComponent(did)}`, payload)
+      : await post("/api/admin/qa/defects", payload);
+    if (!res || !res.success) {
+      alert((res && res.error) || "Failed to save defect");
+      return false;
+    }
+    qaCloseModal("modal_qa_defect");
+    qaLoadDefects();
+    loadQADashboard();
+    return false;
+  };
+
+  window.qaRetestDefect = async function(defectId) {
+    const res = await post(`/api/admin/qa/defects/${encodeURIComponent(defectId)}/retest`, {});
+    alert(res?.success
+      ? `Retest ${res.retest_passed ? "PASSED ✅ (Defect Verified)" : "FAILED ❌ (Remains Open)"} · Run: ${res.retest_run_id}`
+      : (res?.error || "Retest error"));
+    qaLoadDefects();
+    loadQADashboard();
+  };
+
+  window.qaLoadSystemHealthPanel = async function() {
+    const [hlth, qaDash] = await Promise.all([
+      get("/api/admin/monitoring/health").catch(() => null),
+      get("/api/admin/qa/dashboard").catch(() => null),
+    ]);
+    const wrap = $("qa_sys_health_content");
+    const box = $("qa_sys_health_details");
+    const svcs = hlth?.services || {};
+    if (wrap) {
+      wrap.innerHTML = [
+        { k: "Database", v: svcs.database?.status, s: `Latency: ${svcs.database?.latency_ms || 0}ms · ${svcs.database?.journal_mode || "WAL"}` },
+        { k: "Trading Engine", v: svcs.python_trading_engine?.status, s: `Active Bots: ${svcs.python_trading_engine?.active_user_bots || 0} · Symbols: ${svcs.python_trading_engine?.symbols_tracked || 0}` },
+        { k: "CoinDCX Integration", v: svcs.coindcx_integration?.status, s: `Connected Accounts: ${svcs.coindcx_integration?.connected_accounts || 0}` },
+        { k: "WebSocket & Feed", v: svcs.websocket_monitor?.status, s: `Universe: ${svcs.websocket_monitor?.tracked_symbols_universe || 0} pairs` },
+      ].map(c => `<div class="card stat"><div class="sub">${_admEsc(c.k)}</div><div class="v" style="font-size:15px;">${_qaBadgeHtml(c.v || "UNKNOWN")}</div><div class="tiny">${_admEsc(c.s)}</div></div>`).join("");
+    }
+    if (box) {
+      box.textContent = JSON.stringify({ runtime_health: hlth, qa_health: qaDash?.health, readiness: qaDash?.deployment_readiness }, null, 2);
+    }
+  };
+
+  window.qaLoadConfig = async function() {
+    const res = await get("/api/admin/qa/config");
+    const cfg = res?.config || {};
+    if ($("qa_cfg_environment")) $("qa_cfg_environment").value = cfg.environment || "ISOLATED_STAGING";
+    if ($("qa_cfg_browser")) $("qa_cfg_browser").value = cfg.browser || "chromium";
+    if ($("qa_cfg_timeout")) $("qa_cfg_timeout").value = cfg.timeout_sec || "90";
+    if ($("qa_cfg_retry")) $("qa_cfg_retry").value = cfg.retry_count || "1";
+    if ($("qa_cfg_retention")) $("qa_cfg_retention").value = cfg.report_retention_days || "30";
+    if ($("qa_cfg_reg_interval")) $("qa_cfg_reg_interval").value = cfg.regression_interval_min || "60";
+    if ($("qa_cfg_conc")) $("qa_cfg_conc").value = cfg.concurrent_users || "4";
+    if ($("qa_cfg_reqs")) $("qa_cfg_reqs").value = cfg.request_count || "24";
+    if ($("qa_cfg_screenshots")) $("qa_cfg_screenshots").checked = String(cfg.capture_screenshots) === "1";
+    if ($("qa_cfg_trace")) $("qa_cfg_trace").checked = String(cfg.capture_trace) === "1";
+    if ($("qa_cfg_video")) $("qa_cfg_video").checked = String(cfg.capture_video) === "1";
+    if ($("qa_cfg_parallel")) $("qa_cfg_parallel").checked = String(cfg.parallel_execution) === "1";
+    if ($("qa_cfg_api")) $("qa_cfg_api").checked = String(cfg.api_testing_enabled) === "1";
+    if ($("qa_cfg_sec")) $("qa_cfg_sec").checked = String(cfg.security_testing_enabled) === "1";
+    if ($("qa_cfg_perf")) $("qa_cfg_perf").checked = String(cfg.performance_testing_enabled) === "1";
+    if ($("qa_cfg_sched")) $("qa_cfg_sched").checked = String(cfg.scheduled_regression_enabled) === "1";
+  };
+
+  window.qaSaveConfig = async function(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    const payload = {
+      environment: $("qa_cfg_environment")?.value || "ISOLATED_STAGING",
+      browser: $("qa_cfg_browser")?.value || "chromium",
+      timeout_sec: Number($("qa_cfg_timeout")?.value || 90),
+      retry_count: Number($("qa_cfg_retry")?.value || 1),
+      report_retention_days: Number($("qa_cfg_retention")?.value || 30),
+      regression_interval_min: Number($("qa_cfg_reg_interval")?.value || 60),
+      concurrent_users: Number($("qa_cfg_conc")?.value || 4),
+      request_count: Number($("qa_cfg_reqs")?.value || 24),
+      capture_screenshots: !!$("qa_cfg_screenshots")?.checked,
+      capture_trace: !!$("qa_cfg_trace")?.checked,
+      capture_video: !!$("qa_cfg_video")?.checked,
+      parallel_execution: !!$("qa_cfg_parallel")?.checked,
+      api_testing_enabled: !!$("qa_cfg_api")?.checked,
+      security_testing_enabled: !!$("qa_cfg_sec")?.checked,
+      performance_testing_enabled: !!$("qa_cfg_perf")?.checked,
+      scheduled_regression_enabled: !!$("qa_cfg_sched")?.checked,
+    };
+    const res = await post("/api/admin/qa/config", payload);
+    alert(res?.success ? "✅ QA configuration saved (Real Mode live-order safety lock remains active)." : (res?.error || "Failed to save config"));
+    return false;
+  };
+})();
+
 
