@@ -149,11 +149,15 @@ class CoinDCXExecutionAdapter:
                 except Exception:
                     continue
 
-        ok_ord, raw_ord = cdx.futures.get_orders()
+        try:
+            get_ord_fn = getattr(cdx.futures, "get_orders", None)
+            ok_ord, raw_ord = get_ord_fn() if callable(get_ord_fn) else (True, [])
+        except Exception:
+            ok_ord, raw_ord = False, []
         if ok_ord and isinstance(raw_ord, list):
             for o in raw_ord:
                 st = str(o.get("status") or "").lower()
-                if st in ("open", "partially_filled", "init", "untriggered"):
+                if st in ("open", "partially_filled", "init", "initial", "untriggered"):
                     open_orders.append({
                         "exchange_order_id": str(o.get("id") or ""),
                         "pair": str(o.get("pair") or ""),
@@ -293,6 +297,22 @@ class CoinDCXExecutionAdapter:
         # Route by market type (Futures vs Spot vs Margin)
         if mkt_type == "FUTURES":
             endpoint = "/exchange/v1/derivatives/futures/orders/create"
+            elig = cdx.futures.check_eligibility()
+            if not elig.get("eligible"):
+                err = str(elig.get("reason") or elig.get("message") or "CoinDCX Futures not permitted on this API key.")
+                cls._record_order_mapping(
+                    user_id=user_id, client_order_id=cid, exchange_order_id="", position_id="",
+                    strategy_id=strategy_id, symbol=sym_up, market_type="FUTURES", side=side_up,
+                    mode="REAL", requested_qty=quantity, filled_qty=0.0, avg_fill_price=0.0,
+                    fee_usd=0.0, status="REJECTED", rejection_reason=err,
+                    endpoint=endpoint, sanitized_req={"symbol": sym_up, "side": order_side},
+                )
+                return {
+                    "success": False, "status": "REJECTED", "client_order_id": cid,
+                    "error": err, "endpoint": endpoint,
+                    "sanitized_request": {"symbol": sym_up, "side": order_side},
+                    "corrective_action": corrective_action_for(err),
+                }
 
             eff_lev = cdx.futures.resolve_leverage(sym_up, leverage, order_side)
             ref_price = float(price or 0.0)
@@ -355,7 +375,23 @@ class CoinDCXExecutionAdapter:
                     "corrective_action": corrective_action_for(err),
                 }
 
+            if (res_ord or {}).get("autonomous_adopted"):
+                err = "CoinDCX did not confirm live exchange execution (autonomous fallback blocked in real mode)."
+                cls._record_order_mapping(
+                    user_id=user_id, client_order_id=cid, exchange_order_id="", position_id="",
+                    strategy_id=strategy_id, symbol=sym_up, market_type="FUTURES", side=side_up,
+                    mode="REAL", requested_qty=req_qty, filled_qty=0.0, avg_fill_price=0.0,
+                    fee_usd=0.0, status="REJECTED", rejection_reason=err,
+                    endpoint=endpoint, sanitized_req=san_req,
+                )
+                return {
+                    "success": False, "status": "REJECTED", "client_order_id": cid,
+                    "error": err, "endpoint": endpoint, "sanitized_request": san_req,
+                    "corrective_action": corrective_action_for(err),
+                }
+
             ex_id = str((res_ord or {}).get("id") or "")
+            exch_pos_id = str((res_ord or {}).get("exchange_position_id") or "")
             # Derive confirmed filled quantity from exchange reported fields without assuming requested qty is filled
             raw_filled = (res_ord or {}).get("spot_equivalent_quantity") or (res_ord or {}).get("filled_quantity") or (res_ord or {}).get("quantity_filled")
             if raw_filled is not None:
@@ -374,7 +410,7 @@ class CoinDCXExecutionAdapter:
             actual_margin_usd = float((res_ord or {}).get("actual_margin_usd") or 0.0) or (round((filled_qty * avg_px) / max(1.0, actual_eff_lev), 4) if avg_px > 0 else round(float(margin_usd or 0.0), 4))
 
             cls._record_order_mapping(
-                user_id=user_id, client_order_id=cid, exchange_order_id=ex_id, position_id=ex_id,
+                user_id=user_id, client_order_id=cid, exchange_order_id=ex_id, position_id=exch_pos_id or ex_id,
                 strategy_id=strategy_id, symbol=sym_up, market_type="FUTURES", side=side_up,
                 mode="REAL", requested_qty=req_qty, filled_qty=filled_qty, avg_fill_price=avg_px,
                 fee_usd=fee_usd, status=ord_status, rejection_reason="",
@@ -385,6 +421,7 @@ class CoinDCXExecutionAdapter:
                 "status": ord_status,
                 "client_order_id": cid,
                 "exchange_order_id": ex_id,
+                "exchange_position_id": exch_pos_id,
                 "filled_qty": filled_qty,
                 "avg_fill_price": avg_px,
                 "leverage": actual_eff_lev,
@@ -530,11 +567,13 @@ class CoinDCXExecutionAdapter:
         sl_ord_id = ""
         tp_ord_id = ""
 
+        resolved_pos_id = str(exchange_position_id or "")
         if is_live and market_type.upper() == "FUTURES":
             cdx = cls._client(user_id)
             if cdx and not cdx.is_offline:
                 pos = cdx.futures.find_open_position(symbol)
                 pos_uuid = str((pos or {}).get("id") or exchange_position_id or "")
+                resolved_pos_id = pos_uuid or resolved_pos_id
                 inst = cdx.futures.get_instrument(symbol)
                 p_inc = float(inst.get("price_increment") or 0.0)
                 if p_inc > 0:
@@ -594,13 +633,14 @@ class CoinDCXExecutionAdapter:
                  failure_reason=excluded.failure_reason,
                  updated_at=excluded.updated_at""",
             (
-                user_id, str(position_id), str(exchange_position_id), symbol.upper(),
+                user_id, str(position_id), resolved_pos_id, symbol.upper(),
                 market_type.upper(), entry_price, filled_qty, sl_price, tp_price,
                 trailing_stop_pct, sl_ord_id, tp_ord_id, verified, prot_status, fail_reason, now,
             ),
         )
         return {
             "position_id": str(position_id),
+            "exchange_position_id": resolved_pos_id,
             "symbol": symbol.upper(),
             "stop_loss_price": sl_price,
             "take_profit_price": tp_price,
@@ -620,12 +660,24 @@ class CoinDCXExecutionAdapter:
             cdx = cls._client(user_id)
             if cdx and not cdx.is_offline:
                 try:
-                    ok_ord, orders = cdx.futures.get_orders()
+                    get_ord_fn = getattr(cdx.futures, "get_orders", None)
+                    ok_ord, orders = get_ord_fn() if callable(get_ord_fn) else (False, [])
                     pair = cdx.futures.to_futures_pair(symbol)
+                    clean_sym = str(symbol or "").upper().replace("-", "").replace("_", "")
                     if ok_ord and isinstance(orders, list):
+                        cancel_fn = getattr(cdx.futures, "cancel_order", None)
                         for o in orders:
-                            if o.get("pair") == pair and str(o.get("status") or "").lower() in ("open", "init", "untriggered"):
-                                cdx.futures._call("/exchange/v1/derivatives/futures/orders/cancel", body={"id": o.get("id")}, attempts=1)
+                            o_pair = str(o.get("pair") or "")
+                            o_clean = o_pair.upper().replace("B-", "").replace("-", "").replace("_", "")
+                            st = str(o.get("status") or "").lower()
+                            if (o_pair == pair or o_clean == clean_sym) and st in ("open", "init", "initial", "partially_filled", "untriggered"):
+                                oid = str(o.get("id") or "")
+                                if not oid:
+                                    continue
+                                if callable(cancel_fn):
+                                    cancel_fn(oid)
+                                else:
+                                    cdx.futures._call("/exchange/v1/derivatives/futures/orders/cancel", body={"id": oid}, attempts=1)
                 except Exception:
                     pass
 

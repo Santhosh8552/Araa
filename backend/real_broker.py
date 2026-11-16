@@ -546,19 +546,75 @@ def close_real_order(symbol, side, qty, user_id=None, ticket_id=None, price=None
             if lev > 1.0 or not is_long:
                 ok_p, rows = cdx.futures.get_positions()
                 pos = cdx.futures.find_open_position(symbol) if ok_p else None
+                pos_uuid = str((pos or {}).get("id") or ticket_id or "")
+                inv_fn = getattr(cdx, "invalidate_balance_cache", None)
+                settle_fn = getattr(cdx.futures, "get_position_settlement", None)
+                wait_fn = getattr(cdx.futures, "wait_for_position_flat", None)
+
                 if pos or cdx.is_offline:
-                    ok, res = cdx.futures.exit_position(symbol)
+                    exit_by_id_fn = getattr(cdx.futures, "exit_position_by_id", None)
+                    if pos_uuid and callable(exit_by_id_fn) and not cdx.is_offline:
+                        ok, res = exit_by_id_fn(pos_uuid)
+                        if not ok:
+                            ok, res = cdx.futures.exit_position(symbol)
+                    else:
+                        ok, res = cdx.futures.exit_position(symbol)
                     if ok:
-                        return {"mode": "LIVE_REAL", "closed": True, "exchange": "COINDCX",
-                                "market_type": "FUTURES", "order_id": (res or {}).get("id"), "realized_pnl": 0.0}
+                        if not cdx.is_offline and callable(wait_fn):
+                            wait_fn(symbol, pos_uuid, timeout_sec=2.0)
+                        if callable(inv_fn):
+                            inv_fn()
+                        settle = settle_fn(pos_uuid) if (pos_uuid and callable(settle_fn) and not cdx.is_offline) else None
+                        return {
+                            "mode": "LIVE_REAL",
+                            "closed": True,
+                            "exchange": "COINDCX",
+                            "market_type": "FUTURES",
+                            "order_id": (res or {}).get("id"),
+                            "exchange_position_id": pos_uuid,
+                            "exchange_settled": bool(settle),
+                            "realized_pnl": float((settle or {}).get("net_pnl") or 0.0),
+                            "fee_usd": float((settle or {}).get("fee_usd") or 0.0),
+                        }
                     return {"mode": "LIVE_ERROR", "closed": False, "exchange": "COINDCX",
                             "error": (res or {}).get("message", "futures exit failed")}
                 if not ok_p:
                     return {"mode": "LIVE_ERROR", "closed": False, "exchange": "COINDCX",
                             "error": "Could not read CoinDCX futures positions; will retry"}
+
+                # Cancel any lingering unfilled entry/TP/SL order on this contract before marking flat
+                get_ord_fn = getattr(cdx.futures, "get_orders", None)
+                cancel_fn = getattr(cdx.futures, "cancel_order", None)
+                to_pair_fn = getattr(cdx.futures, "to_futures_pair", None)
+                if callable(get_ord_fn) and not cdx.is_offline:
+                    try:
+                        ok_o, fut_orders = get_ord_fn()
+                        pair_name = to_pair_fn(symbol) if callable(to_pair_fn) else symbol
+                        clean_s = str(symbol or "").upper().replace("-", "").replace("_", "")
+                        if ok_o and isinstance(fut_orders, list):
+                            for fo in fut_orders:
+                                f_pair = str(fo.get("pair") or "")
+                                f_clean = f_pair.upper().replace("B-", "").replace("-", "").replace("_", "")
+                                if (f_pair == pair_name or f_clean == clean_s) and fo.get("id") and callable(cancel_fn):
+                                    cancel_fn(str(fo["id"]))
+                    except Exception:
+                        pass
+
+                if callable(inv_fn):
+                    inv_fn()
+                settle = settle_fn(pos_uuid) if (pos_uuid and callable(settle_fn) and not cdx.is_offline) else None
                 # If positions fetched successfully and this contract has 0 open futures position: already closed/liquidated on CoinDCX!
-                return {"mode": "LIVE_REAL", "closed": True, "exchange": "COINDCX",
-                        "market_type": "FUTURES", "already_flat": True, "realized_pnl": 0.0}
+                return {
+                    "mode": "LIVE_REAL",
+                    "closed": True,
+                    "exchange": "COINDCX",
+                    "market_type": "FUTURES",
+                    "already_flat": True,
+                    "exchange_position_id": pos_uuid,
+                    "exchange_settled": bool(settle),
+                    "realized_pnl": float((settle or {}).get("net_pnl") or 0.0),
+                    "fee_usd": float((settle or {}).get("fee_usd") or 0.0),
+                }
 
             sell_qty = (qty / lev) * 0.95 if (lev > 1.0 and close_side == "sell") else qty
             ok, res = cdx.place_order(

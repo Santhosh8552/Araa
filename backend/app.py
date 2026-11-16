@@ -504,7 +504,14 @@ def portfolio(uid):
     # Starting capital baseline (0.0 for new users until they connect real broker or deposit)
     if is_live_mode:
         live_usd = round(float(broker_conn.get("live_balance") or 0.0), 2)
-        base_capital = live_usd
+        saved_start = round(float(w.get("starting_balance") or 0.0), 2)
+        if saved_start <= 0.0 and live_usd > 0.0:
+            saved_start = live_usd
+            write(
+                "UPDATE wallets SET starting_balance=?, target_amount=CASE WHEN COALESCE(target_amount,0)<=0 THEN ROUND(?*1.5,2) ELSE target_amount END WHERE user_id=? AND COALESCE(starting_balance,0)<=0",
+                (saved_start, saved_start, uid),
+            )
+        base_capital = saved_start if saved_start > 0 else live_usd
     else:
         base_capital = round(float(w.get("starting_balance") or w.get("total_deposited") or 0.0), 2)
 
@@ -537,14 +544,17 @@ def portfolio(uid):
 
     if is_live_mode:
         live_usd = round(float(broker_conn.get("live_balance") or 0.0), 2)
-        start = live_usd
+        start = base_capital if base_capital > 0 else live_usd
         balance = round(live_usd + unreal, 2) if live_usd > 0 else round(run + unreal, 2)
-        target = round(start * 1.5, 2) if start > 0 else 0.0
+        saved_target = round(float(w.get("target_amount") or 0.0), 2)
+        target = saved_target if saved_target > start else (round(start * 1.5, 2) if start > 0 else 0.0)
         need = max(0.01, target - start) if target > start else 1.0
         prog = round(min(100.0, max(0.0, (balance - start) / need * 100)), 1) if target > 0 else 0.0
+        live_gain = round(balance - start, 2) if (live_usd > 0 and start > 0) else net_pnl
         goal = {"starting_balance": start, "target_amount": target, "current_balance": balance,
                 "live_usd": live_usd,
-                "gain": net_pnl, "remaining": round(max(0.0, target - balance), 2),
+                "gain": live_gain, "bot_net_pnl": net_pnl,
+                "remaining": round(max(0.0, target - balance), 2),
                 "progress_pct": prog,
                 "deposited_at": None,
                 "achieved": bool(target > 0 and balance >= target),
@@ -2132,12 +2142,12 @@ def broker_status():
         return ok(connected=False, is_live=False, broker=None)
     live_bal = float(b["live_balance"] or 0.0)
     live_eq = float(b["live_equity"] or live_bal)
-    free_margin = float(b.get("free_margin") or live_bal)
+    free_margin = float(b["free_margin"] if b.get("free_margin") is not None else live_bal)
     is_conn = b["status"] in ("CONNECTED", "CONNECTED_OFFLINE", "SYNCING", "READY")
     is_coindcx = (b.get("broker_name") == "COINDCX")
 
     # Dynamic CoinDCX portfolio balance synchronization (non-blocking background thread so /api/broker/status is always <10ms)
-    if is_coindcx and is_conn and b.get("is_live_active") and (time.time() - float(b.get("last_synced_at") or 0.0) >= 10.0):
+    if is_coindcx and is_conn and b.get("is_live_active") and (time.time() - float(b.get("last_synced_at") or 0.0) >= 5.0):
         _sync_inflight = getattr(broker_status, "_inflight", set())
         if u["id"] not in _sync_inflight:
             _sync_inflight.add(u["id"])
@@ -2147,19 +2157,22 @@ def broker_status():
                     from coindcx_gateway import get_user_coindcx_client
                     cdx = get_user_coindcx_client(uid)
                     if cdx:
-                        ok_bal, balances = cdx.get_balances()
+                        ok_bal, balances = cdx.get_balances(force=True)
                         if ok_bal and isinstance(balances, dict):
                             rate = float(balances.get("usdt_inr_rate") or 90.0)
                             real_tot_inr = float(balances.get("total_portfolio_inr") or balances.get("inr_total") or 0.0)
-                            real_tot_usd = float(balances.get("total_portfolio_usd") or (real_tot_inr / rate))
+                            real_tot_usd = float(balances.get("total_portfolio_usd") if balances.get("total_portfolio_usd") is not None else (real_tot_inr / rate))
                             if real_tot_usd > 15000.0 and abs(real_tot_usd - real_tot_inr) < 1.0:
                                 real_tot_usd = round(real_tot_usd / rate, 2)
-                            real_free_usd = float(balances.get("usdt_free") or (float(balances.get("inr_free") or 0.0) / rate))
+                            real_free_usd = float(balances.get("usdt_free") if balances.get("usdt_free") is not None else (float(balances.get("inr_free") or 0.0) / rate))
                             if real_free_usd > 15000.0:
                                 real_free_usd = round(real_free_usd / rate, 2)
-                            if real_tot_usd > 0:
+                            if real_tot_usd > 0 or (not cdx.is_offline and real_free_usd >= 0):
+                                upd_tot = round(max(0.0, real_tot_usd), 2)
+                                upd_free = round(max(0.0, real_free_usd), 2)
                                 write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'",
-                                      (round(real_tot_usd, 2), round(real_tot_usd, 2), round(max(0.0, real_free_usd), 2), time.time(), uid))
+                                      (upd_tot, upd_tot, upd_free, time.time(), uid))
+                                write("UPDATE wallets SET deposit_balance=? WHERE user_id=?", (upd_tot, uid))
                             else:
                                 write("UPDATE broker_connections SET last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'", (time.time(), uid))
                         else:
@@ -2195,6 +2208,8 @@ def broker_status():
         "live_balance_inr": round(live_bal * 90.0, 2),
         "live_equity": live_eq,
         "free_margin": free_margin,
+        "free_margin_inr": round(free_margin * 90.0, 2),
+        "locked_margin": round(max(0.0, live_bal - free_margin), 2),
         "currency": currency,
         "is_coindcx": is_coindcx,
         "status": b["status"],
@@ -3831,13 +3846,15 @@ def coindcx_sweep_to_inr():
         else:
             failed.append({"currency": cur, "error": (sell_res.get("message") if isinstance(sell_res, dict) else str(sell_res))})
             
-    # Force refresh balances to reflect freshly liquidated INR cash
+    # Force refresh balances in USD/USDT + INR consistently
     ok_new, new_b = cdx.get_balances(force=True)
+    rate = float((new_b or {}).get("usdt_inr_rate") or 90.0) if ok_new else 90.0
     new_inr = float(new_b.get("total_portfolio_inr") or new_b.get("inr_total") or new_b.get("inr_free") or 0.0) if ok_new else 0.0
-    free_inr = float(new_b.get("inr_free") or new_inr) if ok_new else 0.0
-    if new_inr > 0:
+    new_usd = float(new_b.get("total_portfolio_usd") or (new_inr / rate)) if ok_new else 0.0
+    free_usd = float(new_b.get("usdt_free") or (float(new_b.get("inr_free") or 0.0) / rate)) if ok_new else new_usd
+    if new_usd > 0:
         write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=? AND broker_name='COINDCX'",
-              (new_inr, new_inr, free_inr, time.time(), u["id"]))
+              (round(new_usd, 2), round(new_usd, 2), round(max(0.0, free_usd), 2), time.time(), u["id"]))
         
     bot._log(u["id"], "COINDCX_SWEEP", f"⚡ Swept {len(swept)} crypto assets back to INR cash! New Balance: ${new_inr:,.2f}")
     return ok(success=True, swept=swept, failed=failed, new_balance=new_inr,
@@ -4294,21 +4311,24 @@ def api_coindcx_status():
             message="CoinDCX API not connected."
         )
 
-    # 1. Spot status & balances
-    ok_bal, balances = cdx.spot.get_balances()
+    # 1. Unified Spot + Futures status & balances (stored in USD/USDT so balance units stay consistent across endpoints)
+    ok_bal, balances = cdx.get_balances()
     if not ok_bal:
         balances = {
-            "inr_free": float(conn.get("free_margin") or 0.0),
-            "inr_total": float(conn.get("live_balance") or 0.0),
-            "usdt_free": 0.0,
-            "usdt_total": 0.0,
-            "total_portfolio_inr": float(conn.get("live_balance") or 0.0),
+            "inr_free": round(float(conn.get("free_margin") or 0.0) * 90.0, 2),
+            "inr_total": round(float(conn.get("live_balance") or 0.0) * 90.0, 2),
+            "usdt_free": float(conn.get("free_margin") or 0.0),
+            "usdt_total": float(conn.get("live_balance") or 0.0),
+            "total_portfolio_inr": round(float(conn.get("live_balance") or 0.0) * 90.0, 2),
+            "total_portfolio_usd": float(conn.get("live_balance") or 0.0),
             "holdings": []
         }
     else:
-        inr_tot = balances.get("total_portfolio_inr") or balances.get("inr_total") or 0.0
+        rate = float(balances.get("usdt_inr_rate") or 90.0)
+        tot_usd = round(float(balances.get("total_portfolio_usd") if balances.get("total_portfolio_usd") is not None else (float(balances.get("total_portfolio_inr") or 0.0) / rate)), 2)
+        free_usd = round(float(balances.get("usdt_free") if balances.get("usdt_free") is not None else (float(balances.get("inr_free") or 0.0) / rate)), 2)
         write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=?",
-              (inr_tot, inr_tot, balances.get("inr_free") or 0.0, time.time(), u["id"]))
+              (tot_usd, tot_usd, max(0.0, free_usd), time.time(), u["id"]))
 
     ok_orders, active_orders = cdx.spot.get_active_orders()
     if not ok_orders:

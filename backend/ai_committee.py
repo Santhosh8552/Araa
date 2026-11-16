@@ -255,17 +255,17 @@ class AgentGammaRiskIntelligence:
             liq_ref = InstitutionalRiskEngine.calculate_liquidation_price(entry, direction, req_lev)
             if liq_ref > 0:
                 liq_dist_pct = abs(entry - liq_ref) / entry
-                safe_liq_cap = max(0.0015, round(liq_dist_pct * 0.80, 4))
+                safe_liq_cap = max(0.0015, round(liq_dist_pct * 0.72, 4))
                 stop_dist_pct = min(stop_dist_pct, safe_liq_cap)
         target_dist_pct = max(0.004, round(stop_dist_pct * 1.85, 4))
 
         is_long = str(direction).upper() in ("BUY", "LONG")
         if is_long:
-            stop_price = round(entry * (1.0 - stop_dist_pct), 6)
-            target_price = round(entry * (1.0 + target_dist_pct), 6)
+            stop_price = round(entry * (1.0 - stop_dist_pct), 8)
+            target_price = round(entry * (1.0 + target_dist_pct), 8)
         else:
-            stop_price = round(entry * (1.0 + stop_dist_pct), 6)
-            target_price = round(entry * (1.0 - target_dist_pct), 6)
+            stop_price = round(entry * (1.0 + stop_dist_pct), 8)
+            target_price = round(entry * (1.0 - target_dist_pct), 8)
 
         risk_ok, risk_reason, risk_details = InstitutionalRiskEngine.evaluate_pre_trade_risk(
             user_id=user_id or 1,
@@ -304,11 +304,18 @@ class AICommitteeOrchestrator:
 
     @classmethod
     def evaluate_candidate(cls, symbol, user_id=None, candles=None, quote_data=None, ticker_info=None,
-                           equity_usd=1000.0, requested_leverage=20.0, timeframe="1m", is_live=False, persist=True):
+                           equity_usd=1000.0, requested_leverage=20.0, timeframe="1m", is_live=False, persist=True,
+                           intended_side=None):
         alpha = AgentAlphaMarketIntelligence.evaluate(symbol, quote_data=quote_data, candles=candles, ticker_info=ticker_info)
         beta = AgentBetaTechnicalIntelligence.evaluate(symbol, candles=candles, quote_data=quote_data)
 
-        direction = beta["indicators"]["direction"]
+        beta_dir = beta["indicators"]["direction"]
+        direction = (
+            ("LONG" if str(intended_side).upper() in ("BUY", "LONG") else "SHORT")
+            if intended_side
+            else beta_dir
+        )
+        direction_conflict = bool(intended_side and beta_dir != direction and float(beta.get("score") or 0.0) >= 82.0)
         entry_price = float((quote_data or {}).get("price") or (candles[-1]["c"] if candles else 100.0))
         atr_val = beta["indicators"]["atr_14"]
 
@@ -325,7 +332,17 @@ class AICommitteeOrchestrator:
 
         # Weighted consensus (Alpha 30%, Beta 45%, Gamma 25%)
         consensus_score = round(alpha["score"] * 0.30 + beta["score"] * 0.45 + gamma["score"] * 0.25, 1)
-        approved = bool(gamma["approved"] and consensus_score >= 62.0 and alpha["metrics"]["liquidity_healthy"])
+        approved = bool(
+            gamma["approved"]
+            and not direction_conflict
+            and consensus_score >= 60.0
+            and alpha["metrics"]["liquidity_healthy"]
+        )
+        veto_note = (
+            f"Beta strong counter-trend {beta_dir} ({beta['score']}%)"
+            if direction_conflict
+            else (gamma.get("rejection_reason") or ("Unhealthy liquidity spread" if not alpha["metrics"]["liquidity_healthy"] else ""))
+        )
         final_action = f"ENTER_{direction}" if approved else "HOLD_AND_MONITOR"
 
         rationale = (
@@ -372,6 +389,7 @@ class AICommitteeOrchestrator:
             "alpha": alpha,
             "beta": beta,
             "gamma": gamma,
+            "veto_reason": veto_note,
             "explainable_rationale": rationale,
         }
 

@@ -1012,27 +1012,6 @@ class CoinDCXSpotAdapter:
                     log_audit_event(self.user_id, "SPOT_ORDER_FILLED", f"CoinDCX Spot {side_clean.upper()} {retry_qty} {clean_market} placed successfully (auto-adjusted precision to {needed_prec})", severity="INFO", details=res_data)
                     return True, res_data
 
-            err_msg_low = str(err_msg).lower()
-            if any(k in err_msg_low for k in ("ip", "credentials", "unauthorized", "whitelist", "permission", "restricted", "not active", "inactive")):
-                logger.info(f"CoinDCX Direct Spot restricted ({err_msg}). Auto-adopting into AraaBot Autonomous Execution.")
-                current_price = est_price if est_price > 0 else 100.0
-                order_id = f"cdx_spot_auto_{int(time.time()*1000)}"
-                auto_order = {
-                    "id": order_id,
-                    "client_order_id": client_order_id or f"araa_{int(time.time())}_{self.user_id}",
-                    "market": clean_market,
-                    "side": side_clean,
-                    "order_type": effective_order_type,
-                    "price_per_unit": float(current_price),
-                    "total_quantity": float(clean_qty),
-                    "status": "filled",
-                    "fee": round(float(current_price) * float(clean_qty) * 0.001, 2),
-                    "timestamp": int(round(time.time() * 1000)),
-                    "autonomous_adopted": True
-                }
-                log_audit_event(self.user_id, "SPOT_ORDER_ADOPTED", f"Autonomous Spot {side_clean.upper()} {clean_qty} {clean_market} @ ${current_price:,.2f} executed on live market price", severity="INFO", details=auto_order)
-                return True, auto_order
-
             log_audit_event(self.user_id, "SPOT_ORDER_REJECTED", f"CoinDCX rejected {side_clean.upper()} {clean_qty} {clean_market}: {err_msg}", severity="WARNING", details=body)
             return False, res
 
@@ -1488,6 +1467,151 @@ class CoinDCXFuturesAdapter:
                 continue
         return None
 
+    def get_orders(
+        self,
+        status: str = "open,partially_filled,untriggered,initial",
+        page: int = 1,
+        size: int = 50,
+    ) -> Tuple[bool, List[Dict[str, Any]]]:
+        """Fetch live CoinDCX Futures orders across buy/sell sides."""
+        if self.is_offline:
+            return True, []
+        combined: List[Dict[str, Any]] = []
+        seen_ids: Set[str] = set()
+        any_ok = False
+        for order_side in ("buy", "sell"):
+            ok, res = self._call(
+                "/exchange/v1/derivatives/futures/orders",
+                body={
+                    "status": status,
+                    "side": order_side,
+                    "page": str(page),
+                    "size": str(size),
+                    "margin_currency_short_name": ["USDT", "INR"],
+                },
+                attempts=2,
+            )
+            if ok and isinstance(res, list):
+                any_ok = True
+                for item in res:
+                    if not isinstance(item, dict):
+                        continue
+                    oid = str(item.get("id") or "")
+                    if oid and oid in seen_ids:
+                        continue
+                    if oid:
+                        seen_ids.add(oid)
+                    combined.append(item)
+        return (True, combined) if any_ok else (False, [])
+
+    def cancel_order(self, order_id: str) -> Tuple[bool, Dict[str, Any]]:
+        """Cancel an open CoinDCX Futures order by UUID."""
+        if self.is_offline:
+            return True, {"status": "cancelled_offline", "id": str(order_id)}
+        if not order_id:
+            return False, {"message": "Missing order id"}
+        ok, res = self._call(
+            "/exchange/v1/derivatives/futures/orders/cancel",
+            body={"id": str(order_id)},
+            attempts=2,
+        )
+        return ok, res if isinstance(res, dict) else {"raw": res}
+
+    def get_position_transactions(
+        self,
+        position_id: str,
+        stage: str = "all",
+        margin_currency: str = "USDT",
+    ) -> Tuple[bool, List[Dict[str, Any]]]:
+        """Fetch CoinDCX Futures settlement/fee transactions for a specific position UUID."""
+        if self.is_offline or not position_id:
+            return False, []
+        ok, res = self._call(
+            "/exchange/v1/derivatives/futures/positions/transactions",
+            body={
+                "position_ids": str(position_id),
+                "stage": stage,
+                "page": "1",
+                "size": "50",
+                "margin_currency_short_name": [margin_currency],
+            },
+            attempts=2,
+        )
+        if ok and isinstance(res, list):
+            return True, res
+        return False, []
+
+    def get_position_settlement(
+        self,
+        position_id: str,
+        margin_currency: str = "USDT",
+    ) -> Optional[Dict[str, Any]]:
+        """Compute confirmed CoinDCX net settlement P&L and fees from position transactions."""
+        ok, rows = self.get_position_transactions(position_id, stage="all", margin_currency=margin_currency)
+        if not ok or not rows:
+            return None
+        realized_amt = 0.0
+        settlement_amt = 0.0
+        total_fees = 0.0
+        has_exit_tx = False
+        for tx in rows:
+            if not isinstance(tx, dict):
+                continue
+            stage = str(tx.get("stage") or "").lower()
+            amt = float(tx.get("amount") or 0.0)
+            s_amt = float(tx.get("settlement_amount") or 0.0)
+            fee = float(tx.get("fee_amount") or 0.0)
+            total_fees += fee
+            if stage in ("exit", "tpsl_exit", "liquidation", "funding") or abs(amt) > 1e-12 or abs(s_amt) > 1e-12:
+                if stage in ("exit", "tpsl_exit", "liquidation"):
+                    has_exit_tx = True
+                realized_amt += amt
+                settlement_amt += s_amt
+        if not has_exit_tx and abs(realized_amt) < 1e-12 and abs(settlement_amt) < 1e-12:
+            return None
+        # Note: CoinDCX settlement_amount reflects wallet delta (amount - fee_amount); use settlement_amount when non-zero else amount - fees
+        net_pnl = settlement_amt if abs(settlement_amt) > 1e-9 else (realized_amt - total_fees)
+        return {
+            "position_id": str(position_id),
+            "gross_pnl": round(realized_amt, 4),
+            "fee_usd": round(total_fees, 4),
+            "settlement_amount": round(settlement_amt, 4),
+            "net_pnl": round(net_pnl, 4),
+            "tx_count": len(rows),
+        }
+
+    def wait_for_position_flat(
+        self,
+        symbol: str,
+        position_id: str = "",
+        timeout_sec: float = 2.0,
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """Poll CoinDCX briefly after exit so matching/settlement completes before balance sync."""
+        if self.is_offline or os.environ.get("ARAA_E2E_MOCK_COINDCX") == "1":
+            return True, None
+        deadline = time.time() + max(0.0, float(timeout_sec or 0.0))
+        pair = self.to_futures_pair(symbol)
+        last_pos = None
+        while True:
+            ok, rows = self.get_positions()
+            if ok and isinstance(rows, list):
+                matched = None
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    rid = str(r.get("id") or "")
+                    if (position_id and rid == str(position_id)) or r.get("pair") == pair:
+                        if abs(float(r.get("active_pos") or 0.0)) > 0:
+                            matched = r
+                            break
+                        last_pos = r
+                if matched is None:
+                    return True, last_pos
+                last_pos = matched
+            if time.time() >= deadline:
+                return False, last_pos
+            time.sleep(0.35)
+
     def exit_position_by_id(self, position_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Closes a CoinDCX futures position directly by its exchange UUID."""
         if self.is_offline:
@@ -1656,6 +1780,16 @@ class CoinDCXFuturesAdapter:
 
         # Wallet funds pre-check: prevent ugly CoinDCX rejection if Futures wallet has < $0.005 USDT
         avail_fut_usdt = self.get_available_futures_margin_usdt()
+        margin_cur = "USDT"
+        if not self.is_offline:
+            try:
+                ok_fw, raw_fw = self.get_futures_balances()
+                if ok_fw and raw_fw:
+                    pfw = parse_futures_wallets(raw_fw)
+                    if float(pfw.get("fut_usdt_free") or 0.0) < 0.005 and float(pfw.get("fut_inr_free") or 0.0) >= 1.0:
+                        margin_cur = "INR"
+            except Exception:
+                pass
         est_margin_usdt = (qty_val * cur_p_usdt) / max(1.0, eff_lev) if cur_p_usdt > 0 else 0.0
         if not self.is_offline:
             if avail_fut_usdt < 0.005:
@@ -1687,7 +1821,7 @@ class CoinDCXFuturesAdapter:
             "time_in_force": "good_till_cancel",
             "hidden": False,
             "post_only": False,
-            "margin_currency_short_name": "USDT",
+            "margin_currency_short_name": margin_cur,
         }
         if order_type != "market_order" and price:
             scaled_p = float(price) * contract_mult if contract_mult > 1.0 else float(price)
@@ -1711,7 +1845,7 @@ class CoinDCXFuturesAdapter:
         # on a transient failure we check whether the position already appeared.
         ok, res = self._call("/exchange/v1/derivatives/futures/orders/create", body={"order": order}, attempts=1)
 
-        # Self-healing retry: If CoinDCX rejects due to TP/SL or price tick formatting, retry immediately as a clean entry order!
+        # Self-healing retry: If CoinDCX rejects due to TP/SL, tick formatting, or dynamic leverage tier cap, retry cleanly!
         if not ok and isinstance(res, dict):
             err_msg_low = str(res.get("message", "")).lower()
             if any(k in err_msg_low for k in ("divisible by", "take profit", "stop price", "price increment", "stop_price", "take_profit")):
@@ -1724,33 +1858,32 @@ class CoinDCXFuturesAdapter:
                 ok, res = self._call("/exchange/v1/derivatives/futures/orders/create", body={"order": order_retry}, attempts=1)
                 if ok:
                     logger.info(f"Self-healed order filled successfully without bracket TP/SL for {pair_clean}. AraaBot monitor will manage dynamic exit.")
+            elif "leverage" in err_msg_low and eff_lev > 20.0:
+                side_key = "max_leverage_long" if side_clean == "buy" else "max_leverage_short"
+                base_cap = float(inst.get(side_key) or inst.get("max_leverage") or 20.0)
+                fallback_lev = float(max(5, int(min(base_cap if base_cap >= 5.0 else 20.0, max(20.0, eff_lev * 0.5)))))
+                if fallback_lev < eff_lev:
+                    logger.warning(f"CoinDCX rejected {eff_lev:.0f}x leverage ({res.get('message')}). Retrying {pair_clean} at {fallback_lev:.0f}x...")
+                    self.set_leverage(pair_clean, fallback_lev)
+                    order_lev_retry = dict(order)
+                    order_lev_retry["leverage"] = int(fallback_lev)
+                    if cur_p_usdt > 0 and avail_fut_usdt > 0:
+                        max_notional_fb = avail_fut_usdt * 0.90 * fallback_lev
+                        if (qty_val * cur_p_usdt) > max_notional_fb:
+                            fb_qty = max_notional_fb / cur_p_usdt
+                            fb_qty = round(int(fb_qty / step) * step, decimals) if step > 0 else round(fb_qty, 3)
+                            if fb_qty >= min_qty:
+                                qty_val = fb_qty
+                                order_lev_retry["total_quantity"] = fb_qty
+                    ok, res = self._call("/exchange/v1/derivatives/futures/orders/create", body={"order": order_lev_retry}, attempts=1)
+                    if ok:
+                        eff_lev = fallback_lev
 
         if not ok and isinstance(res, dict) and res.get("code") in (None, 408, 500, 502, 503, 504):
             time.sleep(1.0)
             pos = self.find_open_position(pair_clean)
             if pos:
                 ok, res = True, {"id": pos.get("id"), "recovered_after_timeout": True, "avg_price": pos.get("avg_price")}
-        if not ok and isinstance(res, dict):
-            err_msg_low = str(res.get("message", "")).lower()
-            if any(k in err_msg_low for k in ("ip", "credentials", "unauthorized", "whitelist", "permission", "restricted", "not active", "inactive", "divisible by", "increment", "precision")):
-                logger.info(f"CoinDCX Direct Futures restricted ({res.get('message')}). Auto-adopting into AraaBot Autonomous Execution.")
-                cur_p_fill = cur_p
-                if pair_clean in tickers and float(tickers[pair_clean].get("last_price") or 0) > 0:
-                    cur_p_fill = tickers[pair_clean]["last_price"]
-                elif symbol in tickers and float(tickers[symbol].get("last_price") or 0) > 0:
-                    cur_p_fill = tickers[symbol]["last_price"]
-                order_id = f"cdx_fut_auto_{int(time.time()*1000)}"
-                auto_order = {
-                    "id": order_id,
-                    "client_order_id": client_order_id or f"araa_fut_{int(time.time())}_{self.user_id}",
-                    "market": pair_clean, "side": side_clean, "order_type": order_type,
-                    "leverage": eff_lev, "price": float(cur_p_fill), "quantity": float(qty_val),
-                    "stop_loss": stop_loss, "take_profit": take_profit,
-                    "status": "filled", "timestamp": int(round(time.time() * 1000)),
-                    "autonomous_adopted": True
-                }
-                log_audit_event(self.user_id, "FUTURES_ORDER_ADOPTED", f"Autonomous CoinDCX Futures {side_clean.upper()} {qty_val} {pair_clean} ({eff_lev:.0f}x) filled on live market price", severity="INFO", details=auto_order)
-                return True, auto_order
 
         if ok:
             log_audit_event(self.user_id, "FUTURES_ORDER_FILLED", f"CoinDCX Futures {side_clean.upper()} {qty_val} {pair_clean} @ {eff_lev:.0f}x placed", severity="INFO", details=res if isinstance(res, dict) else {"raw": res})
@@ -1760,22 +1893,38 @@ class CoinDCXFuturesAdapter:
                 res.setdefault("leverage", eff_lev)
                 res.setdefault("filled_quantity", float(qty_val))
                 res.setdefault("quantity", float(qty_val))
-                if float(res.get("avg_price") or 0.0) <= 0 and float(res.get("price") or 0.0) <= 0:
-                    fill_px = 0.0
-                    if not self.is_offline and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1":
-                        try:
+                needs_fill_confirm = (
+                    float(res.get("avg_price") or 0.0) <= 0
+                    and float(res.get("price") or 0.0) <= 0
+                ) or str(res.get("status") or "").lower() in ("initial", "open")
+                pos_live = None
+                if needs_fill_confirm and not self.is_offline and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1":
+                    try:
+                        pos_live = self.find_open_position(pair_clean)
+                        if not pos_live:
+                            time.sleep(0.25)
                             pos_live = self.find_open_position(pair_clean)
-                            if pos_live and float(pos_live.get("avg_price") or 0.0) > 0:
-                                fill_px = float(pos_live["avg_price"])
-                        except Exception:
-                            pass
+                    except Exception:
+                        pos_live = None
+                if pos_live:
+                    if pos_live.get("id"):
+                        res["exchange_position_id"] = str(pos_live["id"])
+                    if float(pos_live.get("leverage") or 0.0) >= 1.0:
+                        res["leverage"] = float(pos_live["leverage"])
+                    if abs(float(pos_live.get("active_pos") or 0.0)) > 0:
+                        res["filled_quantity"] = abs(float(pos_live["active_pos"]))
+                if float(res.get("avg_price") or 0.0) <= 0 and float(res.get("price") or 0.0) <= 0:
+                    fill_px = float((pos_live or {}).get("avg_price") or 0.0)
                     res["avg_price"] = fill_px if fill_px > 0 else float(cur_p_usdt)
                 c_px = float(res.get("avg_price") or res.get("price") or cur_p_usdt)
                 c_qty = float(res.get("filled_quantity") or res.get("total_quantity") or res.get("quantity") or qty_val)
+                exch_locked = float((pos_live or {}).get("locked_user_margin") or (pos_live or {}).get("locked_margin") or 0.0)
                 res["contract_multiplier"] = contract_mult
                 res["spot_equivalent_price"] = (c_px / contract_mult) if contract_mult > 1.0 else c_px
                 res["spot_equivalent_quantity"] = (c_qty * contract_mult) if contract_mult > 1.0 else c_qty
-                res["actual_margin_usd"] = round((c_qty * c_px) / max(1.0, float(res.get("leverage") or eff_lev)), 4) if c_px > 0 else 0.0
+                res["actual_margin_usd"] = round(exch_locked, 4) if exch_locked > 0 else (
+                    round((c_qty * c_px) / max(1.0, float(res.get("leverage") or eff_lev)), 4) if c_px > 0 else 0.0
+                )
         else:
             err_msg = res.get("message") if isinstance(res, dict) else str(res)
             log_audit_event(self.user_id, "FUTURES_ORDER_REJECTED", f"CoinDCX Futures rejected: {err_msg}", severity="WARNING", details=order)
@@ -2012,6 +2161,14 @@ class CoinDCXClient:
         self.adapter = AraaCoinDCXRuleAdapter(self)
         self._combined_bal_cache: Optional[Dict[str, Any]] = None
         self._combined_bal_time: float = 0.0
+
+    def invalidate_balance_cache(self) -> None:
+        """Clear cached Spot + Futures balances before forced exchange settlement sync."""
+        self._combined_bal_cache = None
+        self._combined_bal_time = 0.0
+        if hasattr(self, "spot") and hasattr(self.spot, "_bal_cache"):
+            self.spot._bal_cache = None
+            self.spot._bal_cache_time = 0.0
 
     # Delegated methods for backward compatibility
     def get_balances(self, force: bool = False) -> Tuple[bool, Dict[str, Any]]:
@@ -2634,7 +2791,13 @@ def save_user_coindcx_connection(user_id: int, api_key: str, api_secret: str, su
         """, (user_id, preserved_lev, enc_key, enc_secret, masked_key, usd_total, usd_total, usd_free, status_str, is_live_flag, profile_name, account_email, now, now))
 
     write("UPDATE users SET bot_enabled=0, bot_market_focus='FUTURES_USD', bot_leverage=? WHERE id=?", (preserved_lev, user_id))
-    write("UPDATE wallets SET deposit_balance=?, starting_balance=? WHERE user_id=?", (usd_total, usd_total, user_id))
+    # Preserve Initial Capital baseline once established so settled live profits remain visible vs starting balance
+    existing_w = query_one("SELECT starting_balance FROM wallets WHERE user_id=?", (user_id,))
+    existing_start = float((existing_w or {}).get("starting_balance") or 0.0)
+    if existing_start <= 0.0 or not existing:
+        write("UPDATE wallets SET deposit_balance=?, starting_balance=? WHERE user_id=?", (usd_total, usd_total, user_id))
+    else:
+        write("UPDATE wallets SET deposit_balance=? WHERE user_id=?", (usd_total, user_id))
 
     write("""
         INSERT INTO real_bot_configs(

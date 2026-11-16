@@ -910,14 +910,21 @@ async function refreshAccount() {
   S.user = d.user; S.wallet = d.wallet; S.pf = d.portfolio; S.orders = d.orders || [];
   if (S.broker && S.broker.is_live && S.broker.is_coindcx && S.pf && !S.pf.is_live_mode) {
     const liveBal = Number(S.broker.live_balance_usd != null ? S.broker.live_balance_usd : (S.broker.live_balance || 0));
+    const initBal = (S.pf.starting_balance && Number(S.pf.starting_balance) > 0) ? Number(S.pf.starting_balance) : liveBal;
+    const eqBal = +(liveBal + Number(S.pf.unrealized_pnl || 0)).toFixed(2);
     S.pf.is_live_mode = true;
-    S.pf.current_balance = liveBal;
-    S.pf.starting_balance = liveBal;
+    S.pf.current_balance = eqBal;
+    S.pf.starting_balance = initBal;
     if (S.pf.goal) {
       S.pf.goal.mode = "LIVE";
-      S.pf.goal.current_balance = liveBal;
-      S.pf.goal.starting_balance = liveBal;
-      S.pf.goal.target_amount = +(liveBal * 1.5).toFixed(2);
+      S.pf.goal.current_balance = eqBal;
+      if (!S.pf.goal.starting_balance || Number(S.pf.goal.starting_balance) <= 0) {
+        S.pf.goal.starting_balance = initBal;
+      }
+      if (!S.pf.goal.target_amount || Number(S.pf.goal.target_amount) <= S.pf.goal.starting_balance) {
+        S.pf.goal.target_amount = +(S.pf.goal.starting_balance * 1.5).toFixed(2);
+      }
+      S.pf.goal.gain = +(eqBal - Number(S.pf.goal.starting_balance || initBal)).toFixed(2);
     }
   }
   S.acct = d;
@@ -1216,7 +1223,7 @@ function renderGoal(pf) {
 
   if ($("g_now")) {
     if (isLive && isCoinDcx) {
-      const dispBal = liveBalUSD > 0 ? liveBalUSD : (Number(g.current_balance) || 0.0);
+      const dispBal = liveBalUSD > 0 ? +(liveBalUSD + Number(pf.unrealized_pnl || 0)).toFixed(2) : (Number(g.current_balance) || 0.0);
       $("g_now").innerHTML = `${usd(dispBal)} <span style="font-size:14px; font-weight:600; color:#94a3b8; margin-left:6px;">(${inrFmt(dispBal * inrRate)})</span>`;
     } else if (isCoinDcx) {
       const curBal = Number(g.current_balance) > 0 ? Number(g.current_balance) : (liveBalUSD > 0 ? liveBalUSD : (equity() || 0.0));
@@ -1231,22 +1238,28 @@ function renderGoal(pf) {
 
   if ($("g_dep")) {
     if (isLive && isCoinDcx) {
-      const initInr = liveBalINR > 0 ? liveBalINR : (liveBalUSD * inrRate);
+      const initCapUSD = (Number(g.starting_balance) > 0) ? Number(g.starting_balance) : liveBalUSD;
+      const initInr = initCapUSD * inrRate;
       const freeInr = freeBalUSD * inrRate;
-      const freeStr = (freeBalUSD > 0)
+      const freeStr = (freeBalUSD >= 0 && liveBalUSD > 0)
         ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span> <span style="font-size:11px; color:#34d399; font-weight:600;">(${inrFreeFmt(freeInr)})</span>`
         : "";
-      $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">$${liveBalUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span style="font-size:11px; color:#94a3b8;">(${inrFmt(initInr)})</span>${freeStr}`;
+      const lockedDiff = +(liveBalUSD - freeBalUSD).toFixed(2);
+      const lockedStr = (lockedDiff >= 0.05 && Number(pf.open_count || 0) === 0)
+        ? ` · <span title="In CoinDCX Spot holdings, INR wallet, or unclosed exchange orders" style="color:#f59e0b; font-weight:600;">Spot/Locked: $${lockedDiff.toFixed(2)}</span>`
+        : "";
+      $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">$${initCapUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span style="font-size:11px; color:#94a3b8;">(${inrFmt(initInr)})</span>${freeStr}${lockedStr}`;
     } else if (isCoinDcx) {
-      const actualInit = (liveBalUSD > 0) ? liveBalUSD : ((Number(g.starting_balance) > 0) ? Number(g.starting_balance) : (equity() || 0.0));
-      const actualInitInr = liveBalINR > 0 ? liveBalINR : (actualInit * inrRate);
+      const actualInit = (Number(g.starting_balance) > 0) ? Number(g.starting_balance) : (liveBalUSD > 0 ? liveBalUSD : (equity() || 0.0));
+      const actualInitInr = actualInit * inrRate;
       const freeInr = freeBalUSD * inrRate;
       const freeStr = (freeBalUSD > 0)
         ? ` · Available Margin: <span style="font-family:var(--mono); color:#10b981; font-weight:700;">$${freeBalUSD.toFixed(2)}</span> <span style="font-size:11px; color:#34d399; font-weight:600;">(${inrFreeFmt(freeInr)})</span>`
         : "";
       $("g_dep").innerHTML = `CoinDCX Capital: <span style="font-family:var(--mono); color:#38bdf8; font-weight:700;">$${actualInit.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span style="font-size:10px; color:#94a3b8;">(${inrFmt(actualInitInr)})</span>${freeStr}`;
     } else if (isLive) {
-      $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">${usd(liveBalUSD)}</span>`;
+      const initCapLive = (Number(g.starting_balance) > 0) ? Number(g.starting_balance) : liveBalUSD;
+      $("g_dep").innerHTML = `Initial Capital: <span style="font-family:var(--mono); color:var(--text); font-weight:700;">${usd(initCapLive)}</span>`;
     } else {
       const initCap = Number(g.starting_balance) > 0 ? Number(g.starting_balance) : (equity() || 0.0);
       $("g_dep").innerHTML = `Initial Capital: <span id="g_start" style="font-family: var(--mono); color: var(--text);">${usd(initCap)}</span><span id="g_dep_time" style="color: var(--muted2);">${g.deposited_at ? " · Deposited " + hhmm(g.deposited_at) : ""}</span>`;
@@ -1255,10 +1268,13 @@ function renderGoal(pf) {
 
   if ($("g_target")) {
     if (isCoinDcx) {
-      const baseBal = liveBalUSD > 0 ? liveBalUSD : (Number(g.starting_balance) || 0.0);
-      $("g_target").textContent = `Target ${usd(baseBal * 1.5)}`;
+      const startRef = (Number(g.starting_balance) > 0) ? Number(g.starting_balance) : liveBalUSD;
+      const tgtVal = (Number(g.target_amount) > startRef) ? Number(g.target_amount) : (startRef * 1.5);
+      $("g_target").textContent = `Target ${usd(tgtVal)}`;
     } else if (isLive) {
-      $("g_target").textContent = `Target ${usd(liveBalUSD * 1.5)}`;
+      const startRef = (Number(g.starting_balance) > 0) ? Number(g.starting_balance) : liveBalUSD;
+      const tgtVal = (Number(g.target_amount) > startRef) ? Number(g.target_amount) : (startRef * 1.5);
+      $("g_target").textContent = `Target ${usd(tgtVal)}`;
     } else {
       const initCap = Number(g.starting_balance) > 0 ? Number(g.starting_balance) : (equity() || 0.0);
       const targetVal = Number(g.target_amount) > 0 ? Number(g.target_amount) : (initCap * 1.5);

@@ -171,9 +171,9 @@ def resolve_scalp_targets(mode, leverage=20.0, tp_override=None, sl_override=Non
         # Scale smoothly with leverage while keeping spot target above 0.11% CoinDCX round-trip fee
         roi_goal = float((custom_rules or {}).get("scalp_roi_target_pct") or 15.0)
         if lev >= 50.0:
-            tp = min(base_tp, max(0.35, round(roi_goal / lev * 1.4, 3)))
-            tp = round(max(0.35, min(0.55, tp)), 3)
-            sl = round(max(0.22, min(0.32, tp * 0.55)), 3)
+            tp = min(base_tp, max(0.48, round(roi_goal / lev * 1.6, 3)))
+            tp = round(max(0.45, min(0.55, tp)), 3)
+            sl = round(max(0.26, min(0.32, tp * 0.56)), 3)
         elif lev >= 15.0:
             tp = round(max(0.45, min(0.75, max(base_tp, roi_goal / lev))), 3)
             sl = round(max(0.25, min(0.40, tp * 0.55)), 3)
@@ -1319,28 +1319,31 @@ class Bot:
         pos_lev = max(1.0, float(p.get("leverage") or 100.0))
         pnl = max(-pos_margin, float(raw_pnl))
         is_live = bool(p.get("is_live"))
-        est_fee = round(pos_margin * pos_lev * 0.0011, 4) if is_live else 0.0
+        est_fee = round(pos_margin * pos_lev * 0.0014, 4) if is_live else 0.0
         roi_pct = (pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
         peak_roi = (peak_cash / pos_margin * 100.0) if pos_margin > 0 else 0.0
         min_take_profit = max(0.005, round(pos_margin * 0.03, 4))
         min_net_profit = (
-            round(est_fee * 1.25 + max(0.012, pos_margin * 0.015), 4)
+            round(est_fee * 1.25 + max(0.015, pos_margin * 0.02), 4)
             if is_live
             else max(0.005, round(pos_margin * 0.02, 4))
         )
         tp_pct = max(0.25, float(p.get("target_pct") or 0.60))
         tp_roi = tp_pct * pos_lev
 
-        # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (Both Paper & Real Mode)
-        if pnl >= 1.00 and time_held >= (1.0 if is_live else 0.0):
+        # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (Fee-safe in Real Mode)
+        live_scalp_floor = round(max(1.00, est_fee + max(0.25, pos_margin * 0.04)), 4) if is_live else 1.00
+        if pnl >= live_scalp_floor and time_held >= (1.0 if is_live else 0.0):
             return f"SCALP_TARGET_$1_HIT (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
-        if peak_cash >= 0.90 and pnl >= 0.85 and time_held >= 2.0:
-            if pnl <= round(peak_cash * 0.96, 4) or pnl >= 0.90:
+        live_auto_peak = round(max(0.90, est_fee + 0.25), 4) if is_live else 0.90
+        live_auto_min = round(max(0.85, est_fee + 0.15), 4) if is_live else 0.85
+        if peak_cash >= live_auto_peak and pnl >= live_auto_min and time_held >= 2.0:
+            if pnl <= round(peak_cash * 0.96, 4) or pnl >= live_auto_peak:
                 return f"SCALP_AUTO_CLOSE_+0.90 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
-        # RULE 0.5: +$0.10 Profit Lock Ladder (Locks meaningful net green profits after fees in Real Mode)
-        min_lock_peak = max(0.28, round(est_fee * 2.2, 4)) if is_live else 0.10
+        # RULE 0.5: Profit Lock Ladder (Locks net green profits strictly above CoinDCX round-trip fees + GST in Real Mode)
+        min_lock_peak = max(0.28, round(est_fee * 2.1 + 0.15, 4)) if is_live else 0.10
         if peak_cash >= min_lock_peak and time_held >= 1.5:
             if peak_cash >= 0.50:
                 lock_floor = 0.35
@@ -1349,8 +1352,9 @@ class Bot:
             else:
                 lock_floor = 0.04
             if is_live and est_fee > 0:
-                lock_floor = max(lock_floor, round(est_fee * 1.5, 4), round(peak_cash * 0.62, 4))
-            if pnl <= lock_floor and pnl > (est_fee if is_live else 0.0):
+                lock_floor = max(lock_floor, round(est_fee + max(0.08, pos_margin * 0.02), 4), round(peak_cash * 0.62, 4))
+            min_live_green = round(est_fee + 0.04, 4) if is_live else 0.0
+            if pnl <= lock_floor and pnl > min_live_green:
                 return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
         # RULE 1: Immediate Target-Profit Execution when percentage target hit
@@ -1488,13 +1492,24 @@ class Bot:
     def close(self, p, price, reason):
         raw_pnl, _, _, _ = self._compute_position_metrics(p, price)
         pnl = round(raw_pnl, 2)
+        real_fee_usd = float(p.get("fee_usd") or 0.0)
+        exch_pos_id = p.get("magic_id") or p.get("command_id")
 
         # Real Exchange Position Close Bridge (ONLY for real broker positions, never Paper Bot)
+        close_res = None
         if p.get("is_live"):
-            close_res = None
             try:
                 from real_broker import close_real_order
-                close_res = close_real_order(symbol=p["symbol"], side=p["side"], qty=p["qty"], user_id=p.get("user_id"), price=price, reason=reason, leverage=p.get("leverage"))
+                close_res = close_real_order(
+                    symbol=p["symbol"],
+                    side=p["side"],
+                    qty=p["qty"],
+                    user_id=p.get("user_id"),
+                    ticket_id=exch_pos_id,
+                    price=price,
+                    reason=reason,
+                    leverage=p.get("leverage"),
+                )
             except Exception as close_err:
                 close_res = {"closed": False, "error": str(close_err)}
             # Only EXNESS_MT4 closes are asynchronous (queued to the terminal); everything else must be confirmed.
@@ -1519,6 +1534,16 @@ class Bot:
                     reason = f"{reason}|EXCHANGE_CLOSE_FAILED_CHECK_MANUALLY"
             self._close_fail.pop(p["id"], None)
 
+            # Book true exchange-settled net P&L (after exchange fees & GST) when available
+            if close_res and close_res.get("exchange_settled") and close_res.get("realized_pnl") is not None:
+                pnl = round(float(close_res["realized_pnl"]), 2)
+                if float(close_res.get("fee_usd") or 0.0) > 0:
+                    real_fee_usd = float(close_res["fee_usd"])
+            elif close_res and close_res.get("exchange") == "COINDCX" and close_res.get("mode") != "FALLBACK_PAPER":
+                est_rt_fee = round(max(0.0, float(p.get("margin") or 0.0)) * max(1.0, float(p.get("leverage") or 1.0)) * 0.0014, 4)
+                real_fee_usd = max(real_fee_usd, est_rt_fee)
+                pnl = round(raw_pnl - real_fee_usd, 2)
+
         # Margin liquidation safety: position loss capped to allocated margin
         max_allowed_loss = -p["margin"]
         if pnl < max_allowed_loss:
@@ -1527,8 +1552,8 @@ class Bot:
         now = time.time()
         statements = [
             ("UPDATE positions SET status='CLOSED', current_price=?, unrealized_pnl=0, closed_at=?, "
-             "realized_pnl=?, close_reason=? WHERE id=?",
-             (price, now, pnl, reason, p["id"])),
+             "realized_pnl=?, fee_usd=?, close_reason=? WHERE id=?",
+             (price, now, pnl, round(real_fee_usd, 4), reason, p["id"])),
             # deposit_balance holds capital, profit_balance holds realised gains. A win returns the
             # margin to capital and books the gain once into profit; a loss is paid out of capital.
             # Crediting pnl to both pools would double-count every winning trade.
@@ -1556,26 +1581,59 @@ class Bot:
         writes(statements)
         if p.get("is_live"):
             try:
-                b_row = query_one("SELECT broker_name FROM broker_connections WHERE user_id=?", (p["user_id"],))
+                b_row = query_one("SELECT broker_name, free_margin FROM broker_connections WHERE user_id=?", (p["user_id"],))
                 if b_row and (b_row.get("broker_name") or "").upper() == "COINDCX":
                     from coindcx_gateway import get_user_coindcx_client
                     cdx = get_user_coindcx_client(p["user_id"])
                     if cdx:
+                        inv_fn = getattr(cdx, "invalidate_balance_cache", None)
+                        if callable(inv_fn):
+                            inv_fn()
                         ok_b, b_info = cdx.get_balances(force=True)
+                        # If CoinDCX is still releasing locked margin right after async exit, retry once briefly
+                        prev_free = float(b_row.get("free_margin") or 0.0)
+                        if (
+                            ok_b
+                            and isinstance(b_info, dict)
+                            and not cdx.is_offline
+                            and os.environ.get("ARAA_E2E_MOCK_COINDCX") != "1"
+                            and abs(float(b_info.get("usdt_free") or 0.0) - prev_free) < 0.005
+                            and float(p.get("margin") or 0.0) > 0.01
+                        ):
+                            time.sleep(0.45)
+                            if callable(inv_fn):
+                                inv_fn()
+                            ok_b, b_info = cdx.get_balances(force=True)
                         if ok_b and isinstance(b_info, dict):
                             rate = float(b_info.get("usdt_inr_rate") or 90.0)
                             real_inr = float(b_info.get("total_portfolio_inr") or b_info.get("inr_total") or 0.0)
                             real_total_usd = float(b_info.get("total_portfolio_usd") or (real_inr / rate))
-                            real_free_usd = float(b_info.get("usdt_free") or (float(b_info.get("inr_free") or 0.0) / rate))
+                            real_free_usd = float(b_info.get("usdt_free") if b_info.get("usdt_free") is not None else (float(b_info.get("inr_free") or 0.0) / rate))
                             if real_total_usd > 15000.0:
                                 real_total_usd = round(real_total_usd / rate, 2)
                             if real_free_usd > 15000.0:
                                 real_free_usd = round(real_free_usd / rate, 2)
-                            if real_total_usd > 0:
-                                write("UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=? WHERE user_id=?",
-                                      (round(real_total_usd, 2), round(real_total_usd, 2), round(real_free_usd, 2), p["user_id"]))
-                                write("UPDATE wallets SET deposit_balance=? WHERE user_id=?",
-                                      (round(real_total_usd, 2), p["user_id"]))
+                            if real_total_usd > 0 or (not cdx.is_offline and real_free_usd >= 0):
+                                upd_tot = round(max(0.0, real_total_usd), 2)
+                                upd_free = round(max(0.0, real_free_usd), 2)
+                                sync_ts = time.time()
+                                write(
+                                    "UPDATE broker_connections SET live_balance=?, live_equity=?, free_margin=?, last_synced_at=? WHERE user_id=?",
+                                    (upd_tot, upd_tot, upd_free, sync_ts, p["user_id"]),
+                                )
+                                # Update current balance without overwriting Initial Capital (starting_balance)
+                                write("UPDATE wallets SET deposit_balance=? WHERE user_id=?", (upd_tot, p["user_id"]))
+                                write(
+                                    "UPDATE real_bot_configs SET verified_funds=?, verified_margin=?, updated_at=? WHERE user_id=?",
+                                    (upd_tot, upd_free, sync_ts, p["user_id"]),
+                                )
+                                try:
+                                    write(
+                                        "UPDATE broker_account_balances SET available_funds_paise=?, account_equity_paise=?, last_synced_at=? WHERE account_id=?",
+                                        (int(upd_free * rate * 100), int(upd_tot * rate * 100), sync_ts, f"acc_coindcx_{p['user_id']}"),
+                                    )
+                                except Exception:
+                                    pass
             except Exception:
                 pass
         # Dispatch notification to Slack & Telegram
@@ -1784,6 +1842,9 @@ class Bot:
                         settled += 1
                 else:
                     ex_row = active_map[pair]
+                    if ex_row.get("id") and not p.get("magic_id"):
+                        write("UPDATE positions SET magic_id=? WHERE id=?", (str(ex_row["id"]), p["id"]))
+                        p["magic_id"] = str(ex_row["id"])
                     ex_lev = float(ex_row.get("leverage") or p.get("leverage") or 1.0)
                     if target_lev > ex_lev:
                         sync_key = (int(p["id"]), int(target_lev))
@@ -2588,10 +2649,13 @@ class Bot:
                         self._log(user["id"], "STRATEGY_SKIP", f"Skipped {picked['symbol']}: Araa Quantum AI strategy is disabled.")
                         continue
 
-                    # Per-symbol loss-streak cooldown (prevents rapid repeat losses on same pair)
+                    # Per-symbol loss-streak cooldown (isolated to Live CoinDCX strategy losses; excludes manual bot-stop closes)
                     loss_cool = max(int(strat.get("cooldown_seconds") or 60), 180)
                     recent_loss = query_one(
-                        "SELECT realized_pnl, closed_at FROM positions WHERE user_id=? AND symbol=? AND status='CLOSED' AND closed_at>? ORDER BY closed_at DESC LIMIT 1",
+                        "SELECT realized_pnl, closed_at FROM positions "
+                        "WHERE user_id=? AND symbol=? AND status='CLOSED' AND COALESCE(is_live,0)=1 "
+                        "AND COALESCE(close_reason,'') NOT IN ('USER_STOPPED_BOT','BOT_STOPPED','DIRECTION_SWITCH_LONG','DIRECTION_SWITCH_SHORT','POSITION_LIMIT_REDUCED') "
+                        "AND closed_at>? ORDER BY closed_at DESC LIMIT 1",
                         (user["id"], picked["symbol"], now - loss_cool),
                     )
                     if recent_loss and float(recent_loss.get("realized_pnl") or 0.0) < 0:
@@ -2615,18 +2679,22 @@ class Bot:
                         strat_sl_pct = max(0.30, custom_sl or float(strat.get("stop_loss_pct") or 0.50))
                         strat_tp_pct = max(strat_sl_pct * 1.8, custom_tp or float(strat.get("take_profit_pct") or 1.00))
                     risk_pct = max(0.2, min(35.0, float(user.get("bot_risk_pct") or strat.get("risk_per_trade_pct") or 2.0)))
-                    if capital >= 25.0 and free < 10.0:
-                        self._log(user["id"], "MARGIN_SKIP", f"Skipped {picked['symbol']}: free margin (${free:.2f}) below $10 scalp minimum.")
+                    if free < 2.50:
+                        self._log(user["id"], "MARGIN_SKIP", f"Skipped {picked['symbol']}: free margin (${free:.2f}) below $2.50 minimum.")
                         continue
-                    min_cdx_margin = 10.0 if free >= 10.0 else (5.0 if free >= 5.0 else (1.5 if free >= 1.5 else min_pos_margin))
-                    risk_margin = round(min(free, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
-                    # Scale high-conviction A+ signals and lower-leverage (5x-10x) futures contracts meaningfully so +$0.10 to +$1.00 scalps hit fast
+                    min_cdx_margin = (
+                        10.0 if free >= 22.0
+                        else (max(5.0, round(free * 0.45, 2)) if free >= 10.0 else (round(free * 0.85, 2) if free >= 2.50 else min_pos_margin))
+                    )
+                    risk_margin = round(min(free * 0.85, max(min_cdx_margin, capital * (risk_pct / 100.0))), 4)
+                    # Scale high-conviction A+ signals cleanly across available CoinDCX free margin without starving slots
                     if win_p >= 80 or effective_lev <= 20.0:
                         conf_cap_pct = 0.28 if effective_lev <= 10.0 else 0.22
                         max_slot_margin = max(min_cdx_margin, round(capital * conf_cap_pct, 2))
                         max_ord_cap = float(strat.get("max_order_size_usd") or 25000.0)
                         target_margin = min(max_ord_cap, max(risk_margin, base_margin, max_slot_margin))
-                        risk_margin = round(max(min_cdx_margin, min(free * 0.60 if free > 12.0 else free, target_margin)), 4)
+                        free_cap = free * (0.60 if free >= 20.0 else 0.85)
+                        risk_margin = round(max(min_cdx_margin, min(free_cap, target_margin)), 4)
                     if risk_margin >= min_pos_margin:
                         margin = risk_margin
                         qty = round((margin * effective_lev) / picked["price"], 8)
@@ -2642,15 +2710,18 @@ class Bot:
                     try:
                         from ai_committee import AICommitteeOrchestrator
                         comm_candles = self._candles(picked["symbol"], "1m", limit=60) if hasattr(self, "_candles") else None
+                        comm_tinfo = t_map.get(picked["symbol"]) if isinstance(t_map, dict) else None
                         comm_res = AICommitteeOrchestrator.evaluate_candidate(
                             symbol=picked["symbol"],
                             user_id=user["id"],
                             candles=comm_candles,
                             quote_data=q_row or picked,
+                            ticker_info=comm_tinfo,
                             equity_usd=capital,
                             requested_leverage=effective_lev,
                             is_live=bool(is_live_flag),
                             persist=True,
+                            intended_side=picked["side"],
                         )
                         a_sc = (comm_res.get("alpha") or {}).get("score", 0)
                         b_sc = (comm_res.get("beta") or {}).get("score", 0)
@@ -2661,10 +2732,11 @@ class Bot:
                             f"3-Agent Committee on {picked['side']} {picked['symbol']}: Alpha={a_sc}, Beta={b_sc}, Gamma={'OK' if g_ok else 'VETO'} -> {comm_res.get('final_action', 'SKIP')} (consensus={comm_res.get('consensus_score', 0)})",
                         )
                         if not comm_res.get("approved"):
+                            veto_msg = comm_res.get("veto_reason") or (comm_res.get("gamma") or {}).get("rejection_reason") or "low consensus"
                             self._log(
                                 user["id"],
                                 "COMMITTEE_SKIP",
-                                f"AI Committee rejected {picked['side']} {picked['symbol']}: {comm_res.get('final_action')} ({(comm_res.get('gamma') or {}).get('veto_reason') or 'low consensus'})",
+                                f"AI Committee rejected {picked['side']} {picked['symbol']}: {comm_res.get('final_action')} ({veto_msg})",
                             )
                             if pred_id:
                                 write("UPDATE ai_predictions SET post_entry_status='COMMITTEE_REJECTED', outcome='CANCELLED' WHERE id=?", (pred_id,))
@@ -2751,6 +2823,7 @@ class Bot:
                         "leverage": float(ad_res.get("leverage") or effective_lev),
                         "actual_margin_usd": float(ad_res.get("actual_margin_usd") or margin),
                         "order_id": ad_res.get("exchange_order_id"),
+                        "exchange_position_id": str(ad_res.get("exchange_position_id") or prot_res.get("exchange_position_id") or ""),
                         "protection_verified": bool(prot_res.get("protection_verified")),
                     }
                 except Exception as b_err:
@@ -2803,15 +2876,16 @@ class Bot:
             initial_pos_status = "PENDING_BROKER" if is_mt4_queued else "OPEN"
             cmd_id = real_res.get("command_id") if real_res else None
             term_id = real_res.get("terminal_id") if real_res else None
+            exch_pos_uuid = str(real_res.get("exchange_position_id") or "") if real_res else ""
 
             pos_id = write("INSERT INTO positions(user_id,symbol,source,side,qty,entry_price,margin,target_pct,"
                            "stop_pct,status,current_price,unrealized_pnl,opened_at,category,signal_score,"
-                           "signal_reason,feed_source,peak_pnl_pct,ai_win_prob,leverage,is_live,command_id,terminal_id) "
-                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           "signal_reason,feed_source,peak_pnl_pct,ai_win_prob,leverage,is_live,command_id,terminal_id,magic_id) "
+                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                            (user["id"], picked["symbol"], src_val, picked["side"], qty, picked["price"],
                             margin, picked["target_pct"], picked["stop_pct"], initial_pos_status, picked["price"], 0, now,
                             picked["category"], picked["score"], picked["reason"], feed_name, 0.0, ai_prob, lev,
-                            is_live_flag, cmd_id, term_id))
+                            is_live_flag, cmd_id, term_id, exch_pos_uuid or None))
 
             # V3 Institutional Order Lifecycle & 3-Agent Committee Audit Trail
             try:

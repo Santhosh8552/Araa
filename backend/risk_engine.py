@@ -173,21 +173,22 @@ class InstitutionalRiskEngine:
             if str(p["symbol"]).upper() == str(symbol).upper():
                 return False, f"DUPLICATE_SYMBOL_BLOCKED: Position already open for {symbol}.", {}
 
-        # 5. Daily Loss, Weekly Loss, & Monthly Loss Circuit Breakers
+        # 5. Daily Loss, Weekly Loss, & Monthly Loss Circuit Breakers (isolated Paper vs Live)
+        live_flag = 1 if is_live else 0
         day_ago = now - 86400
         week_ago = now - (7 * 86400)
         month_ago = now - (30 * 86400)
         daily_row = query_one(
-            "SELECT COALESCE(SUM(realized_pnl), 0.0) as pnl FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at >= ?",
-            (user_id, day_ago)
+            "SELECT COALESCE(SUM(realized_pnl), 0.0) as pnl FROM positions WHERE user_id=? AND status='CLOSED' AND COALESCE(is_live,0)=? AND closed_at >= ?",
+            (user_id, live_flag, day_ago)
         )
         weekly_row = query_one(
-            "SELECT COALESCE(SUM(realized_pnl), 0.0) as pnl FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at >= ?",
-            (user_id, week_ago)
+            "SELECT COALESCE(SUM(realized_pnl), 0.0) as pnl FROM positions WHERE user_id=? AND status='CLOSED' AND COALESCE(is_live,0)=? AND closed_at >= ?",
+            (user_id, live_flag, week_ago)
         )
         monthly_row = query_one(
-            "SELECT COALESCE(SUM(realized_pnl), 0.0) as pnl FROM positions WHERE user_id=? AND status='CLOSED' AND closed_at >= ?",
-            (user_id, month_ago)
+            "SELECT COALESCE(SUM(realized_pnl), 0.0) as pnl FROM positions WHERE user_id=? AND status='CLOSED' AND COALESCE(is_live,0)=? AND closed_at >= ?",
+            (user_id, live_flag, month_ago)
         )
         daily_pnl = float(daily_row["pnl"] or 0.0) if daily_row else 0.0
         weekly_pnl = float(weekly_row["pnl"] or 0.0) if weekly_row else 0.0
@@ -212,9 +213,10 @@ class InstitutionalRiskEngine:
         # 6. Consecutive Losses Check (300s cooldown after N consecutive strategy losses)
         recent_closed = query(
             "SELECT realized_pnl, closed_at FROM positions WHERE user_id=? AND status='CLOSED' "
-            "AND COALESCE(close_reason,'') NOT IN ('USER_STOPPED_BOT','DIRECTION_SWITCH_LONG','DIRECTION_SWITCH_SHORT','POSITION_LIMIT_REDUCED') "
+            "AND COALESCE(is_live,0)=? "
+            "AND COALESCE(close_reason,'') NOT IN ('USER_STOPPED_BOT','BOT_STOPPED','DIRECTION_SWITCH_LONG','DIRECTION_SWITCH_SHORT','POSITION_LIMIT_REDUCED') "
             "ORDER BY closed_at DESC LIMIT ?",
-            (user_id, limits["max_consecutive_losses"])
+            (user_id, live_flag, limits["max_consecutive_losses"])
         )
         if len(recent_closed) >= limits["max_consecutive_losses"] and all(float(r["realized_pnl"] or 0) < 0 for r in recent_closed):
             last_loss_at = float(recent_closed[0].get("closed_at") or 0.0)
