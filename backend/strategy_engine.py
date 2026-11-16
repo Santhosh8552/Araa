@@ -1726,15 +1726,32 @@ class StrategyEngine:
                         }
                     if close_res and close_res.get("exchange_settled") and close_res.get("realized_pnl") is not None:
                         settled_pnl = round(float(close_res["realized_pnl"]), 4)
-                        if float(close_res.get("fee_usd") or 0.0) > 0:
-                            fee_usd = float(close_res["fee_usd"])
+                        pos_lev = max(1.0, float(pos.get("leverage") or 20.0))
                         pos_margin = max(
                             0.0,
-                            float(pos.get("margin") or ((entry_px * close_qty) / max(1.0, float(pos.get("leverage") or 20.0)))),
+                            float(pos.get("margin") or ((entry_px * close_qty) / pos_lev)),
                         )
-                        is_liq_exit = bool(close_res.get("liquidated")) or ("LIQUIDAT" in reason.upper())
-                        if pos_margin > 0 and (not is_liq_exit) and settled_pnl <= -(pos_margin * 0.85) and gross_pnl >= -(pos_margin * 0.25):
-                            net_pnl = round(gross_pnl - fee_usd, 4)
+                        est_rt_fee = round(pos_margin * pos_lev * 0.0014, 4)
+                        max_sane_fee = max(0.50, round(pos_margin * pos_lev * 0.0030, 4))
+                        exch_fee = float(close_res.get("fee_usd") or 0.0)
+                        fee_usd = exch_fee if (0.0 < exch_fee <= max_sane_fee) else max(fee_usd, est_rt_fee)
+                        reason_is_liq = "LIQUIDAT" in reason.upper()
+                        is_liq_exit = bool(close_res.get("liquidated")) or reason_is_liq
+                        profitable_close = (gross_pnl >= 0.0) and (not reason_is_liq)
+                        anomalous_full = (
+                            pos_margin > 0
+                            and (not is_liq_exit)
+                            and settled_pnl <= -(pos_margin * 0.85)
+                            and gross_pnl >= -(pos_margin * 0.25)
+                        )
+                        anomalous_win = (
+                            pos_margin > 0
+                            and profitable_close
+                            and settled_pnl < -max(0.25, est_rt_fee * 2.5, pos_margin * 0.30)
+                        )
+                        if anomalous_full or anomalous_win:
+                            fee_usd = est_rt_fee
+                            net_pnl = round(gross_pnl - est_rt_fee, 4)
                         else:
                             net_pnl = settled_pnl
                 except Exception as e:

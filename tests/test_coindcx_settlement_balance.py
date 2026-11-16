@@ -375,6 +375,81 @@ class CoinDCXSettlementAndBalanceTests(unittest.TestCase):
             self.assertAlmostEqual(res["realized_pnl_usdt"], 3.68, places=2)
             mock_cancel.assert_called_once()
 
+    def test_10_scalp_target_hit_never_books_minus_100pct_from_inr_fee_or_corrupt_liq_flag(self):
+        # Exact INJUSDT SHORT scenario from live screenshot: entry=6.6770, exit=6.6640 (+0.19%), margin=$5.30 @ 100x (+$1.03 gross)
+        now = time.time()
+        qty_inj = round((5.30 * 100.0) / 6.6770, 8)
+        pid = write(
+            """INSERT INTO positions(
+                 user_id, symbol, source, side, qty, entry_price, margin,
+                 target_pct, stop_pct, status, current_price, unrealized_pnl,
+                 opened_at, is_live, leverage, magic_id
+               ) VALUES(?, 'INJUSDT', 'COINDCX LIVE', 'SHORT', ?, 6.6770, 5.30, 0.5, 0.3, 'OPEN', 6.6640, 1.03, ?, 1, 100.0, 'pos_inj_uuid')""",
+            (self.uid, qty_inj, now - 243.0),
+        )
+        pos_row = query_one("SELECT * FROM positions WHERE id=?", (pid,))
+        bot = Bot(PriceFeed())
+
+        # Case A: Exchange returned INR-scaled fee_usd (56.2) & -55.17 net inside settlement -> MUST NOT subtract 56.2 USD!
+        with patch.object(
+            real_broker,
+            "close_real_order",
+            return_value={
+                "mode": "LIVE_REAL",
+                "closed": True,
+                "exchange": "COINDCX",
+                "market_type": "FUTURES",
+                "exchange_settled": True,
+                "realized_pnl": -55.17,
+                "fee_usd": 56.2,
+                "liquidated": False,
+            },
+        ), patch.object(coindcx_gateway, "get_user_coindcx_client", return_value=None):
+            net_a = bot.close(dict(pos_row), 6.6640, "SCALP_TARGET_$1_HIT (+$1.03 | +19.5% ROI)")
+            self.assertGreater(net_a, 0.0)
+            self.assertAlmostEqual(net_a, 0.29, places=2)
+
+        # Reset position OPEN for Case B: spurious liquidated=True with -5.30 on a +$1.03 SCALP_TARGET_$1_HIT close
+        write("UPDATE positions SET status='OPEN', realized_pnl=0 WHERE id=?", (pid,))
+        pos_row_b = query_one("SELECT * FROM positions WHERE id=?", (pid,))
+        with patch.object(
+            real_broker,
+            "close_real_order",
+            return_value={
+                "mode": "LIVE_REAL",
+                "closed": True,
+                "exchange": "COINDCX",
+                "market_type": "FUTURES",
+                "exchange_settled": True,
+                "realized_pnl": -5.30,
+                "fee_usd": 0.74,
+                "liquidated": True,
+            },
+        ), patch.object(coindcx_gateway, "get_user_coindcx_client", return_value=None):
+            net_b = bot.close(dict(pos_row_b), 6.6640, "SCALP_TARGET_$1_HIT (+$1.03 | +19.5% ROI)")
+            self.assertGreater(net_b, 0.0)
+            self.assertAlmostEqual(net_b, 0.29, places=2)
+
+        # Also verify get_position_settlement filters mismatched position_id rows and detects currency keys
+        fut = coindcx_gateway.CoinDCXFuturesAdapter("k", "s", user_id=self.uid, is_offline=False)
+        with patch.object(
+            coindcx_gateway,
+            "_request",
+            return_value=(
+                True,
+                [
+                    {"position_id": "other_pos", "stage": "Exit", "currency": "USDT", "amount": -50.0, "fee_amount": 5.0, "settlement_amount": -55.0},
+                    {"position_id": "pos_inj_uuid", "stage": "default", "currency": "INR", "amount": -477.0, "fee_amount": 33.4, "settlement_amount": -510.4},
+                    {"position_id": "pos_inj_uuid", "stage": "Exit", "currency": "INR", "amount": 92.7, "fee_amount": 33.4, "settlement_amount": 59.3},
+                ],
+            ),
+        ):
+            settle = fut.get_position_settlement("pos_inj_uuid", usdt_inr_rate=90.0)
+            self.assertIsNotNone(settle)
+            self.assertGreater(settle["net_pnl"], 0.0)
+            self.assertAlmostEqual(settle["net_pnl"], round((59.3 - 33.4) / 90.0, 2), places=2)
+
+
 
 
 if __name__ == "__main__":

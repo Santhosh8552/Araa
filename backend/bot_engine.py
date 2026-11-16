@@ -1374,7 +1374,7 @@ class Bot:
         tp_roi = tp_pct * pos_lev
 
         # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (sec-off immediate when fee-safe!)
-        live_scalp_floor = round(max(1.00, est_fee + max(0.25, pos_margin * 0.04)), 4) if is_live else 1.00
+        live_scalp_floor = round(max(1.00, est_fee + max(0.35, pos_margin * 0.06)), 4) if is_live else 1.00
         if pnl >= live_scalp_floor:
             return f"SCALP_TARGET_$1_HIT (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
@@ -1587,28 +1587,55 @@ class Bot:
             self._close_fail.pop(p["id"], None)
 
             # Book true exchange-settled net P&L (after exchange fees & GST) when available
+            pos_margin = max(0.0, float(p.get("margin") or 0.0))
+            pos_lev = max(1.0, float(p.get("leverage") or 1.0))
+            est_rt_fee = round(pos_margin * pos_lev * 0.0014, 4)
+            max_sane_fee = max(0.50, round(pos_margin * pos_lev * 0.0030, 4))
+            if real_fee_usd > max_sane_fee:
+                real_fee_usd = est_rt_fee
+
             if close_res and close_res.get("exchange_settled") and close_res.get("realized_pnl") is not None:
                 settled_pnl = round(float(close_res["realized_pnl"]), 2)
-                if float(close_res.get("fee_usd") or 0.0) > 0:
-                    real_fee_usd = float(close_res["fee_usd"])
-                pos_margin = max(0.0, float(p.get("margin") or 0.0))
-                pos_lev = max(1.0, float(p.get("leverage") or 1.0))
-                est_rt_fee = round(pos_margin * pos_lev * 0.0014, 4)
-                is_liq_exit = bool(close_res.get("liquidated")) or ("LIQUIDAT" in str(reason).upper())
-                if pos_margin > 0 and (not is_liq_exit) and settled_pnl <= -(pos_margin * 0.85) and raw_pnl >= -(pos_margin * 0.25):
+                exch_fee = float(close_res.get("fee_usd") or 0.0)
+                if 0.0 < exch_fee <= max_sane_fee:
+                    real_fee_usd = exch_fee
+                else:
+                    real_fee_usd = max(real_fee_usd, est_rt_fee)
+
+                reason_is_liq = "LIQUIDAT" in str(reason).upper()
+                is_liq_exit = bool(close_res.get("liquidated")) or reason_is_liq
+                profitable_close = (raw_pnl >= 0.0) and (not reason_is_liq)
+                anomalous_full_loss = (
+                    pos_margin > 0
+                    and (not is_liq_exit)
+                    and settled_pnl <= -(pos_margin * 0.85)
+                    and raw_pnl >= -(pos_margin * 0.25)
+                )
+                anomalous_win_flip = (
+                    pos_margin > 0
+                    and profitable_close
+                    and settled_pnl < -max(0.25, est_rt_fee * 2.5, pos_margin * 0.30)
+                )
+                if anomalous_full_loss or anomalous_win_flip:
                     self._log(
                         p["user_id"],
                         "SETTLEMENT_ANOMALY_GUARD",
-                        f"{p['symbol']} ledger returned anomalous {settled_pnl:+.2f} while exit mark raw_pnl={raw_pnl:+.2f}; using verified mark P&L minus fees",
+                        f"{p['symbol']} ledger returned anomalous {settled_pnl:+.2f} (fee={exch_fee:.2f}, liq={close_res.get('liquidated')}) while exit mark raw_pnl={raw_pnl:+.2f}; using verified mark P&L minus est_fee {est_rt_fee:.2f}",
                     )
-                    real_fee_usd = max(real_fee_usd, est_rt_fee)
-                    pnl = round(raw_pnl - real_fee_usd, 2)
+                    real_fee_usd = est_rt_fee
+                    pnl = round(raw_pnl - est_rt_fee, 2)
                 else:
                     pnl = settled_pnl
             elif close_res and close_res.get("exchange") == "COINDCX" and close_res.get("mode") != "FALLBACK_PAPER":
-                est_rt_fee = round(max(0.0, float(p.get("margin") or 0.0)) * max(1.0, float(p.get("leverage") or 1.0)) * 0.0014, 4)
-                real_fee_usd = max(real_fee_usd, est_rt_fee)
+                real_fee_usd = min(max_sane_fee, max(real_fee_usd, est_rt_fee))
                 pnl = round(raw_pnl - real_fee_usd, 2)
+
+            if close_res and close_res.get("exchange") == "COINDCX":
+                self._log(
+                    p["user_id"],
+                    "SETTLEMENT_AUDIT",
+                    f"{p['symbol']} close settled: raw={raw_pnl:+.2f}, exch_settled={bool((close_res or {}).get('exchange_settled'))}, exch_pnl={(close_res or {}).get('realized_pnl')}, fee={real_fee_usd:.4f}, final_pnl={pnl:+.2f}",
+                )
 
         # Margin liquidation safety: position loss capped to allocated margin
         max_allowed_loss = -p["margin"]

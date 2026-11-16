@@ -564,7 +564,11 @@ def close_real_order(symbol, side, qty, user_id=None, ticket_id=None, price=None
                             wait_fn(symbol, pos_uuid, timeout_sec=2.0)
                         if callable(inv_fn):
                             inv_fn()
-                        settle = settle_fn(pos_uuid) if (pos_uuid and callable(settle_fn) and not cdx.is_offline) else None
+                        settle_ccy = str((pos or {}).get("margin_currency_short_name") or "USDT").upper()
+                        try:
+                            settle = settle_fn(pos_uuid, margin_currency=settle_ccy) if (pos_uuid and callable(settle_fn) and not cdx.is_offline) else None
+                        except TypeError:
+                            settle = settle_fn(pos_uuid) if (pos_uuid and callable(settle_fn) and not cdx.is_offline) else None
                         return {
                             "mode": "LIVE_REAL",
                             "closed": True,

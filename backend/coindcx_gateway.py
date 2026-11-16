@@ -1561,8 +1561,18 @@ class CoinDCXFuturesAdapter:
         for tx in rows:
             if not isinstance(tx, dict):
                 continue
+            row_pid = str(tx.get("position_id") or "").strip()
+            if row_pid and row_pid != str(position_id).strip():
+                continue
             stage = str(tx.get("stage") or "").strip().lower()
-            tx_ccy = str(tx.get("margin_currency_short_name") or margin_currency or "USDT").strip().upper()
+            tx_ccy = str(
+                tx.get("margin_currency_short_name")
+                or tx.get("margin_currency")
+                or tx.get("currency_short_name")
+                or tx.get("currency")
+                or margin_currency
+                or "USDT"
+            ).strip().upper()
             div = inr_rate if tx_ccy == "INR" else 1.0
             amt = float(tx.get("amount") or 0.0) / div
             s_amt = float(tx.get("settlement_amount") or 0.0) / div
