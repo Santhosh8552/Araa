@@ -1196,10 +1196,15 @@ class Bot:
         if (side == "SHORT" and smc_dna_status == "QUALIFIED_BULLISH") or (side == "LONG" and smc_dna_status == "QUALIFIED_BEARISH"):
             return None
 
+        bid_v = float(row.get("bid") or 0.0)
+        ask_v = float(row.get("ask") or 0.0)
+        spread_pct_v = round(((ask_v - bid_v) / bid_v) * 100.0, 4) if (bid_v > 0 and ask_v >= bid_v) else None
         reason = " · ".join(f"{name} {value:+.2f} ({note})" for name, value, note in parts)
         return {"symbol": symbol, "tv_symbol": tv_code, "category": cat, "country": row.get("country") or "",
                 "side": side, "score": round(score, 4),
                 "confidence": confidence, "reason": reason, "price": price,
+                "volume": float(row.get("volume") or 0.0),
+                "spread_pct": spread_pct_v,
                 "target_pct": tp, "stop_pct": sl, "vol_pct": round(day_range_pct, 3),
                 "tick_vol": round(tick_vol, 4), "rsi": round(r14, 1),
                 "tv_signal": tv_label, "tv_recommend": tv_rec, "tv_ma": tv_ma,
@@ -1355,6 +1360,108 @@ class Bot:
         except Exception:
             return None
 
+    _TIER1_MAJORS = frozenset({
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+        "B-BTC_USDT", "B-ETH_USDT", "B-SOL_USDT", "B-BNB_USDT", "B-XRP_USDT",
+    })
+
+    @staticmethod
+    def _normalize_usdt_pair(symbol):
+        """Return uppercase symbol and canonical BASEUSDT / B-BASE_USDT alternates."""
+        s = str(symbol or "").upper().strip()
+        if s.startswith("B-") and s.endswith("_USDT"):
+            base = s[2:-5]
+            return s, f"{base}USDT", s
+        if s.endswith("USDT"):
+            base = s[:-4]
+            return s, s, f"B-{base}_USDT"
+        return s, s, s
+
+    @classmethod
+    def _cdx_ticker_for_symbol(cls, t_map, cand, prefer_inr=False):
+        """Resolve CoinDCX live ticker, live bid/ask spread %, and 24h quote volume."""
+        sym = str(cand.get("symbol") if isinstance(cand, dict) else cand or "").upper().strip()
+        cand_vol = float(cand.get("volume") or 0.0) if isinstance(cand, dict) else 0.0
+        cand_spr = cand.get("spread_pct") if isinstance(cand, dict) else None
+        spread_pct = float(cand_spr) if cand_spr is not None else None
+        if not t_map:
+            return None, spread_pct, cand_vol
+        check_sym = sym
+        if prefer_inr and (check_sym.endswith("USDT") or check_sym.endswith("USDC")):
+            base_t = check_sym.replace("USDT", "").replace("USDC", "")
+            check_sym = f"{base_t}INR"
+        cdx_t = t_map.get(check_sym)
+        if cdx_t is None and not prefer_inr:
+            _, u_key, b_key = cls._normalize_usdt_pair(check_sym)
+            cdx_t = t_map.get(u_key) or t_map.get(b_key)
+        if cdx_t and cdx_t.get("bid") and cdx_t.get("ask"):
+            bid_p, ask_p = float(cdx_t["bid"]), float(cdx_t["ask"])
+            if bid_p > 0 and ask_p >= bid_p:
+                spread_pct = round((ask_p - bid_p) / bid_p * 100.0, 4)
+        cdx_vol = float((cdx_t or {}).get("volume") or 0.0)
+        return cdx_t, spread_pct, max(cand_vol, cdx_vol)
+
+    @classmethod
+    def _evaluate_coindcx_entry_quality(cls, cand, spread_pct, sym_vol, eff_lev_est, prefer_inr=False):
+        """Enforce tight CoinDCX bid/ask spread, $1.5M+ alt liquidity, and positive fee+spread expectancy."""
+        sym_up, _, _ = cls._normalize_usdt_pair(cand.get("symbol"))
+        is_major = sym_up in cls._TIER1_MAJORS
+        max_spread = 1.25 if prefer_inr else (0.07 if eff_lev_est >= 30.0 else 0.12)
+        if spread_pct is not None and spread_pct > max_spread:
+            return False, f"Spread {spread_pct:.3f}% exceeds live limit {max_spread:.2f}% at {eff_lev_est:.0f}x"
+        if (not prefer_inr) and (not is_major) and sym_vol > 0 and eff_lev_est >= 25.0 and sym_vol < 1_500_000.0:
+            return False, f"24h volume ${sym_vol:,.0f} below $1.5M safe floor for {eff_lev_est:.0f}x alt scalping"
+        if not prefer_inr:
+            rt_cost_pct = 0.14 + float(spread_pct if spread_pct is not None else 0.02)
+            req_tp = round(max(0.45, rt_cost_pct * 2.5), 3)
+            cur_tp = float(cand.get("target_pct") or 0.0)
+            if cur_tp < req_tp:
+                cand["target_pct"] = req_tp
+            if spread_pct is not None and spread_pct > max(cand["target_pct"] * 0.25, 0.01):
+                return False, f"Spread {spread_pct:.3f}% consumes >25% of target {cand['target_pct']:.2f}%"
+        return True, "OK"
+
+    @classmethod
+    def _cap_live_coindcx_leverage(cls, symbol, effective_lev, capital_usd):
+        """Cap live CoinDCX leverage on small accounts to keep liquidation distance & fees safe."""
+        sym_up, _, _ = cls._normalize_usdt_pair(symbol)
+        lev = float(effective_lev or 1.0)
+        cap = float(capital_usd or 0.0)
+        is_major = sym_up in cls._TIER1_MAJORS
+        if cap > 0 and cap < 100.0 and not is_major:
+            return min(lev, 35.0)
+        if cap > 0 and cap < 50.0 and is_major:
+            return min(lev, 50.0)
+        return lev
+
+    @classmethod
+    def _live_loss_cooldown_symbols(cls, user_id, now_ts):
+        """Return uppercase symbols blocked for 30m after 2 consecutive real-mode losses within 45m."""
+        cooled = set()
+        try:
+            recent = query(
+                "SELECT symbol, realized_pnl, closed_at FROM positions "
+                "WHERE user_id=? AND is_live=1 AND status='CLOSED' AND closed_at >= ? "
+                "ORDER BY closed_at DESC LIMIT 80",
+                (user_id, now_ts - 2700.0),
+            ) or []
+            grouped = {}
+            for row in recent:
+                s_up = str(row.get("symbol") or "").upper().strip()
+                if s_up:
+                    grouped.setdefault(s_up, []).append(row)
+            for s_up, rows in grouped.items():
+                if len(rows) >= 2:
+                    p0 = float(rows[0].get("realized_pnl") or 0.0)
+                    p1 = float(rows[1].get("realized_pnl") or 0.0)
+                    age0 = now_ts - float(rows[0].get("closed_at") or 0.0)
+                    if p0 < 0.0 and p1 < 0.0 and age0 < 1800.0:
+                        _, u_key, b_key = cls._normalize_usdt_pair(s_up)
+                        cooled.update({s_up, u_key, b_key})
+        except Exception:
+            pass
+        return cooled
+
     def _evaluate_bot_exit_signal(self, p, price, raw_pnl, move_pct, peak_cash, peak_pct, time_held):
         """Evaluate profit-maximizing SMC+DNA, trailing, target-profit, and instant sec-off exits."""
         pos_margin = max(0.0001, float(p.get("margin") or 1.0))
@@ -1362,30 +1469,41 @@ class Bot:
         pnl = max(-pos_margin, float(raw_pnl))
         is_live = bool(p.get("is_live"))
         est_fee = round(pos_margin * pos_lev * 0.0014, 4) if is_live else 0.0
+        is_high_fee_live = bool(is_live and (est_fee >= 0.40 or pos_lev >= 35.0))
         roi_pct = (pnl / pos_margin * 100.0) if pos_margin > 0 else 0.0
         peak_roi = (peak_cash / pos_margin * 100.0) if pos_margin > 0 else 0.0
         min_take_profit = max(0.005, round(pos_margin * 0.03, 4))
-        min_net_profit = (
-            round(est_fee * 1.25 + max(0.015, pos_margin * 0.02), 4)
-            if is_live
-            else max(0.005, round(pos_margin * 0.02, 4))
-        )
+        if is_high_fee_live:
+            min_net_profit = round(max(est_fee + max(0.35, pos_margin * 0.04), est_fee * 1.35 + 0.15), 4)
+        else:
+            min_net_profit = (
+                round(est_fee * 1.25 + max(0.015, pos_margin * 0.02), 4)
+                if is_live
+                else max(0.005, round(pos_margin * 0.02, 4))
+            )
         tp_pct = max(0.25, float(p.get("target_pct") or 0.60))
         tp_roi = tp_pct * pos_lev
 
-        # RULE 0: +$1.00 USD Fixed Profit Target & +$0.90 Auto-Scalp Close (sec-off immediate when fee-safe!)
-        live_scalp_floor = round(max(1.00, est_fee + max(0.35, pos_margin * 0.06)), 4) if is_live else 1.00
+        # RULE 0: Fixed Profit Target & Auto-Scalp Close (sec-off immediate, scaled safely above high-leverage CoinDCX fees)
+        if is_high_fee_live:
+            live_scalp_floor = round(max(1.00, est_fee + max(0.60, pos_margin * 0.06)), 4)
+            live_auto_peak = round(max(0.90, est_fee + 0.55), 4)
+            live_auto_min = round(max(0.85, est_fee + 0.45), 4)
+            min_lock_peak = max(0.35, round(est_fee * 2.1 + 0.25, 4))
+        else:
+            live_scalp_floor = round(max(1.00, est_fee + max(0.35, pos_margin * 0.06)), 4) if is_live else 1.00
+            live_auto_peak = round(max(0.90, est_fee + 0.25), 4) if is_live else 0.90
+            live_auto_min = round(max(0.85, est_fee + 0.15), 4) if is_live else 0.85
+            min_lock_peak = max(0.28, round(est_fee * 2.1 + 0.15, 4)) if is_live else 0.10
+
         if pnl >= live_scalp_floor:
             return f"SCALP_TARGET_$1_HIT (+${pnl:.2f} | +{roi_pct:.1f}% ROI)"
 
-        live_auto_peak = round(max(0.90, est_fee + 0.25), 4) if is_live else 0.90
-        live_auto_min = round(max(0.85, est_fee + 0.15), 4) if is_live else 0.85
         if peak_cash >= live_auto_peak and pnl >= live_auto_min:
             if pnl <= round(peak_cash * 0.96, 4) or pnl >= live_auto_peak:
                 return f"SCALP_AUTO_CLOSE_+0.90 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
         # RULE 0.5: Profit Lock Ladder (Locks net green profits strictly above CoinDCX round-trip fees + GST; sec-off)
-        min_lock_peak = max(0.28, round(est_fee * 2.1 + 0.15, 4)) if is_live else 0.10
         if peak_cash >= min_lock_peak:
             if peak_cash >= 0.50:
                 lock_floor = 0.35
@@ -1395,7 +1513,7 @@ class Bot:
                 lock_floor = 0.04
             if is_live and est_fee > 0:
                 lock_floor = max(lock_floor, round(est_fee + max(0.08, pos_margin * 0.02), 4), round(peak_cash * 0.62, 4))
-            min_live_green = round(est_fee + 0.04, 4) if is_live else 0.0
+            min_live_green = round(est_fee * 1.50 + 0.15, 4) if is_high_fee_live else (round(est_fee + 0.04, 4) if is_live else 0.0)
             if pnl <= lock_floor and pnl > min_live_green:
                 return f"PROFIT_SHIELD_LOCK_+0.10 (+${pnl:.2f} | Peak +${peak_cash:.2f} | +{roi_pct:.1f}% ROI)"
 
@@ -2128,8 +2246,9 @@ class Bot:
             if s_copy["symbol"] in tr_boosted:
                 s_copy["confidence"] = round(min(0.99, float(s_copy.get("confidence") or 0.85) + 0.05), 3)
             if str(mode).upper() in SCALP_MODE_PRESETS and s_copy.get("category") == "CRYPTO":
+                eff_lev_cand = self._cap_live_coindcx_leverage(s_copy["symbol"], user_lev_est, capital) if is_coindcx_live else user_lev_est
                 cal_tp, cal_sl = resolve_scalp_targets(
-                    mode, leverage=user_lev_est, tp_override=user_tp_rbc, sl_override=user_sl_rbc, custom_rules=tr_custom_rules
+                    mode, leverage=eff_lev_cand, tp_override=user_tp_rbc, sl_override=user_sl_rbc, custom_rules=tr_custom_rules
                 )
                 s_copy["target_pct"] = cal_tp
                 s_copy["stop_pct"] = cal_sl
@@ -2168,14 +2287,16 @@ class Bot:
 
         target_mt4_symbols = EXNESS_ALL
         real_cat_order = ["CRYPTO"] if (is_live_flag and broker_name == "COINDCX") else ["FOREX", "METALS", "CRYPTO", "INDICES"]
+        is_futures_usd = False
+        prefer_inr = False
+        cdx_active_tickers = set()
+        t_map = {}
         if is_live_flag and broker_name == "COINDCX":
             real_cat_order = ["CRYPTO"]
             is_futures_usd = True
             market_focus = "FUTURES_USD"
             prefer_inr = False
 
-            cdx_active_tickers = set()
-            t_map = {}
             try:
                 from coindcx_gateway import get_live_tickers
                 t_map = get_live_tickers() or {}
@@ -2271,6 +2392,7 @@ class Bot:
         else:
             free = capital
         is_pure_crypto = bool(mode_spec.get("pure_crypto")) or (is_live_flag and broker_name == "COINDCX") or (is_live_flag and market_focus in ("FUTURES_USD", "COINDCX_CRYPTO", "CRYPTO"))
+        live_loss_streak_syms = self._live_loss_cooldown_symbols(user["id"], now) if is_live_flag else set()
         while slots - opened > 0:
             if free < min_margin:
                 break
@@ -2314,28 +2436,30 @@ class Bot:
                     _tier_cdx = None
 
                 def _lev_tier(sym_name):
-                    s_up = str(sym_name or "").upper()
+                    s_up, _, _ = self._normalize_usdt_pair(sym_name)
+                    if s_up in self._TIER1_MAJORS:
+                        return 0
+                    if s_up in tier1_lev_pairs:
+                        return 1
                     if _tier_cdx is not None:
                         try:
                             max_l = int(_tier_cdx.resolve_leverage(s_up, 100.0, "buy") or 0)
                             if max_l >= 100:
-                                return 0
-                            if max_l >= 50:
-                                return 1
-                            if max_l >= 20:
                                 return 2
-                            if max_l >= 10:
+                            if max_l >= 50:
                                 return 3
-                            return 4
+                            if max_l >= 20:
+                                return 4
+                            if max_l >= 10:
+                                return 5
+                            return 6
                         except Exception:
                             pass
-                    if s_up in tier1_lev_pairs:
-                        return 0
                     if s_up in tier2_lev_pairs:
-                        return 2
-                    return 4
+                        return 4
+                    return 6
 
-                def _tv_verified_tier(cand_obj):
+                def _tv_verified_tier(cand_obj, spr_v=None, vol_v=None):
                     # Prioritize tight-spread, high-liquidity pairs backed by aligned 1s + 1m + 5m + Qualified SMC/DNA
                     tv_r = cand_obj.get("tv_recommend")
                     tv_ok = tv_r is not None and abs(float(tv_r)) >= 0.15
@@ -2343,7 +2467,9 @@ class Bot:
                     s_up = str(cand_obj.get("side") or "").upper()
                     d1s = str(cand_obj.get("tv_1s_dir") or "NEUTRAL").upper()
                     t1s_ok = (s_up in ("LONG", "BUY") and d1s == "BUY") or (s_up in ("SHORT", "SELL") and d1s == "SELL")
-                    liq_ok = float(cand_obj.get("volume") or 0.0) >= 5_000_000.0
+                    vol_val = float(vol_v if vol_v is not None else (cand_obj.get("volume") or 0.0))
+                    tight_spr_ok = (spr_v is None) or (float(spr_v) <= (0.50 if prefer_inr else 0.05))
+                    liq_ok = (vol_val >= 5_000_000.0) and tight_spr_ok
                     if tv_ok and smc_ok and t1s_ok and liq_ok:
                         return 0
                     if tv_ok and smc_ok and t1s_ok:
@@ -2356,34 +2482,33 @@ class Bot:
                         return 4
                     return 5
 
+                def _cand_sort_key(cand_obj):
+                    if is_coindcx_live:
+                        _, spr_v, vol_v = self._cdx_ticker_for_symbol(t_map, cand_obj, prefer_inr=prefer_inr)
+                    else:
+                        spr_v, vol_v = cand_obj.get("spread_pct"), float(cand_obj.get("volume") or 0.0)
+                    spr_rank = round(float(spr_v), 3) if spr_v is not None else 0.05
+                    return (
+                        _lev_tier(cand_obj.get("symbol")),
+                        _tv_verified_tier(cand_obj, spr_v=spr_v, vol_v=vol_v),
+                        spr_rank,
+                        -float(cand_obj.get("confidence") or 0.0),
+                        -float(cand_obj.get("score") or 0.0),
+                    )
+
                 if bot_dir == "SHORT":
                     pool = [x for x in pool if x.get("side") in ("SHORT", "SELL")]
-                    pool.sort(key=lambda x: (
-                        _lev_tier(x.get("symbol")),
-                        _tv_verified_tier(x),
-                        -x.get("confidence", 0.0),
-                        -float(x.get("score") or 0.0)
-                    ))
                 elif bot_dir == "LONG":
                     pool = [x for x in pool if x.get("side") in ("LONG", "BUY")]
-                    pool.sort(key=lambda x: (
-                        _lev_tier(x.get("symbol")),
-                        _tv_verified_tier(x),
-                        -x.get("confidence", 0.0),
-                        -float(x.get("score") or 0.0)
-                    ))
-                else:
-                    pool.sort(key=lambda x: (
-                        _lev_tier(x.get("symbol")),
-                        _tv_verified_tier(x),
-                        -x.get("confidence", 0.0),
-                        -float(x.get("score") or 0.0)
-                    ))
+                pool.sort(key=_cand_sort_key)
                 while pool:
                     cand = dict(pool.pop(0))
                     if cand["symbol"] in held:
                         continue
                     if cand["symbol"] in tr_blacklisted:
+                        continue
+                    if is_live_flag and cand["symbol"].upper() in live_loss_streak_syms:
+                        self._log_scan_status(user["id"], "SCAN_INFO", f"30m Cooldown: Skipping {cand['symbol']} after 2 consecutive real-mode losses.")
                         continue
                     cd_until = getattr(self, "_symbol_cooldown", {}).get((user["id"], cand["symbol"]), 0.0)
                     if cd_until > time.time():
@@ -2402,21 +2527,16 @@ class Bot:
                     if is_coindcx_live and not is_futures_usd and cand.get("side") in ("SELL", "SHORT"):
                         continue
 
-                    # COINDCX SPREAD & LIQUIDITY GUARD:
-                    # Allow up to 1.25% spread for Indian Spot INR pairs and 0.45% for futures/USDT pairs
-                    if is_coindcx_live and t_map:
-                        check_sym = cand["symbol"]
-                        if prefer_inr and (check_sym.endswith("USDT") or check_sym.endswith("USDC")):
-                            base_t = check_sym.replace("USDT", "").replace("USDC", "")
-                            check_sym = f"{base_t}INR"
-                        cdx_t = t_map.get(check_sym)
-                        if cdx_t and cdx_t.get("bid") and cdx_t.get("ask"):
-                            bid_p, ask_p = float(cdx_t["bid"]), float(cdx_t["ask"])
-                            if bid_p > 0:
-                                cdx_spread = (ask_p - bid_p) / bid_p * 100.0
-                                max_spread = 1.25 if check_sym.endswith("INR") else 0.45
-                                if cdx_spread > max_spread:
-                                    continue
+                    # COINDCX SPREAD, LIQUIDITY & POSITIVE EXPECTANCY GUARD:
+                    if is_coindcx_live:
+                        _, spr_v, vol_v = self._cdx_ticker_for_symbol(t_map, cand, prefer_inr=prefer_inr)
+                        eff_lev_cand = self._cap_live_coindcx_leverage(cand["symbol"], user_lev_est, capital)
+                        ok_q, q_msg = self._evaluate_coindcx_entry_quality(
+                            cand, spr_v, vol_v, eff_lev_cand, prefer_inr=prefer_inr
+                        )
+                        if not ok_q:
+                            self._log_scan_status(user["id"], "SCAN_INFO", f"Filtered {cand['symbol']}: {q_msg}")
+                            continue
                     # Enforce user's direction filter without converting counter-trend setups into losing opposite trades
                     if bot_dir == "SHORT" and cand.get("side") not in ("SELL", "SHORT"):
                         continue
@@ -2495,6 +2615,7 @@ class Bot:
                 continue
 
             user_lev = min(500.0, max(1.0, float(user.get("bot_leverage") or 500.0)))
+            ai_eval_lev = self._cap_live_coindcx_leverage(picked["symbol"], user_lev, capital) if is_coindcx_live else user_lev
             try:
                 from gemini_advisor import predict_pre_entry
                 pred = predict_pre_entry(
@@ -2509,7 +2630,7 @@ class Bot:
                     target_pct=picked["target_pct"],
                     stop_pct=picked["stop_pct"],
                     mode=mode,
-                    leverage=user_lev,
+                    leverage=ai_eval_lev,
                     tv_indicators=tv_indicators,
                     order_block=picked.get("order_block")
                 )
@@ -2590,6 +2711,25 @@ class Bot:
                         win_p = max(0, min(99, win_p + dir_boost))
                         pred["win_probability"] = win_p
                         pred["rationale"] = f"{pred.get('rationale', '')} | SMC/DNA: {dna_info.get('setup_status')} ({dna_info.get('similarity_pct')}% twin match)"
+
+                # 15m Higher-Timeframe SMC+DNA Trend Alignment Filter (blocks counter-trend entries without sweep reversal)
+                candles_15m = self._candles(picked["symbol"], "15m", limit=35, ttl=120.0) if hasattr(self, "_candles") else None
+                if is_win_prediction and candles_15m and len(candles_15m) >= 15:
+                    smc_15m = SMCDNAEngine.analyze_candles(picked["symbol"], candles_15m, "15m", picked["price"])
+                    ind_15m = (smc_15m or {}).get("all_indicators") or {}
+                    dna_15m = (smc_15m or {}).get("dna") or {}
+                    liq_15m = (smc_15m or {}).get("liquidity") or {}
+                    st_15m = str(ind_15m.get("supertrend") or "").upper()
+                    bias_15m = str(dna_15m.get("historical_bias") or "").upper()
+                    ssl_swept_15m = bool((liq_15m.get("ssl") or {}).get("swept"))
+                    bsl_swept_15m = bool((liq_15m.get("bsl") or {}).get("swept"))
+                    is_long_side = picked["side"] in ("BUY", "LONG")
+                    if is_long_side and st_15m == "BEAR" and bias_15m == "BEARISH" and not ssl_swept_15m and win_p < 94:
+                        is_win_prediction = False
+                        pred["rationale"] = f"15m Higher-TF Trend Guard: Blocked counter-trend LONG ({st_15m} SuperTrend + {bias_15m} DNA on 15m)"
+                    elif (not is_long_side) and st_15m == "BULL" and bias_15m == "BULLISH" and not bsl_swept_15m and win_p < 94:
+                        is_win_prediction = False
+                        pred["rationale"] = f"15m Higher-TF Trend Guard: Blocked counter-trend SHORT ({st_15m} SuperTrend + {bias_15m} DNA on 15m)"
             except Exception as qc_err:
                 pass
 
@@ -2675,7 +2815,7 @@ class Bot:
             is_coindcx_live = bool(is_live_flag and broker_name == "COINDCX")
 
             if is_coindcx_live:
-                # Real CoinDCX execution: Support up to 500x AraaBot leverage rules (adapts cleanly if live exchange contract caps lower)
+                # Real CoinDCX execution: Support up to 500x AraaBot rules while capping small accounts safely
                 effective_lev = min(500.0, max(1.0, lev))
                 if lev > 1.0:
                     try:
@@ -2686,6 +2826,14 @@ class Bot:
                                 picked["symbol"], lev, "buy" if picked["side"] in ("BUY", "LONG") else "sell")
                     except Exception as lev_err:
                         pass
+                raw_eff_lev = effective_lev
+                effective_lev = self._cap_live_coindcx_leverage(picked["symbol"], effective_lev, capital)
+                if effective_lev < raw_eff_lev:
+                    self._log(
+                        user["id"],
+                        "SAFE_LEVERAGE_CAP",
+                        f"Safe Small-Account Cap on {picked['symbol']}: {raw_eff_lev:.0f}x -> {effective_lev:.0f}x (Capital ${capital:.2f}; protects liquidation distance & fees)",
+                    )
                 if effective_lev < 1.0:
                     self._log(user["id"], "ORDER_SKIP", f"Skipped {picked['symbol']} {picked['side']}: CoinDCX contract disallows this direction (0x leverage).")
                     continue
