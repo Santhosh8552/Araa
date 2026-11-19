@@ -82,10 +82,14 @@ def _fetch_native(psym, tf, limit):
     return out
 
 
+WEEK_ANCHOR = 4 * 86400  # 1970-01-05, a Monday
+
+
 def _aggregate(bars, seconds):
+    anchor = WEEK_ANCHOR if seconds == TF_SECONDS["1w"] else 0
     out = []
     for b in bars:
-        bucket = b["t"] - (b["t"] % seconds)
+        bucket = b["t"] - ((b["t"] - anchor) % seconds)
         if out and out[-1]["t"] == bucket:
             k = out[-1]
             k["h"] = max(k["h"], b["h"]); k["l"] = min(k["l"], b["l"])
