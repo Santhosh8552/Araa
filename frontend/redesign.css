@@ -1162,12 +1162,12 @@
 #app .hud_dot_green { width: 6px; height: 6px; background: var(--green); box-shadow: 0 0 7px var(--green); }
 
 /* ---------------- market workspace: watchlist / chart / ticket ---------------- */
-#app .term {
+#app .term:not([data-mount="smc"]) {
   grid-template-columns: 300px minmax(0, 1fr) 262px;
   gap: 12px;
   align-items: start;
 }
-#app .term > .panel {
+#app .term:not([data-mount="smc"]) > .panel {
   padding: 12px;
   gap: 9px;
   border-radius: 16px;
@@ -1611,11 +1611,11 @@
 
 /* ---------------- responsive ---------------- */
 @media (max-width: 1320px) {
-  #app .term { grid-template-columns: 270px minmax(0, 1fr) 244px; }
+  #app .term:not([data-mount="smc"]) { grid-template-columns: 270px minmax(0, 1fr) 244px; }
   #app .goal .v.big, #app #g_now { font-size: 27px; }
 }
 @media (max-width: 1180px) {
-  #app .term { grid-template-columns: 1fr; }
+  #app .term:not([data-mount="smc"]) { grid-template-columns: 1fr; }
   #app .watch .list { max-height: 360px; }
 }
 @media (max-width: 900px) {

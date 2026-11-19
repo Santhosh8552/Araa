@@ -768,6 +768,10 @@ async function enterApp(pushState = true) {
   const land = $("landing_gate");
   if (land) land.style.display = "none";
   $("auth").classList.add("hide"); $("app").classList.remove("hide");
+  if (window.VT && typeof window.VT.resizeCanvas === "function") {
+    setTimeout(() => window.VT.resizeCanvas(), 50);
+    setTimeout(() => window.VT.resizeCanvas(), 300);
+  }
   if (typeof hideRealBotDevModal === "function") hideRealBotDevModal();
   if (pushState) {
     history.pushState({view: "app"}, "Live Trading Terminal — Trade Pro", "#terminal");

@@ -404,6 +404,15 @@
     window.addEventListener("resize", () => {
       if (typeof window.VT.resizeCanvas === "function") window.VT.resizeCanvas();
     });
+
+    if (window.ResizeObserver && cv.parentElement) {
+      try {
+        const ro = new ResizeObserver(() => {
+          if (typeof window.VT.resizeCanvas === "function") window.VT.resizeCanvas();
+        });
+        ro.observe(cv.parentElement);
+      } catch (e) {}
+    }
   }
 
   /* ---------------------------- Render Drawings Overlay ---------------------------- */
@@ -1053,6 +1062,8 @@
     initCanvasInteractions();
     window.VT.renderWatchlist();
     window.VT.resizeCanvas();
+    setTimeout(() => { if (typeof window.VT.resizeCanvas === "function") window.VT.resizeCanvas(); }, 100);
+    setTimeout(() => { if (typeof window.VT.resizeCanvas === "function") window.VT.resizeCanvas(); }, 500);
   }
 
   if (document.readyState === "loading") {
