@@ -1458,8 +1458,8 @@
         sym: res.symbol,
         tf: res.timeframe,
         event: `${o.type.replace('_', ' ')} (${o.strength})`,
-        detail: `Zone: $${o.bottom} - $${o.top} · ${o.status}`,
-        price: (o.top + o.bottom) / 2,
+        detail: `Zone: $${o.low ?? o.bottom} - $${o.high ?? o.top} · ${o.status}`,
+        price: o.midpoint ?? ((o.high ?? o.top) + (o.low ?? o.bottom)) / 2,
         color: o.type.includes("BULL") ? "#10b981" : "#f43f5e"
       });
     });
