@@ -110,13 +110,14 @@ def _trade_plan(price: float, atr: float, ai: Dict[str, Any], mtf: Dict[str, Any
         if sgn * (entry - sl) <= 0 or abs(entry - sl) > 4 * atr:
             sl = (lo if sgn > 0 else hi) - sgn * 1.0 * atr
         risk = abs(entry - sl) or atr
+        risk = max(risk, 10 ** -(2 if price >= 1000 else 3 if price >= 10 else 5))
         tps = [float(sc.get("target_1") or 0), float(sc.get("target_2") or 0)]
         tps = sorted({t for t in tps if sgn * (t - entry) >= 0.8 * risk}, reverse=sgn < 0)
         while len(tps) < 2:
             tps.append(entry + sgn * risk * (1.5 if not tps else 3.0))
         tps = sorted(tps, reverse=sgn < 0)
         tp1, tp2 = tps[0], tps[1]
-        dp = 2 if price >= 100 else 5
+        dp = 2 if price >= 1000 else 3 if price >= 10 else 5
         return {
             "side": direction,
             "entry_low": round(lo, dp), "entry_high": round(hi, dp), "entry": round(entry, dp),
