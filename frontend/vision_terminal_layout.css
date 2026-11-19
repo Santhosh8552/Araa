@@ -234,7 +234,8 @@
   background: #06060B !important;
 }
 
-#chartHost > canvas#chart {
+#chartHost > canvas#chart,
+#chartHost > canvas.smc-canvas:not(.smc-ov) {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
@@ -245,7 +246,8 @@
   border: none !important;
 }
 
-#chartHost > canvas#smc_ov_canvas {
+#chartHost > canvas#smc_ov_canvas,
+#chartHost > canvas.smc-canvas.smc-ov {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;

@@ -265,11 +265,12 @@
     }
 
     // Indicators Drawer Toggle (Infinity Vision FX style)
-    const indBtn = $id("btn_toggle_indicators");
-    const drawer = $id("smc_indicators_drawer");
+    const indBtn = document.querySelector(".iva-ind") || $id("btn_toggle_indicators") || document.querySelector("[data-act='overlays']");
+    const drawer = $id("ivaPanel") || $id("smc_indicators_drawer");
     if (indBtn && drawer) {
       indBtn.addEventListener("click", () => {
-        const isHidden = drawer.style.display === "none" || !drawer.style.display;
+        const isHidden = drawer.hidden || drawer.style.display === "none" || !drawer.style.display;
+        drawer.hidden = !isHidden;
         drawer.style.display = isHidden ? "flex" : "none";
         indBtn.setAttribute("aria-pressed", String(isHidden));
       });
@@ -278,10 +279,29 @@
     const indClose = $id("ind_close");
     if (indClose && drawer) {
       indClose.addEventListener("click", () => {
+        drawer.hidden = true;
         drawer.style.display = "none";
         if (indBtn) indBtn.setAttribute("aria-pressed", "false");
       });
     }
+
+    // Zoom and pan toolbar buttons (Zoom In, Zoom Out, Reset, Center, Latest)
+    document.querySelectorAll("[data-act='zin']").forEach(b => b.addEventListener("click", () => {
+      window.VT.zoomLevel = Math.min(6.0, window.VT.zoomLevel * 1.25);
+      window.VT.renderSMCChart();
+      window.VT.renderDrawings();
+    }));
+    document.querySelectorAll("[data-act='zout']").forEach(b => b.addEventListener("click", () => {
+      window.VT.zoomLevel = Math.max(0.4, window.VT.zoomLevel / 1.25);
+      window.VT.renderSMCChart();
+      window.VT.renderDrawings();
+    }));
+    document.querySelectorAll("[data-act='zreset'], [data-act='zlatest'], [data-act='zcenter']").forEach(b => b.addEventListener("click", () => {
+      window.VT.panOffset = 0;
+      window.VT.zoomLevel = 1.0;
+      window.VT.renderSMCChart();
+      window.VT.renderDrawings();
+    }));
 
     // Hook Drawer Checkboxes
     initIndicatorsDrawerControls();
@@ -490,8 +510,8 @@
 
   /* ---------------------------- Interactive Drawing & Canvas Engine ---------------------------- */
   function initCanvasInteractions() {
-    const cv = $id("chart");
-    const ov = $id("smc_ov_canvas");
+    const cv = $id("chart") || document.querySelector("#chartHost .smc-canvas:not(.smc-ov)");
+    const ov = $id("smc_ov_canvas") || document.querySelector("#chartHost .smc-canvas.smc-ov");
     if (!cv || !ov) return;
 
     let isDrawing = false;
@@ -600,7 +620,7 @@
 
   /* ---------------------------- Render Drawings & Crosshair Overlay ---------------------------- */
   window.VT.renderDrawings = function() {
-    const ov = $id("smc_ov_canvas");
+    const ov = $id("smc_ov_canvas") || document.querySelector("#chartHost .smc-canvas.smc-ov");
     if (!ov) return;
     const ctx = ov.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
@@ -727,7 +747,7 @@
   /* ---------------------------- SMC Candlestick Canvas Renderer ---------------------------- */
   window.VT.renderSMCChart = function() {
     try {
-      const cv = $id("chart");
+      const cv = $id("chart") || document.querySelector("#chartHost .smc-canvas:not(.smc-ov)");
       if (!cv) return;
       const ctx = cv.getContext("2d");
       const dpr = window.devicePixelRatio || 1;
@@ -1224,7 +1244,7 @@
     if ($id("t_tf_badge")) $id("t_tf_badge").textContent = t.toUpperCase();
 
     document.querySelectorAll(".tfs button[data-tf]").forEach(btn => {
-      const match = btn.getAttribute("data-tf") === t;
+      const match = (btn.getAttribute("data-tf") || "").toLowerCase() === t.toLowerCase();
       btn.classList.toggle("active", match);
       btn.setAttribute("aria-pressed", String(match));
     });
