@@ -19,8 +19,8 @@
 
   // Global State for Araa Vision Terminal
   window.VT = {
-    symbol: "BTCUSDT",
-    timeframe: "15m",
+    symbol: "XAUUSD",
+    timeframe: "1m",
     candles: [],
     smcData: null,
     isLoading: false,
@@ -64,9 +64,9 @@
       showIDM: true,
       showMTF: true,
       showDashboard: true,
-      quantumVision: true,
-      marketDna: true,
-      liquidityHeatmap: true
+      quantumVision: false,
+      marketDna: false,
+      liquidityHeatmap: false
     }
   };
 
@@ -1210,13 +1210,11 @@
       ctx.fillRect(hudX, hudY, 300 * dpr, 26 * dpr);
       ctx.strokeRect(hudX, hudY, 300 * dpr, 26 * dpr);
 
-      const tfs = [
-        { name: "15M", trend: "UP" },
-        { name: "1H",  trend: "UP" },
-        { name: "4H",  trend: "UP" },
-        { name: "1D",  trend: "DN" },
-        { name: "1W",  trend: "NT" }
-      ];
+      const mtfRows = (smc && smc.mtf && smc.mtf.rows) || [];
+      const tfs = mtfRows.length ? mtfRows.map(r => ({
+        name: String(r.tf).toUpperCase(),
+        trend: r.bias === "BULLISH" ? "UP" : (r.bias === "BEARISH" ? "DN" : "NT")
+      })) : ["5M", "15M", "1H", "4H", "1D"].map(n => ({ name: n, trend: "NT" }));
 
       ctx.font = `bold ${9 * dpr}px Inter, sans-serif`;
       ctx.textAlign = "center";
@@ -1391,13 +1389,13 @@
 
   /* Sync data from legacy backend pollers */
   window.VT.syncFromBackend = function(quote, smcDna, activeAnalysis) {
-    if (smcDna) {
+    if (smcDna && !window.VT.liveAnalysis) {
       window.VT.smcData = Object.assign(window.VT.smcData || {}, smcDna);
     }
-    if (window.S && window.S.candles && window.S.candles.length && (!window.VT.candles || !window.VT.candles.length)) {
+    if (!window.VT.liveWatch && window.S && window.S.candles && window.S.candles.length && (!window.VT.candles || !window.VT.candles.length)) {
       window.VT.candles = window.S.candles;
     }
-    if (quote && quote.price && window.VT.candles && window.VT.candles.length) {
+    if (!window.VT.liveWatch && quote && quote.price && window.VT.candles && window.VT.candles.length) {
       const lastK = window.VT.candles[window.VT.candles.length - 1];
       if (lastK) {
         lastK.c = quote.price;
@@ -1417,14 +1415,14 @@
     const tfSeconds = {
       "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
       "1h": 3600, "4h": 14400, "1d": 86400
-    }[tf] || 900;
+    }[String(tf).toLowerCase()] || 900;
 
     function tick() {
       const nowSec = Math.floor(Date.now() / 1000);
       const remain = tfSeconds - (nowSec % tfSeconds);
       const m = Math.floor(remain / 60).toString().padStart(2, "0");
       const s = (remain % 60).toString().padStart(2, "0");
-      const el = $id("t_candle_timer");
+      const el = $id("t_candle_timer") || $id("t_timer_badge");
       if (el) el.textContent = `${m}:${s} FORMING`;
     }
 
@@ -1434,7 +1432,7 @@
 
   /* ---------------------------- Bottom Dock Timeline Feed ---------------------------- */
   function updateTimelineTable(res) {
-    const tableBody = $id("iva_tl_table_body") || document.querySelector("#bt_tab_feed table tbody");
+    const tableBody = $id("iva_tl_tbody") || $id("iva_tl_table_body") || document.querySelector("#bt_tab_feed table tbody");
     if (!tableBody) return;
 
     const breaks = res.structure_breaks || [];
@@ -1448,7 +1446,7 @@
         sym: res.symbol,
         tf: res.timeframe,
         event: b.type.replace('_', ' '),
-        detail: `Structure break at $${b.break_price || b.price}`,
+        detail: "",
         price: b.break_price || b.price,
         color: b.direction === "BULLISH" ? "#22c55e" : "#ef4444"
       });
@@ -1460,8 +1458,8 @@
         sym: res.symbol,
         tf: res.timeframe,
         event: `${o.type.replace('_', ' ')} (${o.strength})`,
-        detail: `Zone: $${o.bottom} - $${o.top} · ${o.status}`,
-        price: (o.top + o.bottom) / 2,
+        detail: `Zone: $${o.low ?? o.bottom} - $${o.high ?? o.top} · ${o.status}`,
+        price: o.midpoint ?? ((o.high ?? o.top) + (o.low ?? o.bottom)) / 2,
         color: o.type.includes("BULL") ? "#10b981" : "#f43f5e"
       });
     });
@@ -1474,7 +1472,6 @@
         <td style="padding:6px 10px; font-weight:800; color:#f1f5f9;">${r.sym}</td>
         <td style="padding:6px 10px; font-weight:700; color:#38bdf8;">${r.tf.toUpperCase()}</td>
         <td style="padding:6px 10px; font-weight:700; color:${r.color};">${r.event}</td>
-        <td style="padding:6px 10px; color:#cbd5e1;">${r.detail}</td>
         <td style="padding:6px 10px; font-family:monospace; font-weight:700; text-align:right; color:#f1f5f9;">$${typeof r.price === 'number' ? r.price.toFixed(2) : r.price}</td>
       </tr>
     `).join('');
@@ -1830,9 +1827,7 @@
     window.VT.resizeCanvas();
 
     // Auto-load live institutional market structure immediately
-    const initSym = window.VT.symbol || "BTCUSDT";
-    const initTf = window.VT.timeframe || "15m";
-    window.VT.loadMarketData(initSym, initTf);
+    
 
     setTimeout(() => { if (typeof window.VT.resizeCanvas === "function") window.VT.resizeCanvas(); }, 150);
     setTimeout(() => { if (typeof window.VT.resizeCanvas === "function") window.VT.resizeCanvas(); }, 600);
