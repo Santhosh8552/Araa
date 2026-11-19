@@ -726,74 +726,79 @@
 
   /* ---------------------------- SMC Candlestick Canvas Renderer ---------------------------- */
   window.VT.renderSMCChart = function() {
-    const cv = $id("chart");
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
-    const w = cv.width, h = cv.height;
-    ctx.clearRect(0, 0, w, h);
+    try {
+      const cv = $id("chart");
+      if (!cv) return;
+      const ctx = cv.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const w = cv.width, h = cv.height;
 
-    let candles = window.VT.candles || [];
-    if (!candles.length && window.S && window.S.candles && window.S.candles.length) {
-      candles = window.S.candles;
-      window.VT.candles = candles;
-    }
-    if (!candles.length) {
-      ctx.fillStyle = "#64748b";
-      ctx.font = `${13 * dpr}px Inter, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText(window.VT.isLoading ? "Loading institutional SMC market structure..." : "Select an instrument to view live SMC chart", w / 2, h / 2);
-      return;
-    }
+      // Always clear and paint crisp dark background
+      ctx.fillStyle = "#06060b";
+      ctx.fillRect(0, 0, w, h);
 
-    const smc = window.VT.smcData || {};
-    const ind = window.VT.indicators;
-    const isClean = window.VT.mode === "clean";
-
-    // Chart Dimensions
-    const plotRight = w - 75 * dpr;
-    const plotBottom = h - 26 * dpr;
-    const plotLeft = 16 * dpr;
-    const plotTop = 16 * dpr;
-    const plotW = plotRight - plotLeft;
-    const plotH = plotBottom - plotTop;
-
-    // Viewport calculation with Zoom and Pan
-    const baseCount = 65;
-    const visibleCount = Math.max(15, Math.min(candles.length, Math.round(baseCount / window.VT.zoomLevel)));
-    const candleSpacing = plotW / Math.max(visibleCount, 1);
-    const maxPan = Math.max(0, (candles.length - visibleCount) * candleSpacing);
-    const clampedPan = Math.max(-maxPan, Math.min(plotW * 0.35, window.VT.panOffset * dpr));
-
-    const startIndex = Math.max(0, Math.min(candles.length - visibleCount, Math.round(-clampedPan / candleSpacing)));
-    const endIndex = Math.min(candles.length, startIndex + visibleCount);
-    const visibleCandles = candles.slice(startIndex, endIndex);
-
-    if (!visibleCandles.length) return;
-
-    let min = Math.min(...visibleCandles.map(k => k.l));
-    let max = Math.max(...visibleCandles.map(k => k.h));
-    const pad = (max - min) * 0.12 || 1;
-    const lo = min - pad, hi = max + pad;
-
-    // Math Coordinate Transforms
-    const X = idx => (idx - startIndex) * candleSpacing + plotLeft + candleSpacing * 0.5;
-    const Y = p => plotBottom - ((p - lo) / (hi - lo)) * plotH;
-
-    // Attach coordinate readers for crosshair tooltips
-    window.VT.calcPriceFromY = yCss => {
-      const p = lo + ((plotBottom - (yCss * dpr)) / plotH) * (hi - lo);
-      return Math.max(0, p);
-    };
-    window.VT.calcTimeFromX = xCss => {
-      const idx = Math.round(startIndex + ((xCss * dpr - plotLeft) / candleSpacing));
-      const c = candles[idx];
-      if (c && c.t) {
-        const d = new Date(c.t * 1000);
-        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      let candles = window.VT.candles || [];
+      if (!candles.length && window.S && window.S.candles && window.S.candles.length) {
+        candles = window.S.candles;
+        window.VT.candles = candles;
       }
-      return "";
-    };
+      if (!candles.length) {
+        ctx.fillStyle = "#64748b";
+        ctx.font = `${13 * dpr}px Inter, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(window.VT.isLoading ? "Loading institutional SMC market structure..." : "Select an instrument to view live SMC chart", w / 2, h / 2);
+        return;
+      }
+
+      const smc = window.VT.smcData || {};
+      const ind = window.VT.indicators;
+      const isClean = window.VT.mode === "clean";
+
+      // Chart Dimensions
+      const plotRight = w - 75 * dpr;
+      const plotBottom = h - 26 * dpr;
+      const plotLeft = 16 * dpr;
+      const plotTop = 16 * dpr;
+      const plotW = plotRight - plotLeft;
+      const plotH = plotBottom - plotTop;
+
+      // Viewport calculation with Zoom and Pan (Anchored to right/latest candles)
+      const baseCount = 65;
+      const visibleCount = Math.max(15, Math.min(candles.length, Math.round(baseCount / window.VT.zoomLevel)));
+      const candleSpacing = plotW / Math.max(visibleCount, 1);
+      
+      const maxStart = Math.max(0, candles.length - visibleCount);
+      const panBars = Math.round((window.VT.panOffset * dpr) / candleSpacing);
+      const startIndex = Math.max(0, Math.min(maxStart, maxStart - panBars));
+      const endIndex = Math.min(candles.length, startIndex + visibleCount);
+      const visibleCandles = candles.slice(startIndex, endIndex);
+
+      if (!visibleCandles.length) return;
+
+      let min = Math.min(...visibleCandles.map(k => k.l));
+      let max = Math.max(...visibleCandles.map(k => k.h));
+      const diff = max - min;
+      const pad = diff > 0 ? diff * 0.14 : (max ? max * 0.002 : 0.01);
+      const lo = min - pad, hi = max + pad;
+
+      // Math Coordinate Transforms
+      const X = idx => (idx - startIndex) * candleSpacing + plotLeft + candleSpacing * 0.5;
+      const Y = p => plotBottom - ((p - lo) / (hi - lo)) * plotH;
+
+      // Attach coordinate readers for crosshair tooltips
+      window.VT.calcPriceFromY = yCss => {
+        const p = lo + ((plotBottom - (yCss * dpr)) / plotH) * (hi - lo);
+        return Math.max(0, p);
+      };
+      window.VT.calcTimeFromX = xCss => {
+        const idx = Math.round(startIndex + ((xCss * dpr - plotLeft) / candleSpacing));
+        const c = candles[idx];
+        if (c && c.t) {
+          const d = new Date(c.t * 1000);
+          return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        return "";
+      };
 
     // 1. Grid & Right Price Scale
     ctx.strokeStyle = "rgba(255,255,255,0.04)";
@@ -1191,6 +1196,9 @@
           ctx.fillText("◆ NT", itemX + 14 * dpr, hudY + 16 * dpr);
         }
       });
+    }
+    } catch (err) {
+      console.error("Error in renderSMCChart:", err);
     }
   };
 

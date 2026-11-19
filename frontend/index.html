@@ -12,7 +12,7 @@
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="styles.css?v=20261111_v4_buttons_fixed">
 <link rel="stylesheet" href="infinity_terminal.css">
-<link rel="stylesheet" href="vision_terminal_layout.css?v=20261119_v3">
+<link rel="stylesheet" href="vision_terminal_layout.css?v=20261119_v5">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800;900&family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -1318,7 +1318,7 @@
   }
 </style>
 <link rel="stylesheet" href="redesign.css?v=20261106_notif_v9">
-<link rel="stylesheet" href="vision_terminal_layout.css?v=20261119_v3">
+<link rel="stylesheet" href="vision_terminal_layout.css?v=20261119_v5">
 </head>
 <body>
 
@@ -1901,9 +1901,9 @@
           </div>
 
           <!-- Main SMC Chart Container -->
-          <div class="t-chart" id="chartHost" style="position:relative; width:100%; height:100%; overflow:hidden;">
-            <canvas id="chart" class="canvas" style="position:absolute; inset:0; width:100%; height:100%;"></canvas>
-            <canvas id="smc_ov_canvas" class="canvas" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:auto; cursor:crosshair;"></canvas>
+          <div class="t-chart" id="chartHost" style="position:relative; width:100%; height:100%; overflow:hidden; background:#06060b;">
+            <canvas id="chart" class="canvas" style="position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; background:#06060b; border:none;"></canvas>
+            <canvas id="smc_ov_canvas" style="position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:auto; cursor:crosshair; background:transparent !important; background-color:transparent !important; border:none !important;"></canvas>
             
             <!-- Floating Indicators & SMC Overlays Drawer -->
             <div id="smc_indicators_drawer" class="smc-drawer" style="display:none; position:absolute; top:0; right:0; width:340px; height:100%; background:rgba(10,12,20,0.96); backdrop-filter:blur(14px); border-left:1px solid rgba(255,255,255,0.12); z-index:40; flex-direction:column; box-shadow:-8px 0 32px rgba(0,0,0,0.7); overflow-y:auto; color:#f1f5f9;">
@@ -5529,7 +5529,7 @@
   border-top-color: rgba(130, 180, 0, 0.25) !important;
 }
 </style>
-<script src="app.js?v=20261119_smc_live_v2"></script>
-<script src="vision_terminal.js?v=20261119_smc_live_v2" defer></script>
+<script src="app.js?v=20261119_smc_live_v5"></script>
+<script src="vision_terminal.js?v=20261119_smc_live_v5" defer></script>
 </body>
 </html>
