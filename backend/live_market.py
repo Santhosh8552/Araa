@@ -105,7 +105,7 @@ def candles(symbol, tf="15m", limit=140):
     now = time.time()
     with _lock:
         hit = _candle_cache.get(key)
-    if hit and now - hit[0] < ttl and len(hit[1]) >= min(limit, len(hit[1])):
+    if hit and now - hit[0] < ttl and hit[2] >= limit:
         return [dict(k) for k in hit[1][-limit:]]
     try:
         if tf in NATIVE_TF:
@@ -117,7 +117,7 @@ def candles(symbol, tf="15m", limit=140):
         bars = hit[1] if hit else []
     if bars:
         with _lock:
-            _candle_cache[key] = (now, bars)
+            _candle_cache[key] = (now, bars, limit)
             if len(_candle_cache) > 800:
                 _candle_cache.clear()
     return [dict(k) for k in bars[-limit:]]
