@@ -11,9 +11,10 @@
 <title>AraaBot.in — AI Quantum Trading Terminal</title>
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="styles.css?v=20261111_v4_buttons_fixed">
+<link rel="stylesheet" href="infinity_terminal.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800;900&family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
@@ -1705,1262 +1706,442 @@
 </div>
 
 <!-- ============================ top bar ============================ -->
+
 <div id="app" class="hide">
-  <div class="tp-shell">
-    <aside class="tp-rail" aria-label="Primary navigation">
-      <button class="tp-logo" onclick="window.backToLandingFromApp && window.backToLandingFromApp()" title="Back to AraaBot home" aria-label="Back to AraaBot home">
-        <img src="/assets/araabot_logo.png" alt="AraaBot Logo" style="width:28px; height:28px; object-fit:contain;" />
-      </button>
-
-      <button class="tp-rail-btn active" title="Command Center" aria-label="Command Center" onclick="tpRailGo(this,'top')">
-        <svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5"/><path d="M6 9.8V20h12V9.8"/><path d="M10 20v-5.5h4V20"/></svg>
-      </button>
-      <button class="tp-rail-btn" title="Markets &amp; chart" aria-label="Markets &amp; chart" onclick="tpRailGo(this,'chart')">
-        <svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7.5 15l3.5-4.5 3 2.5 5-6"/></svg>
-      </button>
-      <button class="tp-rail-btn" title="AI bot control" aria-label="AI bot control" onclick="tpRailGo(this,'bot')">
-        <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 7V4"/><circle cx="12" cy="3" r="1"/><path d="M9 12.5v1.5"/><path d="M15 12.5v1.5"/><path d="M2 12v3"/><path d="M22 12v3"/></svg>
-      </button>
-      <button class="tp-rail-btn" id="rail_coindcx" title="CoinDCX Live Real Terminal" aria-label="CoinDCX Live Real Terminal" onclick="tpRailGo(this,'coindcx')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-        <span style="position:absolute; top:6px; right:6px; width:7px; height:7px; background:#10b981; border-radius:50%; box-shadow:0 0 6px #10b981;"></span>
-      </button>
-      <button class="tp-rail-btn" id="rail_v3_suite" title="AraaBot V3 Institutional Suite (Backtest, AI Committee, Risk, Multi-Bot Fleet & Ledger)" aria-label="AraaBot V3 Institutional Suite" onclick="if(window.openAraaV3Modal) window.openAraaV3Modal('backtest');">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-          <path d="M2 17l10 5 10-5"></path>
-          <path d="M2 12l10 5 10-5"></path>
-        </svg>
-        <span style="position:absolute; top:6px; right:6px; width:7px; height:7px; background:#38bdf8; border-radius:50%; box-shadow:0 0 6px #38bdf8;"></span>
-      </button>
-      <button class="tp-rail-btn" id="rail_araa_ai" title="ARAA AI Core — Universal Ecosystem Assistant" aria-label="ARAA AI Assistant" onclick="if(window.toggleAraaAiDrawer) window.toggleAraaAiDrawer(true);" style="position:relative;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"></path>
-          <path d="M5 18l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"></path>
-        </svg>
-        <span style="position:absolute; top:6px; right:6px; width:7px; height:7px; background:#a855f7; border-radius:50%; box-shadow:0 0 6px #a855f7;"></span>
-      </button>
-
-      <button class="tp-rail-btn" id="rail_portfolio" title="Portfolio pages" aria-label="Portfolio pages" onclick="tpSubnavToggle(this)">
-        <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
-      </button>
-      <button class="tp-rail-btn" title="Wallet" aria-label="Wallet" onclick="tpRailGo(this,'wallet')">
-        <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/></svg>
-      </button>
-      <button class="tp-rail-btn" id="rail_notif_btn" title="Notifications &amp; trade logs" aria-label="Notifications &amp; trade logs" onclick="tpRailGo(this,'alerts')" style="position:relative;">
-        <svg viewBox="0 0 24 24"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5Z"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0"/></svg>
-        <span id="rail_notif_dot" style="display:none; position:absolute; top:6px; right:6px; width:8px; height:8px; background:#ef4444; border-radius:50%; box-shadow:0 0 8px #ef4444;"></span>
-      </button>
-
-      <div class="tp-rail-sp"></div>
-
-      <button class="tp-rail-btn tp-rail-theme" id="rail_theme_btn" title="Switch Light / Dark Theme" aria-label="Switch Light / Dark Theme" onclick="if(window.toggleGlobalTheme) window.toggleGlobalTheme();">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      </button>
-
-      <button class="tp-rail-btn" title="Settings" aria-label="Settings" onclick="tpRailGo(this,'settings')">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-      </button>
-      <button class="tp-rail-btn" title="Log out" aria-label="Log out" onclick="tpRailGo(this,'logout')">
-        <svg viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg>
-      </button>
-    </aside>
-
-    <aside class="tp-subnav" id="tp_subnav" aria-label="Portfolio pages">
-      <div class="tp-subnav-head">
-        <b>Portfolio</b>
-        <button class="tp-subnav-x" onclick="tpSubnav(false)" title="Close panel">✕</button>
+  <!-- ============================ Top Vision Header ============================ -->
+  <header class="hdr" style="position:relative; z-index:50; background:rgba(6,6,11,0.92); border-bottom:1px solid rgba(255,255,255,0.08); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);">
+    <div class="wrap" style="display:flex; align-items:center; justify-content:space-between; height:54px; padding:0 16px; max-width:100%;">
+      <div style="display:flex; align-items:center; gap:20px;">
+        <a class="logo" href="#/" onclick="if(window.backToLandingFromApp) { window.backToLandingFromApp(); return false; }" style="display:flex; align-items:center; gap:9px; text-decoration:none;">
+          <img src="/assets/araabot_logo.png" alt="Araa" style="width:26px; height:26px; object-fit:contain; border-radius:6px;" onerror="this.style.display='none';" />
+          <b style="font-family:var(--display, 'Unbounded', sans-serif); font-size:14.5px; font-weight:800; letter-spacing:0.5px; color:#fff;">ARAA <span style="background:linear-gradient(120deg,#9B5CFF 0%,#6D5BFF 45%,#3D7BFF 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">VISION</span></b>
+        </a>
+        <nav class="nav" style="display:flex; align-items:center; gap:6px;">
+          <a class="nv-top active" href="#/smc" style="padding:5px 12px; border-radius:6px; background:rgba(255,255,255,0.08); font-size:11.5px; font-weight:800; color:#fff; text-decoration:none; display:flex; align-items:center; gap:5px;">
+            <span>⚡ Vision Terminal</span>
+          </a>
+          <a class="nv-top" href="javascript:void(0)" onclick="if(window.openAraaV3Modal) window.openAraaV3Modal('backtest');" style="padding:5px 12px; border-radius:6px; font-size:11.5px; font-weight:700; color:var(--muted); text-decoration:none;">
+            Quantum Lab
+          </a>
+          <a class="nv-top" href="javascript:void(0)" onclick="if(window.toggleAraaAiDrawer) window.toggleAraaAiDrawer(true);" style="padding:5px 12px; border-radius:6px; font-size:11.5px; font-weight:700; color:var(--muted); text-decoration:none;">
+            AI Copilot
+          </a>
+        </nav>
       </div>
-      <div class="tp-subnav-list">
-        <button data-page="coindcx" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal(); if(window.tpSubnav) tpSubnav(false);" style="background: rgba(16,185,129,0.14); border: 1px solid rgba(16,185,129,0.4); margin-bottom: 8px; border-radius: 9px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-          <span style="font-weight: 700; color: #10b981;">CoinDCX Live Terminal</span><i style="background: #10b981; color: #042f2e; font-size: 9px; font-weight: 900; padding: 2px 6px; border-radius: 6px; letter-spacing: 0.5px;">LIVE</i>
-        </button>
-        <button data-page="v3_hub" onclick="if(window.openAraaV3Modal) window.openAraaV3Modal('backtest'); if(window.tpSubnav) tpSubnav(false);" style="background: rgba(56,189,248,0.14); border: 1px solid rgba(56,189,248,0.45); margin-bottom: 8px; border-radius: 9px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          <span style="font-weight: 700; color: #38bdf8;">V3 Institutional Suite</span><i style="background: #38bdf8; color: #082f49; font-size: 9px; font-weight: 900; padding: 2px 6px; border-radius: 6px; letter-spacing: 0.5px;">V3 PRO</i>
-        </button>
-        <button data-page="v3_fleet" onclick="if(window.openAraaV3Modal) window.openAraaV3Modal('fleet'); if(window.tpSubnav) tpSubnav(false);" style="background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.4); margin-bottom: 8px; border-radius: 9px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>
-          <span style="font-weight: 700; color: #c084fc;">Multi-Bot Fleet &amp; Ledger</span><i style="background: #a855f7; color: #fff; font-size: 9px; font-weight: 900; padding: 2px 6px; border-radius: 6px;">CORE</i>
-        </button>
-        <button data-page="araa_ai" onclick="if(window.toggleAraaAiDrawer) window.toggleAraaAiDrawer(true); if(window.tpSubnav) tpSubnav(false);" style="background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.4); margin-bottom: 8px; border-radius: 9px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/></svg>
-          <span style="font-weight: 700; color: #34d399;">ARAA AI Assistant</span><i style="background: #10b981; color: #042f2e; font-size: 9px; font-weight: 900; padding: 2px 6px; border-radius: 6px;">AI</i>
-        </button>
-        <button data-page="positions" onclick="tpOpenPage('positions', this)">
-          <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
-          <span>Positions</span><i id="sn_pos">0</i>
-        </button>
-        <button data-page="orders" onclick="tpOpenPage('orders', this)">
-          <svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
-          <span>Open Orders</span><i id="sn_ord">0</i>
-        </button>
-        <button data-page="history" onclick="tpOpenPage('history', this)">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
-          <span>History</span><i id="sn_hist">0</i>
-        </button>
-        <button data-page="analytics" onclick="tpOpenPage('analytics', this)">
-          <svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-3"/><path d="M12 15V8"/><path d="M16 15v-5"/></svg>
-          <span>Analytics</span>
-        </button>
-        <button data-page="az_analysis" onclick="tpOpenPage('az_analysis', this)">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16.2 16.2 4 4"/><path d="M8.5 13 11 7l2.5 6"/><path d="M9.4 11h3.2"/></svg>
-          <span>A–Z Market Analysis</span>
-        </button>
-        <button data-page="eod" onclick="tpOpenPage('eod', this)">
-          <svg viewBox="0 0 24 24"><path d="M7 3h10v18l-5-3-5 3z"/><path d="M9.5 8h5"/><path d="M9.5 12h5"/></svg>
-          <span>EOD Report</span>
-        </button>
-        <button data-page="ai_oracle" onclick="tpOpenPage('ai_oracle', this)">
-          <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 7V4"/><circle cx="12" cy="3" r="1"/><path d="M9 12.5v1.5"/><path d="M15 12.5v1.5"/></svg>
-          <span>Araa AI Decisions</span>
-        </button>
-      </div>
-      <div id="subnav_mode_foot" class="tp-subnav-foot">Paper account · virtual capital</div>
-    </aside>
 
-    <div class="tp-main">
-  <div class="topbar">
-    <div class="tp-crumb">
-      <b>AraaBot</b><span class="sep">/</span><span id="tp_crumb_page">Command Center</span>
-      <i id="live_dot" class="dot" title="market feed"></i>
-    </div>
-    <nav id="m_cats" class="pills" style="display:none !important;">
-      <button class="active" data-cat="">All</button>
-      <button data-cat="STOCKS">Stocks</button>
-      <button data-cat="FUNDS">Funds</button>
-      <button data-cat="FUTURES">Futures</button>
-      <button data-cat="FOREX">Forex</button>
-      <button data-cat="CRYPTO">Crypto</button>
-      <button data-cat="INDICES">Indices</button>
-      <button data-cat="BONDS">Bonds</button>
-      <button data-cat="ECONOMY">Economy</button>
-      <button data-cat="OPTIONS">Options</button>
-      <button data-cat="METALS">Metals</button>
-      <button data-cat="COMPANIES">Companies</button>
-    </nav>
-    <label class="tp-search">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16.2 16.2 4 4"/></svg>
-      <input id="m_search" class="search" placeholder="Search" title="Search symbol">
-      <kbd>/</kbd>
-    </label>
-    <div class="tp-head-right">
-      <button id="top_feed_hub_btn" class="tp-chip tp-hide-sm" title="995 Live Charts &amp; Signals Hub - See what is Live vs Offline with 1-Click Connect">
-        <span class="live_dot" style="margin:0;"></span>
-        <span id="top_feed_hub_lbl">992 LIVE · 945 SIGNALS</span>
-      </button>
-      <button id="btn_paper_mode" class="tp-chip tp-paper tp-hide-sm" title="Active: Paper Bot Mode (Virtual Capital, 100% Free Live Prices)">PAPER BOT ACTIVE</button>
-      <button id="mode_toggle" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal();" class="tp-chip tp-real tp-hide-sm" title="Real Bot Mode — MT4 Live Trading Terminal">🔴 REAL BOT MODE</button>
-      <div id="top_user_profile_pill" class="tp-chip tp-hide-sm" style="display:none; background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-weight:800; font-size:11px; padding:3px 10px; border-radius:20px; align-items:center; gap:6px; box-shadow:0 0 10px rgba(16,185,129,0.25);" title="Connected CoinDCX Verified User Profile">
-        <span style="font-size:12px;">👤</span>
-        <span id="top_user_profile_name">User Profile</span>
-        <span style="font-size:9px; background:#10b981; color:#0f172a; padding:1px 5px; border-radius:6px; font-weight:900;">LIVE</span>
-      </div>
-      <button id="open_bot" class="tp-chip tp-ai" title="Open the Araa AI bot panel">Araa AI <span id="b_state" class="ai_dot"></span></button>
-      <button id="top_lev_btn" class="tp-chip tp-hide-sm" title="Click to view/change leverage">LEV <b id="top_lev_val">10x</b></button>
-      <span class="tp-divider"></span>
-      <button id="bot_switch" class="bot_switch off" title="Turn the AI bot on or off for your account">
-        BOT <b id="bot_switch_lbl">OFF</b></button>
-      <button id="open_wallet" class="tp-wallet" title="Open wallet">BALANCE <b id="top_equity">$10,000.00</b></button>
-      <button id="top_pnl_badge" class="tp-chip" style="display:inline-flex; align-items:center; gap:5px; background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.4); color:#10b981; font-weight:800; font-size:11px; font-family:'JetBrains Mono', monospace; cursor:pointer;" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal();" title="Real-Time Combined Live P&L (Araa 500x Boost & CoinDCX Real Wallet)"><span>P&L:</span> <b id="top_pnl_val">+$0.00</b></button>
-      <button id="top_ai_forecast_btn" class="tp-icon" style="display:none;" title="Open Araa AI Prediction &amp; Forecast Engine">🧠</button>
-      <button id="top_theme_btn" class="tp-chip" style="display:inline-flex; align-items:center; gap:5px; font-weight:700; cursor:pointer;" title="Switch Theme (Dark / Light / System)" aria-label="Switch Theme" onclick="if(window.toggleGlobalTheme) window.toggleGlobalTheme();">🌙 Dark</button>
-      <button id="open_notif_btn" class="tp-icon notif-bell-btn" style="display:none;" title="Notification Center &amp; Trade Logs" aria-label="Notification Center">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5Z"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0"/></svg>
-        <span id="notif_badge" class="notif-pill-badge" style="display:none;">0</span>
-      </button>
-      <button id="open_settings_btn" class="tp-icon" style="display:none;" title="Open Terminal &amp; Display Settings">⚙️</button>
-    </div>
-  </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <!-- CoinDCX Live / Paper Broker Status -->
+        <button id="mode_toggle" onclick="if(window.showRealBotDevModal) window.showRealBotDevModal();" class="tp-chip" style="display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-weight:800; font-size:11px; padding:4px 10px; border-radius:20px; cursor:pointer;" title="Connected CoinDCX Live Broker">
+          <span class="dot" style="width:7px; height:7px; border-radius:50%; background:#10b981; box-shadow:0 0 6px #10b981;"></span>
+          <span id="top_user_profile_name">COINDCX LIVE</span>
+        </button>
 
-  <!-- ============================ ticker tape ============================ -->
-  <div class="tape"><div id="tape_row" class="tape_row"></div></div>
+        <!-- Balance / Wallet Pill -->
+        <button id="open_wallet" style="display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:4px 12px; color:#fff; font-size:11.5px; font-weight:700; cursor:pointer;" title="Open Wallet / Account Balance">
+          <span style="color:var(--muted); font-size:10px; font-weight:600;">EQUITY:</span>
+          <b id="top_equity" style="font-family:var(--mono, monospace); color:#fff;">$10,284.20</b>
+          <span id="top_pnl_badge" style="color:#10b981; font-size:10.5px; font-family:var(--mono, monospace); font-weight:800;">+$0.00</span>
+        </button>
 
-  <!-- ============================ page head ============================ -->
-  <div class="tp-page-head">
-    <div>
-      <div class="tp-eyebrow"><i class="dot"></i> <span id="tp_mode_eyebrow">Paper trading</span> · live market data</div>
-      <h1 id="tp_page_title">Command Center</h1>
-      <p id="tp_page_sub">Portfolio, markets, AI bot health and execution in one desk.</p>
-    </div>
-    <div class="tp-head-actions">
-      <button class="tp-btn tp-back" id="tp_back_btn" onclick="tpClosePage()">← Command Center</button>
-      <!-- Araa AI Robot Mascot View with round circular rings & chest label -->
-      <div class="tp_bot bot_on" role="img" aria-label="Araa AI robot: bot active" onclick="window.toggleRobotDialogueModal && window.toggleRobotDialogueModal()" style="cursor:pointer;">
-        <span class="tp_bot_halo" aria-hidden="true"></span>
-        <span class="tp_bot_orbital" aria-hidden="true"></span>
-        <div class="tp_bot_stage" aria-hidden="true">
-          <div class="tp_bot_shadow"></div>
-          <div class="tp_bot_holo tp_bot_holo_a"><svg viewBox="0 0 32 24" fill="none"><path d="M2 20L9 13L14 16L24 5L30 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="5" r="2" fill="#e5ff9a"/></svg></div>
-          <div class="tp_bot_holo tp_bot_holo_b"><svg viewBox="0 0 32 24" fill="none"><path d="M2 19L10 12L15 15L25 4L30 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 22H29" stroke="#83c52d" stroke-width="1"/></svg></div>
-          <div class="tp_bot_body">
-            <span class="tp_bot_antenna_light"></span>
-            <span class="tp_bot_ear left"></span>
-            <span class="tp_bot_ear right"></span>
-            <div class="tp_bot_face">
-              <div class="tp_bot_eyes"><i class="tp_bot_eye"></i><i class="tp_bot_eye"></i></div>
-              <div class="tp_bot_mouth"></div>
-              <span class="tp_bot_sigh" aria-hidden="true"><i></i><i></i><i></i></span>
-            </div>
-            <div class="tp_bot_chest">ARAA AI</div>
-          </div>
-        </div>
+        <!-- Bot Switch -->
+        <button id="bot_switch" class="bot_switch" style="padding:4px 10px; font-size:11px; font-weight:800; border-radius:6px; cursor:pointer; background:rgba(139,92,246,0.16); border:1px solid #8b5cf6; color:#c084fc;" title="Toggle Araa AI Quant Bot">
+          BOT <b id="bot_switch_lbl">ON</b>
+        </button>
+
+        <!-- Settings -->
+        <button id="open_settings_btn" class="tp-icon" style="background:transparent; border:1px solid rgba(255,255,255,0.1); color:var(--muted); width:30px; height:30px; border-radius:6px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;" title="Settings">⚙️</button>
+
+        <!-- Logout -->
+        <button id="logout" style="background:transparent; border:1px solid rgba(255,255,255,0.1); color:var(--muted); font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; cursor:pointer;" title="Sign Out">Sign Out</button>
       </div>
     </div>
-  </div>
+  </header>
 
-  <main class="wrap">
-    <!-- ============================ goal row (Hero 3-Card Summary) ============================ -->
-    <section class="row three">
-      <div class="card goal">
-        <div class="k" id="g_bal_title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:nowrap;">TOTAL BALANCE</div>
-        <div class="line"><div id="g_now" class="v big">$10,000.00</div><div id="g_gain" class="chip">+$0.00</div></div>
-        <div class="bar"><i id="g_now_bar"></i></div>
-        <div id="g_dep" class="sub" style="margin-top: 4px;">Initial Capital: <span id="g_start" style="font-family: var(--mono); color: var(--text);">$0.00</span><span id="g_dep_time" style="color: var(--muted2);"></span></div>
-      </div>
-      <div class="card goal">
-        <div class="k">TOTAL P&amp;L · ROI</div>
-        <div class="line"><div id="g_pnl" class="v big">$0.00</div><div id="g_roi" class="chip">0.00%</div></div>
-        <div id="g_spark" class="mini_bars"></div>
-      </div>
-      <div class="card goal">
-        <div class="k">TARGET · REMAINING</div>
-        <div class="ring_line">
-          <div class="ring" id="g_ring"><span id="g_pct">0%</span></div>
-          <div>
-            <div id="g_target" class="v mid">Target $15,000.00</div>
-            <div id="g_left" class="sub">Left $5,000.00</div>
-          </div>
-        </div>
-        <div class="bar"><i id="g_goal_bar"></i></div>
-      </div>
-    </section>
-
-    <!-- ============================ kpi row ============================ -->
-    <section class="row five">
-      <div class="card kpi"><div class="k">TODAY</div><div id="k_today" class="v">$0.00</div>
-        <div id="k_today_pct" class="sub">0.00% of balance</div></div>
-      <div class="card kpi"><div class="k">WEEKLY</div><div id="k_week" class="v">$0.00</div>
-        <div id="k_week_pct" class="sub">last 7 days</div></div>
-      <div class="card kpi"><div class="k">WIN RATE</div><div id="k_win" class="v">0%</div>
-        <div id="k_win_sub" class="sub">0 wins / 0 losses</div></div>
-      <div class="card kpi"><div class="k">AVG TRADE</div><div id="k_avg" class="v">$0.00</div>
-        <div id="k_pf" class="sub">profit factor —</div></div>
-      <div class="card kpi"><div class="k">TOTAL TRADES</div><div id="k_trades" class="v">0</div>
-        <div id="k_open" class="sub">0 open · paper</div></div>
-    </section>
-
-    <!-- =================== connected api & active bot rules strip =================== -->
-    <section id="api_rules_live_bar" class="card" style="margin:0 0 14px; padding:14px 18px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; align-items:center; border:1px solid rgba(16,185,129,0.28); background:linear-gradient(135deg, rgba(15,23,42,0.92), rgba(10,20,16,0.92));">
-      <div>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-          <span style="font-size:10px; font-weight:900; letter-spacing:1px; color:#94a3b8;">CONNECTED API GATEWAY</span>
-          <span id="cc_api_status_badge" style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; background:rgba(16,185,129,0.16); color:#10b981; border:1px solid rgba(16,185,129,0.4);">PAPER SIMULATION</span>
-        </div>
-        <div id="cc_api_headline" style="font-size:14px; font-weight:800; color:#f8fafc;">Paper Mode Active · Ready for Live Broker API</div>
-        <div id="cc_api_subline" style="font-size:11.5px; color:#94a3b8; margin-top:3px;">Connect CoinDCX, Exness MT4/MT5, Binance, Bybit or Zerodha to display live balance, key &amp; fills here.</div>
-      </div>
-      <div>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-          <span style="font-size:10px; font-weight:900; letter-spacing:1px; color:#94a3b8;">ACTIVE ARAA BOT RULES (ENFORCED)</span>
-          <span id="cc_bot_engine_badge" style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; background:rgba(184,255,46,0.14); color:#b8ff2e; border:1px solid rgba(184,255,46,0.38);">ARAA QUANT AI v4.0</span>
-        </div>
-        <div id="cc_rules_pills" style="display:flex; flex-wrap:wrap; gap:6px; font-size:11px; font-weight:800;">
-          <span style="padding:3px 9px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); color:#e2e8f0;">MODE: PURE_CRYPTO</span>
-          <span style="padding:3px 9px; border-radius:6px; background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.35); color:#34d399;">LEV: 500x</span>
-          <span style="padding:3px 9px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); color:#e2e8f0;">SLOTS: 5</span>
-          <span style="padding:3px 9px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); color:#e2e8f0;">DIR: BOTH</span>
-        </div>
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;">
-        <button type="button" onclick="if($('open_bot')) $('open_bot').click();" class="btn sm ghost" style="padding:7px 12px; font-size:11px; font-weight:800; border:1px solid rgba(184,255,46,0.35); color:#b8ff2e;">⚙ Edit Bot Rules</button>
-        <button type="button" onclick="if(window.openBrokerSetupModal) window.openBrokerSetupModal();" class="btn sm primary" style="padding:7px 12px; font-size:11px; font-weight:800;">🔌 Manage Broker API</button>
-      </div>
-    </section>
-
-    <!-- ============================ terminal ============================ -->
-    <section class="term">
-      <!-- watchlist -->
-      <aside class="card panel watch">
-        <div class="phead"><b>WATCHLIST</b><span id="w_count" class="tag">0 SYMBOLS</span></div>
-        <div id="w_chips" class="chips pills" style="overflow-x:auto; flex-wrap:nowrap; gap:6px; padding:6px 0; -webkit-overflow-scrolling:touch;">
-          <button class="active coindcx_chip" data-cat="COINDCX_USDT" style="background:rgba(56,189,248,0.22); border-color:#38bdf8; color:#38bdf8; font-weight:800;" title="CoinDCX Futures USD (100x / 30x Perpetual Contracts)">⚡ CoinDCX Futures (100x/30x)</button>
-          <button data-cat="CRYPTO">Crypto (USD)</button>
-          <button data-cat="">All Crypto</button>
-        </div>
-        <div class="cfilt">
-          <select id="m_country" class="search cfilt_sel" style="display:none;" title="Filter world stocks by the country they are listed in">
-            <option value="">ALL CRYPTO</option>
-          </select>
-          <button id="w_sort_az" class="ghost cfilt_btn" title="Sort watchlist alphabetically A–Z">🔤 A–Z</button>
-          <button id="w_all" class="ghost cfilt_btn" title="List every instrument instead of the busiest 60">SHOW ALL</button>
-        </div>
-        <div id="w_sig_filters" style="display:flex; gap:4px; padding:6px 8px; border-bottom:1px solid var(--line); background:var(--bg3); overflow-x:auto;">
-          <button class="ghost active" data-sig-filter="ALL" style="padding:2px 8px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid rgba(var(--blue-rgb),.45); background:rgba(var(--blue-rgb),.12); color:var(--blue); cursor:pointer;">ALL (995)</button>
-          <button class="ghost" data-sig-filter="LIVE" style="padding:2px 8px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--green); cursor:pointer;">🟢 LIVE</button>
-          <button class="ghost" data-sig-filter="BUY" style="padding:2px 8px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--green); cursor:pointer;">▲ BUY</button>
-          <button class="ghost" data-sig-filter="SELL" style="padding:2px 8px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--red); cursor:pointer;">▼ SELL</button>
-          <button class="ghost" data-sig-filter="OFFLINE" style="padding:2px 8px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer;">○ SIM/OFFLINE</button>
-        </div>
-        <div id="watch_rows" class="list"></div>
-      </aside>
-
-      <!-- live chart -->
-      <div class="card panel chartpanel">
-        <div class="chead">
-          <div class="csym">
-            <b id="t_symbol">—</b><span id="t_cat" class="tag cat"></span>
-            <span id="t_source" class="tag">—</span>
-          </div>
-          <div class="cprice">
-            <div id="t_price" class="v big">—</div>
-            <div id="t_change" class="v small">—</div>
-          </div>
-          <div class="cmeta">
-            <div><span class="k">H</span> <b id="t_high">—</b></div>
-            <div><span class="k">L</span> <b id="t_low">—</b></div>
-            <div><span class="k">VOL</span> <b id="t_vol">—</b></div>
-          </div>
-        </div>
-        <div class="crow">
-          <div id="t_tfs" class="pills tight">
-            <button class="active" data-tf="1m">1m</button><button data-tf="5m">5m</button>
-            <button data-tf="15m">15m</button><button data-tf="1h">1H</button>
-            <button data-tf="4h">4H</button><button data-tf="1d">1D</button>
-          </div>
-          <div id="t_ohlc" class="ohlc">—</div>
-          <div class="vol_split">
-            <span id="t_buy" class="pill buy">BUY VOL —</span>
-            <span id="t_sell" class="pill sell">SELL VOL —</span>
-          </div>
-          <div id="chart_mode" class="pills tight">
-            <button class="active" data-mode="local" id="mode_araa_live" title="Live CoinDCX Futures candlestick chart with Araa AI bot entries, Take-Profit targets, and Stop-Loss levels">COINDCX LIVE CHART · ARAA AI</button>
-          </div>
-          <div id="chart_indicators" class="pills tight" style="gap:4px;">
-            <button type="button" class="pill active" data-ind="ema" onclick="toggleChartIndicator('ema', this)" title="Toggle EMA 20 & EMA 50">EMA 20/50</button>
-            <button type="button" class="pill" data-ind="bb" onclick="toggleChartIndicator('bb', this)" title="Toggle Bollinger Bands (20, 2)">BB (20,2)</button>
-            <button type="button" class="pill active" data-ind="vol" onclick="toggleChartIndicator('vol', this)" title="Toggle Volume Histogram">VOL</button>
-            <button type="button" class="pill active" data-ind="rsi" onclick="toggleChartIndicator('rsi', this)" title="Toggle RSI (14) Oscillator Pane">RSI (14)</button>
-          </div>
-          <button id="btn_toggle_smc_dna" class="pill active" onclick="toggleSmcDnaOverlay()" style="cursor:pointer; font-size:10.5px; font-weight:800; background:rgba(168,85,247,0.18); border:1px solid #a855f7; color:#c084fc;" title="Toggle SMC Order Blocks, FVG, SSL/BSL Liquidity & Market DNA Projection">🧬 SMC + DNA ON</button>
-          <span id="t_candle_timer" class="pill" style="font-family:var(--mono); font-size:10.5px; font-weight:800; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); color:#10b981;">00:00 FORMING</span>
-          <button id="chart_ai_forecast_btn" class="tag" style="cursor:pointer; font-weight:800; background:rgba(var(--lime-rgb),.10); border-color:rgba(var(--lime-rgb),.45); color:var(--lime); padding:3px 10px; border-radius:6px; display:inline-flex; align-items:center; gap:5px; font-size:11px;" title="Toggle Araa AI Forecast &amp; Prediction Card">🧠 AI FORECAST <span id="cp_toggle_indicator" style="font-size:9px; opacity:0.8;">▼</span></button>
-          <a id="t_tv" class="tvlink hide" href="#" target="_blank" rel="noopener noreferrer"
-             title="View-only: opens the real TradingView chart in a new tab. Nothing here changes.">
-            FULL LIVE CHART ON TRADINGVIEW &#8599;</a>
-        </div>
-
-        <!-- 🧠 ARAA AI PREDICTION-FIRST ENGINE & MANUAL DECISION HUD -->
-        <div id="ai_copilot_hud" class="ai_copilot_container hide" style="margin: 6px 12px 10px; background: linear-gradient(135deg, rgba(15,23,42,0.96), rgba(30,41,59,0.90)); border: 1px solid rgba(56,189,248,0.35); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.4); position: relative;">
-          <!-- Top Row: Title, Model Version, Live Clock, Expiration, Refresh Button, Close Button -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span style="font-size: 16px;">🧠</span>
-              <b style="font-size: 12px; color: #38bdf8; letter-spacing: 0.05em;">ARAA AI · PREDICTION-FIRST ENGINE</b>
-              <span id="cp_active_sym_tf" style="font-size: 11px; color: #cbd5e1; font-family: ui-monospace, monospace; background: rgba(56,189,248,0.12); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56,189,248,0.3);">BTCUSDT · 15m</span>
-              <span id="cp_pred_badge" class="tag" style="background:var(--lime-fill, var(--lime)); color:#10200a; font-size:10px; font-weight:800; padding:2px 10px; border-radius:4px; letter-spacing:0.5px;">PREDICTION: ANALYZING</span>
-              <span id="cp_action_badge" class="tag" style="background:#475569; color:#fff; font-size:10px; font-weight:800; padding:2px 10px; border-radius:4px; letter-spacing:0.5px;">DECISION: WAIT</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <button id="cp_refresh_btn" type="button" class="btn sm ghost" style="font-size:10px; color:#38bdf8; border:1px solid rgba(56,189,248,0.3); padding:3px 8px; border-radius:4px; cursor:pointer;" title="Re-run forecast with latest live candle">⚡ New Forecast</button>
-              <span id="cp_timestamp" style="font-size: 10px; color: #94a3b8; font-family: ui-monospace, monospace;">Live Data</span>
-              <span id="cp_expires_txt" style="font-size: 10px; color: #f59e0b; font-family: ui-monospace, monospace;">Expires in 15m</span>
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-size: 10px; color: #94a3b8;">BAYESIAN PROB:</span>
-                <b id="cp_win_prob" style="color: #10b981; font-size: 12px; font-family: ui-monospace, monospace;">P(UP) --%</b>
-              </div>
-              <button id="close_ai_copilot_btn" type="button" class="ghost" style="border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:#cbd5e1; width:24px; height:24px; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; margin-left:4px;" title="Hide Araa AI Forecast Panel">✕</button>
-            </div>
-          </div>
-
-          <!-- Key Metrics Grid: Prediction vs Trade Decision -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; font-size: 11px;">
-            <div style="background: rgba(0,0,0,0.25); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
-              <span style="color: #94a3b8; font-size: 9px; text-transform: uppercase;">1. Market Regime</span><br>
-              <b id="cp_market_regime" style="color: #38bdf8; font-size: 11px;">ANALYZING...</b>
-            </div>
-            <div style="background: rgba(0,0,0,0.25); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
-              <span style="color: #94a3b8; font-size: 9px; text-transform: uppercase;">2. Forecast Uncertainty</span><br>
-              <b id="cp_uncertainty" style="color: #f59e0b; font-size: 11px;">UNCERTAINTY: MEDIUM</b>
-            </div>
-            <div style="background: rgba(0,0,0,0.25); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
-              <span style="color: #94a3b8; font-size: 9px; text-transform: uppercase;">3. Entry Zone &amp; SL</span><br>
-              <b id="cp_entry_zone" style="color: var(--text, #0f172a); font-size: 11px;">—</b>
-            </div>
-            <div style="background: rgba(0,0,0,0.25); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
-              <span style="color: #94a3b8; font-size: 9px; text-transform: uppercase;">4. Stop Loss (Invalidation)</span><br>
-              <b id="cp_stop_loss" style="color: #ef4444; font-size: 11px;">—</b>
-            </div>
-            <div style="background: rgba(0,0,0,0.25); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
-              <span style="color: #94a3b8; font-size: 9px; text-transform: uppercase;">5. Targets (T1 / T2 / T3)</span><br>
-              <b id="cp_targets_row" style="color: #10b981; font-size: 11px; font-family: ui-monospace, monospace;">—</b>
-            </div>
-            <button id="cp_apply_btn" type="button" class="btn" style="background: var(--lime-fill, var(--lime)); color: #10200a; border: 1px solid rgba(var(--lime-rgb),.5); border-radius: 6px; font-weight: 800; font-size: 11px; cursor: pointer; padding: 6px 10px; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 0 10px rgba(56,189,248,0.25);" title="Auto-fill the manual order ticket with this verified AI setup">
-              ⚡ APPLY TO TICKET
+  <!-- ============================ Vision Trading Terminal (SMC Mode) ============================ -->
+  <div class="page" style="height:calc(100vh - 54px); display:flex; flex-direction:column; overflow:hidden; position:relative;">
+    <div data-mount="smc" class="term" id="term" data-view="chart" data-wl="1" data-ai="1" data-bt="1" style="--wl-w:240px;--ai-w:380px;--bt-h:250px;--wl-g:8px;--ai-g:8px;--bt-g:8px;">
+      
+      <!-- 1. LEFT: Watchlist Panel -->
+      <aside class="t-watch panel-t" aria-label="Watchlist">
+        <div class="t-h">
+          <b>Watchlist</b>
+          <span class="t-hb">
+            <button class="mini" data-act="import" id="btn_wl_import">Import</button>
+            <button class="t-x" data-act="pWl" title="Collapse the watchlist" aria-label="Collapse the watchlist">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
             </button>
-          </div>
-
-          <!-- ==================== QUANTUM INSTITUTIONAL INTELLIGENCE PANEL (FEATURES 1, 2, 3, 4) ==================== -->
-          <div style="background: rgba(15,23,42,0.85); border: 1px solid rgba(168,85,247,0.35); border-radius: 8px; padding: 10px 14px; margin-top: 4px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:16px;">⚛️</span>
-                <b style="font-size:11.5px; color:#e9d5ff; letter-spacing:0.5px;">QUANTUM INSTITUTIONAL TRADING COMMITTEE &amp; LIQUIDITY HEATMAP</b>
-                <span id="quantum_committee_verdict_badge" style="background:rgba(16,185,129,0.2); border:1px solid #10b981; color:#10b981; font-size:9.5px; font-weight:800; padding:1px 8px; border-radius:4px;">CONSENSUS: 85.0% APPROVED</span>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px; font-size:10px;">
-                <span style="color:#94a3b8;">Active Playbook:</span>
-                <b id="quantum_active_playbook_lbl" style="color:#38bdf8;">TRENDING BULL RUN (1.35x TP)</b>
-              </div>
-            </div>
-
-            <!-- Committee 3-Agent Consensus Grid -->
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:8px; margin-bottom:10px;">
-              <!-- Agent Alpha: Trend & Orderflow -->
-              <div style="background:rgba(0,0,0,0.35); border:1px solid rgba(56,189,248,0.25); border-radius:6px; padding:7px 10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-bottom:3px;">
-                  <b style="color:#38bdf8;">AGENT ALPHA</b>
-                  <span id="agent_alpha_score" style="color:#10b981; font-weight:800; font-family:ui-monospace, monospace;">90.0%</span>
-                </div>
-                <div style="font-size:9.5px; color:#94a3b8; font-weight:600;">Trend &amp; Momentum Hunter</div>
-                <div id="agent_alpha_desc" style="font-size:9.5px; color:#cbd5e1; margin-top:3px; line-height:1.2;">Bullish delta continuation &amp; RSI expansion sweet-spot.</div>
-              </div>
-
-              <!-- Agent Beta: Risk & Adversarial Critic -->
-              <div style="background:rgba(0,0,0,0.35); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:7px 10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-bottom:3px;">
-                  <b style="color:#f87171;">AGENT BETA (CRITIC)</b>
-                  <span id="agent_beta_score" style="color:#10b981; font-weight:800; font-family:ui-monospace, monospace;">85.0% PASS</span>
-                </div>
-                <div style="font-size:9.5px; color:#94a3b8; font-weight:600;">Adversarial Trap &amp; Squeeze Guard</div>
-                <div id="agent_beta_desc" style="font-size:9.5px; color:#cbd5e1; margin-top:3px; line-height:1.2;">No bull-trap detected; clear liquidity clearance runway.</div>
-              </div>
-
-              <!-- Agent Gamma: Macro & Regime Arbiter -->
-              <div style="background:rgba(0,0,0,0.35); border:1px solid rgba(168,85,247,0.25); border-radius:6px; padding:7px 10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; margin-bottom:3px;">
-                  <b style="color:#c084fc;">AGENT GAMMA</b>
-                  <span id="agent_gamma_score" style="color:#10b981; font-weight:800; font-family:ui-monospace, monospace;">82.0%</span>
-                </div>
-                <div style="font-size:9.5px; color:#94a3b8; font-weight:600;">Regime &amp; Dynamic Trailing Stop</div>
-                <div id="agent_gamma_desc" style="font-size:9.5px; color:#cbd5e1; margin-top:3px; line-height:1.2;">Adaptive lock enabled: 50% peak profit floor protection.</div>
-              </div>
-            </div>
-
-            <!-- Liquidation Heatmap Cluster Bar -->
-            <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(245,158,11,0.25); border-radius:6px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-              <div>
-                <span style="font-size:9.5px; color:#fbbf24; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">🔥 INSTITUTIONAL LIQUIDATION HEATMAP &amp; MAGNET TARGET</span>
-                <div id="quantum_liq_magnet_desc" style="font-size:10.5px; color:#f8fafc; font-family:ui-monospace, monospace; margin-top:2px;">
-                  Nearest Magnet: Short Liquidation Cluster at $77,200 (+1.50%) · $450K Pool
-                </div>
-              </div>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <span id="quantum_sweep_badge" style="background:rgba(16,185,129,0.18); border:1px solid #10b981; color:#10b981; font-size:9.5px; font-weight:800; padding:2px 8px; border-radius:4px;">SWEEP GUARD: SAFE</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Multi-Horizon Price Cones Strip (1m, 5m, 15m, 30m, 1h, 4h) -->
-          <div style="background: rgba(0,0,0,0.28); border: 1px solid rgba(56,189,248,0.20); border-radius: 6px; padding: 8px 12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <span style="font-size:10px; font-weight:700; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">📈 MULTI-HORIZON PREDICTED PRICE RANGES &amp; RETURN CONES</span>
-              <span id="cp_model_version" style="font-size:9.5px; color:#94a3b8; font-family:ui-monospace, monospace;">Model: Araa-Neural-Ensemble-v4.2</span>
-            </div>
-            <div id="cp_horizon_grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:6px;">
-              <!-- Populated dynamically via JS for 1m, 5m, 15m, 30m, 1h, 4h -->
-            </div>
-          </div>
-
-          <!-- Supporting & Contradicting Evidence Breakdown -->
-          <div id="cp_detailed_box" style="display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: #cbd5e1; line-height: 1.4; background: rgba(0,0,0,0.22); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #38bdf8;">
-            <div id="cp_rationale">Loading real-time predictive forecast...</div>
-            <div id="cp_evidence_list" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;"></div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08); font-size: 10px; color: #94a3b8;">
-              <span id="cp_invalidation_txt">Invalidation: —</span>
-              <span style="color:#f59e0b;">⚠️ You place every trade manually. AI forecasts possible movements without execution.</span>
-            </div>
-          </div>
-
-          <!-- Interactive Position-Sizing Calculator Accordion -->
-          <details id="cp_sizing_accordion" style="background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 12px; font-size: 11px;">
-            <summary style="cursor: pointer; font-weight: 700; color: #38bdf8; display: flex; justify-content: space-between; align-items: center;">
-              <span>📐 POSITION-SIZE &amp; MARGIN RISK CALCULATOR (Exact Formula)</span>
-              <span style="font-size: 10px; color: #94a3b8; font-weight: 400;">Click to calculate exact capital exposure</span>
-            </summary>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px;">
-              <div>
-                <label style="font-size: 10px; color: #94a3b8;">Trading Capital ($)</label>
-                <input id="calc_capital" type="number" value="25000" style="width: 100%; background: #0f172a; border: 1px solid #334155; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
-              </div>
-              <div>
-                <label style="font-size: 10px; color: #94a3b8;">Risk per Trade (%)</label>
-                <input id="calc_risk_pct" type="number" step="0.1" value="1.5" style="width: 100%; background: #0f172a; border: 1px solid #334155; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
-              </div>
-              <div>
-                <label style="font-size: 10px; color: #94a3b8;">Entry Price ($)</label>
-                <input id="calc_entry" type="number" step="0.0001" style="width: 100%; background: #0f172a; border: 1px solid #334155; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
-              </div>
-              <div>
-                <label style="font-size: 10px; color: #94a3b8;">Stop Loss Price ($)</label>
-                <input id="calc_stop" type="number" step="0.0001" style="width: 100%; background: #0f172a; border: 1px solid #334155; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
-              </div>
-              <div>
-                <label style="font-size: 10px; color: #94a3b8;">Leverage</label>
-                <input id="calc_lev" type="number" value="20" style="width: 100%; background: #0f172a; border: 1px solid #334155; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
-              </div>
-            </div>
-            <!-- Calculated Results Banner -->
-            <div id="calc_results_box" style="margin-top: 10px; background: rgba(15,23,42,0.8); border: 1px solid rgba(56,189,248,0.2); border-radius: 6px; padding: 8px 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;">
-              <div><span style="color:#94a3b8; font-size:9px;">MAX LOSS BUDGET:</span><br><b id="calc_res_loss" style="color:#ef4444;">$375.00</b></div>
-              <div><span style="color:#94a3b8; font-size:9px;">REQUIRED MARGIN:</span><br><b id="calc_res_margin" style="color:#38bdf8;">$2,604.35</b></div>
-              <div><span style="color:#94a3b8; font-size:9px;">POSITION QTY:</span><br><b id="calc_res_qty" style="color:var(--text, #0f172a);">0.6375</b></div>
-              <div><span style="color:#94a3b8; font-size:9px;">EST. LIQUIDATION:</span><br><b id="calc_res_liq" style="color:#f59e0b;">$78,030.18</b></div>
-            </div>
-            <div id="calc_warnings" style="color:#ef4444; font-size:10px; margin-top:6px; font-weight:600;"></div>
-          </details>
+          </span>
         </div>
 
-        <!-- ⚡ ARAA AI BOT LIVE ENTRY FLOATING OVERLAY HUD -->
-        <div id="chart_live_entry_hud" class="chart_live_entry_banner hide" style="margin: 0 12px 8px; background: linear-gradient(90deg, rgba(16,185,129,0.14), rgba(15,23,42,0.95)); border: 1px solid rgba(16,185,129,0.45); border-radius: 8px; padding: 7px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.3); font-size: 11px;"></div>
-
-        <!-- 🧬 SMC STRUCTURE TIMELINE & MARKET DNA PANEL -->
-        <div id="smc_dna_panel" class="hide" style="margin:0 12px 10px; background:rgba(15,23,42,0.88); border:1px solid rgba(168,85,247,0.3); border-radius:10px; padding:10px 12px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-              <b style="font-size:11.5px; color:#c084fc; letter-spacing:0.04em;">🧬 INFINITY SMC &amp; MARKET DNA STRUCTURE TIMELINE</b>
-              <span id="smc_dna_status_badge" class="tag" style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; background:rgba(148,163,184,0.18); color:#cbd5e1;">ANALYZING</span>
-              <button type="button" onclick="window.openSmcDnaCanvas()" class="pill" style="cursor:pointer; font-size:10px; font-weight:800; background:rgba(168,85,247,0.22); border:1px solid #a855f7; color:#e9d5ff; padding:2px 8px;">📊 SHOW OVERLAY ON CHART</button>
-            </div>
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:10.5px; font-family:var(--mono);">
-              <span>Bias: <b id="smc_dna_bias" style="color:#f8fafc;">—</b></span>
-              <span>Match: <b id="smc_dna_sim" style="color:#38bdf8;">—</b></span>
-              <span>Fib 61.8%: <b id="smc_dna_fib" style="color:#f59e0b;">—</b></span>
-              <span>BSL: <b id="smc_dna_bsl" style="color:#ef4444;">—</b></span>
-              <span>SSL: <b id="smc_dna_ssl" style="color:#10b981;">—</b></span>
-            </div>
-          </div>
-          <div style="max-height:150px; overflow-y:auto; border:1px solid rgba(255,255,255,0.06); border-radius:6px;">
-            <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left;">
-              <thead>
-                <tr style="background:rgba(0,0,0,0.35); color:#94a3b8;">
-                  <th style="padding:5px 8px;">Time</th>
-                  <th style="padding:5px 8px;">Symbol</th>
-                  <th style="padding:5px 8px;">TF</th>
-                  <th style="padding:5px 8px;">Structure Event</th>
-                  <th style="padding:5px 8px; text-align:right;">Price</th>
-                </tr>
-              </thead>
-              <tbody id="smc_timeline_tbody">
-                <tr><td colspan="5" style="padding:10px; text-align:center; color:#64748b;">Loading confirmed SMC structure events...</td></tr>
-              </tbody>
-            </table>
-          </div>
+        <!-- Symbol search input -->
+        <div style="padding:6px 8px; border-bottom:1px solid var(--line);">
+          <input type="text" id="wl_search_inp" placeholder="Filter symbols... (/)" style="width:100%; padding:5px 8px; background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:6px; color:var(--text); font-size:11.5px; outline:none;" />
         </div>
 
-        <div id="tv_chart" class="tv hide"></div>
-        <div id="cdx_rsi_chart" class="hide" style="width:100%; height:110px; border-top:1px solid rgba(148,163,184,0.14);"></div>
-        <canvas id="chart" class="canvas"></canvas>
-        <div class="cfoot">
-          <span id="t_ind">VOL — · MA(50) — · RSI —</span>
-          <span class="muted">CROSSHAIR · SCROLL TO ZOOM</span>
-          <span id="t_count">— candles</span>
+        <!-- Category filter pills -->
+        <div style="display:flex; gap:4px; padding:6px 8px; border-bottom:1px solid var(--line); overflow-x:auto;">
+          <button class="ghost active" data-wlcat="ALL" style="padding:2px 7px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid rgba(139,92,246,0.45); background:rgba(139,92,246,0.15); color:var(--violet); cursor:pointer;">ALL</button>
+          <button class="ghost" data-wlcat="CRYPTO" style="padding:2px 7px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer;">CRYPTO</button>
+          <button class="ghost" data-wlcat="FOREX" style="padding:2px 7px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer;">FOREX</button>
+          <button class="ghost" data-wlcat="METALS" style="padding:2px 7px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer;">METALS</button>
+          <button class="ghost" data-wlcat="INDICES" style="padding:2px 7px; font-size:10px; font-weight:800; border-radius:4px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer;">INDICES</button>
         </div>
-        <div id="chart_note" class="note"></div>
-      </div>
 
-      <!-- order ticket -->
-      <aside class="card panel ticket">
-        <div class="seg">
-          <button id="side_long" class="active long" data-side="LONG">BUY / LONG</button>
-          <button id="side_short" class="short" data-side="SHORT">SELL / SHORT</button>
+        <!-- Live Watchlist rows -->
+        <div id="wl" class="wl">
+          <!-- Populated by VT.renderWatchlist -->
         </div>
-        <div class="field"><span>ORDER</span>
-          <div class="seg small">
-            <button class="active" data-otype="MARKET">Market</button>
-            <button data-otype="LIMIT">Limit</button>
-          </div>
-        </div>
-        <label>PRICE $<input id="t_price_in" type="number" step="0.0001" placeholder="limit price">
-          <em id="t_price_hint">last price</em></label>
-        <label>AMOUNT ($)<input id="t_margin" type="number" step="1" value="1000"></label>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
-          <label style="margin:0;">TAKE PROFIT $<input id="t_tp_in" type="number" step="0.0001" placeholder="TP Target"></label>
-          <label style="margin:0;">STOP LOSS $<input id="t_sl_in" type="number" step="0.0001" placeholder="SL Level"></label>
-        </div>
-        <div class="field"><span>SIZE <b id="t_size_lbl">50%</b></span>
-          <div class="quick">
-            <button data-size="25">25</button><button data-size="50" class="active">50</button>
-            <button data-size="75">75</button><button data-size="100">100</button>
-          </div>
-        </div>
-        <input id="t_size" class="slider" type="range" min="1" max="100" value="50">
-        <div class="field" style="margin-top:8px;"><span>LEVERAGE MULTIPLIER</span><b id="t_lev_lbl" style="color:#10b981; font-weight:700;">100x</b></div>
-        <div id="t_lev_pills" class="quick" style="margin-bottom:8px;">
-          <button type="button" data-lev="1">1x</button>
-          <button type="button" data-lev="10">10x</button>
-          <button type="button" data-lev="20">20x</button>
-          <button type="button" data-lev="50">50x</button>
-          <button type="button" data-lev="80">80x</button>
-          <button type="button" data-lev="100" class="active">100x</button>
-        </div>
-        <div class="sum">
-          <div><span>Est. total</span><b id="t_total">$0.00</b></div>
-          <div><span>Fee (0.05%)</span><b id="t_fee">$0.00</b></div>
-          <div><span>Qty</span><b id="t_qty">—</b></div>
-          <div><span>Effective Exposure</span><b id="t_exposure" style="color:#10b981;">$10,000.00</b></div>
-        </div>
-        <button id="t_submit" class="go buy">⚡ Buy</button>
-        <div id="t_msg" class="msg"></div>
-        <p id="ticket_mode_desc" class="tiny">Paper trading · No real funds · Capital is virtual, prices are real.</p>
-        <div id="t_avail" class="avail">Available —</div>
       </aside>
-    </section>
 
-    <!-- ============================ tabs ============================ -->
-    <section class="card tabs" id="portfolio_section">
-      <div class="thead">
-        <div id="tabnav" class="tabnav_pills">
-          <button class="active" data-tab="positions">Positions <span id="badge_pos_count" class="tab_count_pill">0</span></button>
-          <button data-tab="orders">Open Orders <span id="badge_order_count" class="tab_count_pill">0</span></button>
-          <button data-tab="history">History <span id="badge_hist_count" class="tab_count_pill">0</span></button>
-          <button data-tab="analytics">Analytics</button>
-          <button data-tab="az_analysis" class="az_analysis_tab">A–Z Market Analysis</button>
-          <button data-tab="auto_scalping" class="auto_scalping_tab" style="background:linear-gradient(135deg, rgba(234,179,8,0.15), rgba(249,115,22,0.15)); border:1px solid rgba(234,179,8,0.4); color:#eab308; font-weight:700;">⚡ Auto Scalping V2.1</button>
-          <button data-tab="eod" class="eod_tab">EOD Report</button>
-          <button data-tab="ai_oracle" class="ai_oracle_tab">Araa AI Decisions</button>
-          <button data-tab="ai_prediction_hub" class="ai_prediction_tab" style="background:linear-gradient(135deg, rgba(59,130,246,0.15), rgba(147,51,234,0.15)); border:1px solid rgba(59,130,246,0.4); color:#60a5fa; font-weight:700;">🔮 AI Prediction &amp; Deep Analysis</button>
-          <button data-tab="coindcx_audit" class="coindcx_audit_tab" style="background:linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.15)); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-weight:700;">🛡️ CoinDCX Live Logs</button>
-        </div>
-        <div id="ws_badge" class="ws"><span class="ws_dot"></span> WS CONNECTED · 1,000 SYMBOLS · LIVE TRADINGVIEW</div>
-      </div>
-      <div id="tab_positions" class="tbody"></div>
-      <div id="tab_orders" class="tbody hide"></div>
-      <div id="tab_history" class="tbody hide"></div>
-      <div id="tab_analytics" class="tbody hide">
-        <div class="an_head">
-          <div><span class="k">EQUITY CURVE</span><b id="an_eq">—</b></div>
-          <div><span class="k">BEST / WORST</span><b id="an_bw">—</b></div>
-          <div><span class="k">AVG HOLD</span><b id="an_hold">—</b></div>
-          <div><span class="k">LOCKED MARGIN</span><b id="an_locked">—</b></div>
-        </div>
-        <canvas id="equity" class="equity"></canvas>
-        <div id="an_cats" class="an_cats"></div>
-      </div>
-      <div id="tab_az_analysis" class="tbody hide" style="padding:16px;">
-        <!-- Global Market Trading Sessions Hero Card -->
-        <div class="az_hero_card" style="background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,41,59,0.9)); border:1px solid rgba(var(--blue-rgb),.3); border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px; margin-bottom:12px;">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="font-size:22px;">🌐</span>
-              <div>
-                <b style="font-size:14px; color:var(--lime); letter-spacing:0.5px;">GLOBAL MARKET TRADING SESSIONS · REAL-TIME LIQUIDITY REGIME</b>
-                <div style="font-size:11px; color:var(--muted);">Automatic session tracking: Weekday markets trade institutional hours; Weekend routes to 24/7 high-volume assets.</div>
-              </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span id="az_session_regime_badge" style="background:var(--green-soft); border:1px solid rgba(var(--green-rgb),.4); color:var(--green); padding:4px 12px; border-radius:20px; font-weight:700; font-size:11px;">● LIVE REGIME</span>
-              <button id="tab_az_refresh" class="btn sm" style="background:var(--lime-fill, var(--lime)); color:#10200a; border:none; padding:6px 14px; border-radius:6px; font-weight:700; cursor:pointer;">⚡ Refresh Scan</button>
-            </div>
+      <!-- Watchlist Resizer -->
+      <div class="t-rz t-rz-wl" data-rz="wl" title="Drag to resize the watchlist" aria-hidden="true"></div>
+
+      <!-- 2. CENTER: Main SMC Chart Section -->
+      <section class="t-main" aria-label="Vision Trading Terminal chart">
+        <!-- Top Toolbar -->
+        <div class="t-bar">
+          <b class="t-name" title="Vision Trading Terminal">VISION</b>
+          <select id="symSel" class="sym-sel" aria-label="Symbol" tabindex="-1" aria-hidden="true">
+            <option value="BTCUSDT" selected>BTCUSDT</option>
+            <option value="ETHUSDT">ETHUSDT</option>
+            <option value="SOLUSDT">SOLUSDT</option>
+            <option value="XAUUSD">XAUUSD</option>
+            <option value="EURUSD">EURUSD</option>
+            <option value="GBPUSD">GBPUSD</option>
+            <option value="NAS100">NAS100</option>
+            <option value="US30">US30</option>
+          </select>
+          <button class="sym-btn" data-act="symSearch" aria-haspopup="dialog" title="Search symbols (/)">
+            <b id="symBtnS">BTCUSDT</b>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5"></path></svg>
+          </button>
+          <div class="tfs" role="group" aria-label="Timeframe">
+            <button data-tf="1m" title="1 minute" aria-pressed="false">1m</button>
+            <button data-tf="3m" title="3 minutes" aria-pressed="false">3m</button>
+            <button data-tf="5m" title="5 minutes" aria-pressed="false">5m</button>
+            <button data-tf="15m" title="15 minutes" class="active" aria-pressed="true">15m</button>
+            <button data-tf="30m" title="30 minutes" aria-pressed="false">30m</button>
+            <button data-tf="1h" title="1 hour" aria-pressed="false">1H</button>
+            <button data-tf="4h" title="4 hours" aria-pressed="false">4H</button>
+            <button data-tf="1d" title="1 day" aria-pressed="false">1D</button>
           </div>
-          <!-- Live Session Pills Bar -->
-          <div id="az_session_summary_pills" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px;"></div>
+          <div class="t-modes" role="group" aria-label="Chart mode">
+            <button data-ivmode="clean" aria-pressed="false" title="Clean: Candles only">Clean</button>
+            <button data-ivmode="standard" aria-pressed="false" title="Standard: Key zones and structure">Standard</button>
+            <button data-ivmode="advanced" class="active" aria-pressed="true" title="Advanced: Everything you switch on">Advanced</button>
+          </div>
+          <button class="qv-btn active" data-qv="toggle" aria-pressed="true" title="Quantum Vision: simulate 1,000 possible future paths">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 17c4 0 5-10 9-10s5 6 9 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M3 13c4 0 5-4 9-4s5 8 9 8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".55"></path></svg>
+            <span>QUANTUM VISION</span>
+          </button>
+          <button class="dna-btn active" data-dna="toggle" aria-pressed="true" title="Market DNA: similar historical patterns">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M7 3c0 6 10 6 10 12s-10 6-10 6M17 3c0 6-10 6-10 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M8.5 7h7M8.5 17h7M10 12h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".6"></path></svg>
+            <span>MARKET DNA</span>
+          </button>
+          <button class="lq-btn active" data-lq="toggle" aria-pressed="true" title="Liquidity heatmap: estimated liquidity zones">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="4" y="4" width="16" height="3" rx="1" fill="currentColor" opacity=".35"></rect><rect x="4" y="9" width="16" height="3" rx="1" fill="currentColor" opacity=".9"></rect><rect x="4" y="14" width="16" height="3" rx="1" fill="currentColor" opacity=".55"></rect><rect x="4" y="19" width="16" height="2" rx="1" fill="currentColor" opacity=".25"></rect></svg>
+            <span>LIQUIDITY</span>
+          </button>
+          <button type="button" class="sd-btn" data-sd="btn" aria-pressed="false" title="SD Levels: standard deviation bands">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 5h18M3 9.5h18M3 12h18M3 14.5h18M3 19h18" stroke="currentColor" stroke-width="1.6" fill="none" stroke-dasharray="2 2"></path><path d="M3 12h18" stroke="currentColor" stroke-width="2"></path></svg>
+            <span>SD Levels</span>
+          </button>
+          <button type="button" class="gex-btn" data-gex="btn" title="GEX levels: Call Wall, Put Wall, Zero Gamma" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 6h18M3 18h18" stroke="currentColor" stroke-width="1.6" fill="none" stroke-dasharray="3 2.5"></path><path d="M3 12h18" stroke="currentColor" stroke-width="1.6" fill="none" stroke-dasharray="1.5 2.5"></path><path d="M7 15.5c2-6 8-6 10 0" stroke="currentColor" stroke-width="1.6" fill="none"></path></svg>
+            <span>GEX</span>
+          </button>
+
+          <div class="t-ctl" role="group" aria-label="Chart controls">
+            <button data-act="zfit" title="Auto fit: every loaded candle" aria-label="Auto fit: every loaded candle"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"></path></svg></button>
+            <button data-act="refresh" title="Refresh chart data" aria-label="Refresh chart data"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"></path></svg></button>
+            <button data-act="shot" title="Screenshot (PNG)" aria-label="Screenshot (PNG)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8"></path></svg></button>
+          </div>
+          <div class="t-pnl" role="group" aria-label="Panels">
+            <button data-act="pWl" title="Show / hide the watchlist" aria-label="Show / hide the watchlist" aria-pressed="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM9 5v14"></path></svg></button>
+            <button data-act="pBt" title="Show / hide the bottom panel" aria-label="Show / hide the bottom panel" aria-pressed="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 14h16"></path></svg></button>
+            <button data-act="pAi" title="Show / hide the analysis panel" aria-label="Show / hide the analysis panel" aria-pressed="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM15 5v14"></path></svg></button>
+            <button data-act="pMax" title="Maximise the chart" aria-label="Maximise the chart" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"></path></svg></button>
+          </div>
         </div>
 
-        <div class="az_scan_header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; background:var(--panel2); padding:10px 14px; border-radius:8px; border:1px solid var(--line);">
-          <div>
-            <b style="font-size:13px; color:var(--text);">🔤 2-MINUTE A–Z MARKET SCANNER &amp; CANDIDATE SETUPS</b>
-            <div style="font-size:11px; color:var(--muted); margin-top:2px;">Scans all 1,000 assets A–Z across Forex, Metals, Stocks, Crypto, Indices. Generates institutional setups before trade entry.</div>
-          </div>
-          <span id="tab_az_stamp" class="tiny" style="color:var(--green); font-weight:700;"></span>
+        <!-- Sub Bar -->
+        <div class="t-sub" id="tsub">
+          <b class="t-sym" id="t_symbol">BTCUSDT</b>
+          <span class="mut" id="t_tf_badge">15M</span>
+          <span id="t_ohlc_sub">O <b id="t_sub_o">—</b> H <b id="t_sub_h">—</b> L <b id="t_sub_l">—</b> C <b id="t_sub_c" class="pos">—</b></span>
+          <span id="t_change_sub" class="pos">+0.00%</span>
+          <span class="mut" id="t_sub_clock">Live</span>
+          <span class="hm">Bid <b id="t_sub_bid">—</b></span>
+          <span>Ask <b id="t_sub_ask">—</b></span>
+          <span>Spread <b id="t_sub_spread">0.5</b></span>
+          <span class="live-badge" id="t_live_badge"><span class="dot" style="background:#22c55e;"></span><b>LIVE FEED</b></span>
+          <span id="t_candle_timer" style="margin-left:auto; font-family:var(--mono, monospace); font-size:11px; font-weight:800; color:#22c55e; background:rgba(34,197,94,0.12); padding:2px 8px; border-radius:4px; border:1px solid rgba(34,197,94,0.3);">00:00 FORMING</span>
         </div>
-        <div id="tab_az_panel" class="az"></div>
-      </div>
-      <div id="tab_ai_oracle" class="tbody hide">
-        <div class="ai_oracle_wrap">
-          <!-- Oracle Header Hero -->
-          <div class="oracle_hero_card">
-            <div class="oracle_hero_left">
-              <div class="oracle_title_row">
-                <span class="oracle_brain_icon">🧠</span>
-                <h3>ARAA AI 3.8 / 2.5 FLASH TRADING ORACLE</h3>
-                <span id="gemini_tab_badge" class="oracle_status_badge">● ARAA AI 3.8 LIVE CONNECTED</span>
-              </div>
-              <div class="oracle_key_connect_bar" style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                <div style="display:inline-flex; align-items:center; gap:8px; background:var(--green-soft); border:1px solid rgba(var(--green-rgb),.35); padding:6px 14px; border-radius:20px;">
-                  <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 10px var(--green); animation:pulse 1.8s infinite;"></span>
-                  <span style="color:var(--green); font-weight:700; font-size:11px; letter-spacing:0.5px;">● ARAA AI BOT LIVE ENGINE · AUTOMATICALLY CONNECTED FOR ALL USERS</span>
-                </div>
-                <span id="tab_gemini_key_status" class="tiny" style="color:var(--blue); font-weight:600; font-size:11px;">100% Win Expectancy Filter Active · Non-Profit Setups Auto-Rejected</span>
-              </div>
-            </div>
-            <div class="oracle_hero_right" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-              <button type="button" onclick="window.runBotTrainingFromDrawer && window.runBotTrainingFromDrawer()" style="background:linear-gradient(135deg, #a855f7 0%, #2563eb 100%); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:11.5px; font-weight:800; cursor:pointer; box-shadow:0 0 14px rgba(168,85,247,0.4);">
-                🧠 Train &amp; Calibrate AI Now
-              </button>
-              <button type="button" onclick="window.openBotTrainerStudio && window.openBotTrainerStudio()" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8; border-radius:8px; padding:7px 14px; font-size:11.5px; font-weight:800; cursor:pointer;">
-                🎛️ Custom Strategy Studio
-              </button>
-              <span id="oracle_log_stamp" class="oracle_stamp_tag">Updated Live</span>
-            </div>
-          </div>
 
-          <!-- Connected Self-Learning Walk-Forward Trainer Strip inside Araa AI Decisions -->
-          <div style="background:linear-gradient(135deg, rgba(88,28,135,0.18), rgba(15,23,42,0.9)); border:1px solid rgba(168,85,247,0.4); border-radius:12px; padding:12px 16px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              <span style="font-size:18px;">🧠</span>
-              <div>
-                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                  <b style="font-size:12.5px; color:#f8fafc;">SELF-LEARNING WALK-FORWARD TRAINER CONNECTED TO ARAA AI DECISIONS</b>
-                  <span id="oracle_tr_gen_badge" style="background:rgba(168,85,247,0.25); border:1px solid #a855f7; color:#e9d5ff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px;">GEN #1</span>
-                  <span id="oracle_tr_wr_badge" style="background:rgba(16,185,129,0.2); border:1px solid #10b981; color:#10b981; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px;">--% CALIBRATED WIN RATE</span>
-                </div>
-                <div id="oracle_tr_summary_line" style="font-size:11px; color:#cbd5e1; margin-top:3px; font-family:var(--mono);">
-                  Learned Weights: EMA 34% · RSI 24% · MACD 24% · VOL 18% | Positive Money-Making Priority Coins Active
-                </div>
-              </div>
-            </div>
-            <span style="font-size:10.5px; color:#10b981; font-weight:800; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); padding:4px 10px; border-radius:8px;">
-              🟢 Auto-Learning on Every Closed Trade
-            </span>
+        <!-- Chart Body -->
+        <div class="t-body">
+          <!-- Canvas Drawing Toolbar -->
+          <div class="cd-bar" id="cdBar" role="toolbar" aria-label="Drawing tools" aria-orientation="vertical">
+            <div class="cd-g" data-cdgrp="pointer"><button data-cdt="cross" title="Crosshair" class="active" aria-label="Crosshair" aria-pressed="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18"></path></svg></button></div>
+            <div class="cd-g" data-cdgrp="lines"><button data-cdt="trend" title="Trend line" aria-label="Trend line" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20L20 4"></path></svg></button></div>
+            <div class="cd-g" data-cdgrp="shapes"><button data-cdt="rect" title="Rectangle / Order Block Zone" aria-label="Rectangle" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v12H4z"></path></svg></button></div>
+            <div class="cd-g" data-cdgrp="fib"><button data-cdt="fib" title="Fibonacci retracement" aria-label="Fibonacci retracement" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18M3 10h18M3 14h18M3 19h18"></path></svg></button></div>
+            <div class="cd-g" data-cdgrp="measure"><button data-cdt="prange" title="Price range / Pip Ruler" aria-label="Price range" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"></path></svg></button></div>
+            <div class="cd-g" data-cdgrp="position"><button data-cdt="long" title="Long position risk tool" aria-label="Long position" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14h16M4 14V5h16v9M4 14v5h16v-5"></path></svg></button></div>
+            <div class="cd-g" data-cdgrp="eraser"><button data-cdt="eraser" title="Eraser" aria-label="Eraser" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3l5 5-11 11H5l-2-2 13-14zM9 9l6 6"></path></svg></button></div>
+            <span class="cd-sep"></span>
+            <button data-cda="magnet" class="cd-mag" title="Magnet mode" aria-label="Magnet mode" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v8a6 6 0 0 0 12 0V3h-4v8a2 2 0 0 1-4 0V3zM6 7h4M14 7h4"></path></svg></button>
+            <button data-cda="clear" title="Clear drawings" aria-label="Clear drawings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg></button>
           </div>
 
-          <!-- 4-Stage TradingView + SMC/DNA -> CoinDCX / Paper Auto-Scalp Workflow Pipeline -->
-          <div id="oracle_workflow_panel" style="background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(6,78,59,0.22)); border:1px solid rgba(16,185,129,0.35); border-radius:12px; padding:14px 16px; margin-bottom:14px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span style="font-size:15px;">⚡</span>
-                <b style="font-size:12.5px; color:#f8fafc; letter-spacing:0.03em;">LIVE RULE-ONLY EXECUTION WORKFLOW (TRADINGVIEW + SMC + DNA → COINDCX / PAPER)</b>
+          <!-- Main SMC Chart Container -->
+          <div class="t-chart" id="chartHost" style="position:relative; width:100%; height:100%; overflow:hidden;">
+            <canvas id="chart" class="canvas" style="position:absolute; inset:0; width:100%; height:100%;"></canvas>
+            <canvas id="smc_ov_canvas" class="canvas" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:auto; cursor:crosshair;"></canvas>
+            
+            <!-- Quantum Vision Projection HUD -->
+            <div id="qvPanel" class="qv-overlay" style="display:none; position:absolute; top:12px; left:16px; background:rgba(19,19,31,0.92); border:1px solid rgba(139,92,246,0.35); border-radius:10px; padding:12px 16px; width:300px; box-shadow:0 8px 24px rgba(0,0,0,0.5); backdrop-filter:blur(8px); z-index:20;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <b style="font-size:12px; color:var(--violet, #8b5cf6); letter-spacing:0.5px;">⚡ QUANTUM VISION · 1,000 PATHS</b>
+                <button class="mini" onclick="document.getElementById('qvPanel').style.display='none'">✕</button>
               </div>
-              <span id="oracle_wf_mode_badge" style="font-size:10.5px; font-weight:800; padding:3px 10px; border-radius:12px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8;">
-                DETECTING MODE...
+              <div style="font-size:11px; color:var(--muted); margin-bottom:8px;">Monte Carlo Stochastic Drift Analysis</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px;">
+                <div>Bull Probability: <b class="pos" id="qv_bull_prob">68.4%</b></div>
+                <div>Bear Probability: <b class="neg" id="qv_bear_prob">31.6%</b></div>
+                <div>Target Invalidation: <b id="qv_proj_high">SSL Sweep</b></div>
+                <div>OTE Fib Level: <b id="qv_proj_low">61.8%</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Replay Toolbar -->
+        <div class="t-replay" id="replay">
+          <span class="rp-badge">REPLAY</span>
+          <label class="inl">Date <input type="date" id="rpDate"></label>
+          <label class="inl">Time <input type="time" id="rpTime"></label>
+          <select id="rpTf" aria-label="Replay timeframe">
+            <option selected>15m</option><option>1m</option><option>5m</option><option>1h</option><option>4h</option><option>1d</option>
+          </select>
+          <button class="mini" id="replayGo">Go</button>
+          <button class="mini" id="replayReset">Reset</button>
+          <button class="mini" id="replayBack">◀</button>
+          <button class="mini" id="replayPlay">Play</button>
+          <button class="mini" id="replayStep">▶ +1</button>
+          <select id="rspeed" aria-label="Replay speed">
+            <option value="0.5">0.5×</option><option value="1">1×</option><option value="2" selected>2×</option><option value="5">5×</option><option value="10">10×</option>
+          </select>
+          <input type="range" id="rpos" min="0" max="100" value="100" style="flex:1;" />
+          <button class="mini" id="replayExit">Exit Replay</button>
+        </div>
+      </section>
+
+      <!-- AI Panel Resizer -->
+      <div class="t-rz t-rz-ai" data-rz="ai" title="Drag to resize the analysis panel" aria-hidden="true"></div>
+
+      <!-- 3. RIGHT: AI Analysis Sidebar -->
+      <aside class="t-ai panel-t" aria-label="Market strength and analysis">
+        <div class="tabs" role="tablist">
+          <button role="tab" class="active" data-rt="strength" aria-selected="true">Market Strength</button>
+          <button role="tab" data-rt="scenarios" aria-selected="false">Scenarios &amp; Zones</button>
+          <button role="tab" data-rt="structure" aria-selected="false">Structure</button>
+          <button class="t-x" data-act="pAi" title="Collapse the analysis panel"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>
+        </div>
+        <div class="t-scroll" id="rpane">
+          <div class="iva-head">
+            <div class="ai-logo" style="width:26px; height:26px; background:linear-gradient(120deg,#9B5CFF,#3D7BFF); border-radius:6px;"></div>
+            <div>
+              <h2 style="font-size:13.5px; margin:0; font-weight:800;">Araa Vision AI</h2>
+              <p style="font-size:10.5px; color:var(--muted); margin:2px 0 0;" id="iva_header_sub">MARKET STRENGTH &amp; SMC CONFLUENCE</p>
+            </div>
+          </div>
+
+          <!-- Direction Section -->
+          <section class="iva-sec">
+            <h4 style="font-size:12px; margin-bottom:6px;">Direction <small style="color:var(--muted); font-size:10px;">how the evidence leans</small></h4>
+            <div class="iva-bs">
+              <div class="iva-bs-row"><span>BUY STRENGTH</span><b class="pos" id="iva_buy_pct">68%</b></div>
+              <div class="iva-bar"><i class="b" id="iva_buy_bar" style="width:68%"></i><i class="s" id="iva_sell_bar" style="width:32%"></i></div>
+              <div class="iva-bs-row"><span>SELL STRENGTH</span><b class="neg" id="iva_sell_pct">32%</b></div>
+            </div>
+            <div class="iva-tiles">
+              <div class="iva-t"><small>Market Bias</small><b><span class="pos" id="iva_bias_badge">BULLISH</span></b><span id="iva_net_score">net +0.48</span></div>
+              <div class="iva-t"><small>Higher-TF Alignment</small><b id="iva_htf_align">Bullish</b><span id="iva_htf_sub">4H &amp; 1D aligned</span></div>
+            </div>
+          </section>
+
+          <!-- Analysis Quality -->
+          <section class="iva-sec">
+            <h4 style="font-size:12px; margin-bottom:6px;">Analysis Quality <small style="color:var(--muted); font-size:10px;">confidence &amp; agreement</small></h4>
+            <div class="iva-q"><span>Analysis confidence</span><b id="iva_conf_txt">High · 88%</b><div class="iva-bar sm"><i class="b" id="iva_conf_bar" style="width:88%"></i></div><small>data quality and agreement</small></div>
+            <div class="iva-q"><span>Confluence score</span><b id="iva_confluence_txt">78/100</b><div class="iva-bar sm"><i class="b" id="iva_confluence_bar" style="width:78%"></i></div><small>share of evidence agreeing with bias</small></div>
+          </section>
+
+          <!-- Market Condition -->
+          <section class="iva-sec">
+            <h4 style="font-size:12px; margin-bottom:6px;">Market Condition</h4>
+            <div class="iva-tiles">
+              <div class="iva-t"><small>Trend Strength</small><b id="iva_trend_adx">Strong</b><span id="iva_adx_sub">ADX 28.4</span></div>
+              <div class="iva-t"><small>Market Regime</small><b id="iva_regime_txt">Expansion</b><span id="iva_regime_sub">High volume breakout</span></div>
+              <div class="iva-t"><small>Volatility</small><b id="iva_volatility_txt">Moderate</b><span id="iva_atr_sub">ATR 1.25x avg</span></div>
+            </div>
+          </section>
+
+          <!-- Confirmed Structure Events -->
+          <section class="iva-sec">
+            <h4 style="font-size:12px; margin-bottom:6px;">Structure Events</h4>
+            <div class="iva-t"><small>Latest Structure Event</small><b><span class="pos" id="iva_latest_event">Bullish CHoCH</span></b><span id="iva_latest_event_sub">15m confirmed · internal</span></div>
+            <ul class="iva-ev-list" id="iva_ev_list">
+              <li><time>Live</time>Sell-side liquidity swept: SSL (swing low)</li>
+              <li><time>15m</time>Bullish Order Block formed (strength 84)</li>
+              <li><time>1h</time>Bullish FVG formed at discount</li>
+            </ul>
+          </section>
+
+          <!-- Quick 1-Click Execution Ticket -->
+          <section class="iva-sec" style="background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; padding:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <b style="font-size:11px; letter-spacing:0.5px; color:var(--text);">QUICK EXECUTE (COINDCX LIVE)</b>
+              <span style="font-size:9.5px; font-weight:800; color:#10b981; background:rgba(16,185,129,0.12); padding:1px 6px; border-radius:4px; border:1px solid rgba(16,185,129,0.3);">LEV 500x READY</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; font-size:11px;">
+              <div>SL: <b id="quick_sl_price" style="color:#ef4444; font-family:var(--mono, monospace);">$91,200.00</b></div>
+              <div>TP: <b id="quick_tp_price" style="color:#10b981; font-family:var(--mono, monospace);">$95,800.00</b></div>
+              <div>RR: <b id="quick_rr_ratio" style="color:var(--text);">1:2.4</b></div>
+              <div>Qty: <b id="quick_qty_disp" style="color:var(--text); font-family:var(--mono, monospace);">0.05 BTC</b></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <button id="btn_quick_buy" style="background:var(--mint, #22C55E); color:#000; font-weight:900; font-size:12px; padding:8px; border-radius:6px; border:none; cursor:pointer;" onclick="quickExecuteTrade('BUY')">▲ BUY / LONG</button>
+              <button id="btn_quick_sell" style="background:var(--rose, #F87171); color:#fff; font-weight:900; font-size:12px; padding:8px; border-radius:6px; border:none; cursor:pointer;" onclick="quickExecuteTrade('SELL')">▼ SELL / SHORT</button>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- Bottom Dock Resizer -->
+      <div class="t-rz t-rz-bt" data-rz="bt" title="Drag to resize the bottom panel" aria-hidden="true"></div>
+
+      <!-- 4. BOTTOM: Structure Timeline & Dock -->
+      <section class="t-bottom panel-t">
+        <div class="tabs" role="tablist">
+          <button role="tab" class="active" data-bt="feed" aria-selected="true">Structure Timeline</button>
+          <button role="tab" data-bt="sessions" aria-selected="false">Sessions &amp; Killzones</button>
+          <button role="tab" data-bt="positions" aria-selected="false">Open Positions &amp; Orders</button>
+          <button role="tab" data-bt="bot_logs" aria-selected="false">AI Committee Logs</button>
+          <button class="t-x" data-act="pBt" title="Collapse the bottom panel"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+        </div>
+        <div class="t-scroll" id="bpane">
+          <!-- Feed Tab: Confirmed SMC Events Table -->
+          <div id="bt_tab_feed" class="bt-tab-pane">
+            <div class="feed-h">
+              <span class="mut" style="font-size:11px;">Confirmed events from closed candles, newest first. Time = candle close (Asia/Kolkata).</span>
+              <span class="iva-fl">
+                <select id="ivaTlType" aria-label="Event type">
+                  <option value="all" selected>All events</option>
+                  <option value="structure">BOS / CHoCH / MSS</option>
+                  <option value="sweep">Liquidity sweeps &amp; grabs</option>
+                  <option value="fvg">FVG formation</option>
+                  <option value="ob">Order Block formation</option>
+                  <option value="mitigated">Zone mitigation</option>
+                </select>
+                <select id="ivaTlTf" aria-label="Timeframe">
+                  <option>1d</option><option>4h</option><option>1h</option><option>30m</option><option selected>15m</option><option>5m</option><option>1m</option>
+                </select>
               </span>
             </div>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; margin-bottom:12px;">
-              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.35); border-radius:10px; padding:10px 12px;">
-                <div style="font-size:10px; font-weight:800; color:#38bdf8; margin-bottom:4px;">STEP 1 · TRADINGVIEW AI</div>
-                <div style="font-size:12px; font-weight:700; color:#f1f5f9;">1s + 1m + 5m Consensus</div>
-                <div id="oracle_wf_step1" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Real-time 1s tick + 1m/5m TV signals</div>
-              </div>
-              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(168,85,247,0.35); border-radius:10px; padding:10px 12px;">
-                <div style="font-size:10px; font-weight:800; color:#c084fc; margin-bottom:4px;">STEP 2 · SMC + MARKET DNA</div>
-                <div style="font-size:12px; font-weight:700; color:#f1f5f9;">Order Block + Twin Match</div>
-                <div id="oracle_wf_step2" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Institutional OB / FVG &amp; DNA % gate</div>
-              </div>
-              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:10px 12px;">
-                <div style="font-size:10px; font-weight:800; color:#34d399; margin-bottom:4px;">STEP 3 · RULE-ONLY ORDER</div>
-                <div id="oracle_wf_step3_title" style="font-size:12px; font-weight:700; color:#f1f5f9;">CoinDCX API / Paper Gate</div>
-                <div id="oracle_wf_step3" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Executes only when Step 1 &amp; 2 agree</div>
-              </div>
-              <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(251,191,36,0.35); border-radius:10px; padding:10px 12px;">
-                <div style="font-size:10px; font-weight:800; color:#fbbf24; margin-bottom:4px;">STEP 4 · AUTO-SCALP EXIT</div>
-                <div style="font-size:12px; font-weight:700; color:#f1f5f9;">+$0.10 Lock → +$0.90 / +$1.00</div>
-                <div id="oracle_wf_step4" style="font-size:10.5px; color:#94a3b8; margin-top:3px;">Target +$1.00 · Profit-Only Hold</div>
-              </div>
-            </div>
-            <div id="oracle_wf_live_strip" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:11px; color:#cbd5e1;">
-              <span style="color:#94a3b8;">Loading live workflow telemetry...</span>
-            </div>
-          </div>
-
-          <!-- Oracle Stat Cards Grid: Real Out-Of-Sample Accuracy Tracking -->
-          <div class="oracle_stat_grid">
-            <div class="oracle_stat_card">
-              <span class="stat_label">PREDICTION ENGINE</span>
-              <div id="oracle_engine_mode" class="stat_val" style="color:var(--lime); font-size:16px;">ARAA NEURAL v4.2</div>
-              <span id="oracle_model_name" class="stat_hint">GRU + Autoregressive Ensemble</span>
-            </div>
-            <div class="oracle_stat_card">
-              <span class="stat_label">DIRECTIONAL ACCURACY</span>
-              <div id="oracle_dir_acc" class="stat_val" style="color:var(--green);">--%</div>
-              <span id="oracle_acc_sub" class="stat_hint">Walk-Forward Test Verification</span>
-            </div>
-            <div class="oracle_stat_card">
-              <span class="stat_label">BRIER CALIBRATION SCORE</span>
-              <div id="oracle_brier_score" class="stat_val" style="color:var(--amber);">--</div>
-              <span class="stat_hint">Well-Calibrated Bayesian Probabilities</span>
-            </div>
-            <div class="oracle_stat_card">
-              <span class="stat_label">95% INTERVAL COVERAGE</span>
-              <div id="oracle_interval_cov" class="stat_val green">--%</div>
-              <span class="stat_hint">Net Gain After Fees &amp; Slippage</span>
-            </div>
-          </div>
-
-          <!-- Predictions Table Card -->
-          <div class="oracle_table_card">
-            <div class="oracle_card_header" style="flex-wrap:wrap; gap:10px;">
-              <div class="header_title_group">
-                <span class="card_dot green"></span>
-                <b>PRE-ENTRY PREDICTIONS &amp; LIVE AUDIT TRAIL</b>
-                <span id="oracle_weekend_filter_tag" style="background:var(--green-soft); color:var(--green); border:1px solid rgba(var(--green-rgb),.4); padding:2px 10px; border-radius:12px; font-size:11px; font-weight:700; margin-left:8px;">
-                  🟢 LIVE CRYPTO 24/7 ONLY (WEEKEND ROUTE)
-                </span>
-              </div>
-              <span id="oracle_pred_count" class="table_count_badge">0 decisions logged</span>
-            </div>
-            <div class="oracle_table_responsive">
-              <table class="tbl oracle_tbl">
-                <thead>
-                  <tr>
-                    <th class="th_time" scope="col">Time</th>
-                    <th class="th_asset" scope="col">Asset</th>
-                    <th class="th_act" scope="col">Action</th>
-                    <th class="r th_price" scope="col">Entry Zone</th>
-                    <th class="r th_price" scope="col">Target (TP)</th>
-                    <th class="r th_price" scope="col">Stop (SL)</th>
-                    <th class="r th_rr" scope="col">R:R</th>
-                    <th class="r th_win" scope="col">Win Prob</th>
-                    <th class="th_status" scope="col">Status</th>
-                    <th class="r th_outcome" scope="col">Outcome / P&amp;L</th>
-                  </tr>
-                </thead>
-                <tbody id="oracle_predictions_tbody">
-                  <tr><td colspan="10" class="empty">No AI trade predictions recorded yet. Turn ON the AI Bot to generate live predictions.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Real-Time Decision Logs Card -->
-          <div class="oracle_table_card">
-            <div class="oracle_card_header">
-              <div class="header_title_group">
-                <span class="card_dot blue"></span>
-                <b>REAL-TIME NEURAL DECISION &amp; SIGNAL AUDIT STREAM</b>
-              </div>
-              <span class="table_count_badge">Continuous Neural Stream</span>
-            </div>
-            <div id="oracle_decision_logs" class="oracle_logs_container"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============================ TAB: COINDCX LIVE LOGS & EXECUTION AUDIT ============================ -->
-      <div id="tab_coindcx_audit" class="tbody hide" style="padding:16px;">
-        <div class="card" style="background:linear-gradient(135deg, rgba(15,23,42,0.98), rgba(30,41,59,0.92)); border:1px solid rgba(16,185,129,0.35); border-radius:12px; padding:18px; margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:16px;">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <span style="font-size:28px;">🛡️</span>
-              <div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <b style="font-size:16px; color:#34d399; letter-spacing:0.5px;">COINDCX LIVE REAL-TIME EXECUTION &amp; RISK AUDIT STREAM</b>
-                  <span style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">LIVE EXCHANGE AUDIT</span>
-                  <span id="coindcx_logs_live_status" style="background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">● LIVE 2S STREAM</span>
-                </div>
-                <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">
-                  Real-time feed of live order intents, 3-Agent AI Committee scans, entry skip/block reasons, exchange fills, and broker responses.
-                </div>
-              </div>
-            </div>
-            <button type="button" onclick="if(window.refreshCoinDcxAuditLogs){window.refreshCoinDcxAuditLogs();}" style="background:rgba(16,185,129,0.2); border:1px solid #10b981; color:#34d399; font-weight:700; font-size:11px; padding:6px 14px; border-radius:6px; cursor:pointer;">↻ Refresh Audit Feed</button>
-          </div>
-          <div id="tab_coindcx_audit_logs_list" style="overflow-y:visible; display:flex; flex-direction:column; gap:8px; font-family:'JetBrains Mono',monospace; font-size:11.5px; padding-bottom:12px;">
-            <div style="text-align:center; padding:24px; color:#64748b;">Loading live CoinDCX audit events...</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============================ TAB: AI PREDICTION & DEEP ANALYSIS HUB ============================ -->
-      <div id="tab_ai_prediction_hub" class="tbody hide" style="padding:16px;">
-        <div class="card" style="background:linear-gradient(135deg, rgba(15,23,42,0.98), rgba(30,41,59,0.92)); border:1px solid rgba(59,130,246,0.35); border-radius:12px; padding:18px; margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:16px;">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <span style="font-size:28px;">🔮</span>
-              <div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <b style="font-size:16px; color:#60a5fa; letter-spacing:0.5px;">ARAA ADVANCED PREDICTION &amp; DEEP ANALYSIS ENGINE</b>
-                  <span style="background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.4); color:#60a5fa; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">ARAA-NEURAL-ENSEMBLE-V4.2</span>
-                  <span id="pred_shock_badge" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); color:#10b981; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">MARKET SHOCK SHIELD ACTIVE</span>
-                </div>
-                <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">
-                  Pre-Entry Bayesian Forecasting · Multi-Horizon Drift Cones · Forensic Loss Analytics · Adaptive Strategy Proposals
-                </div>
-              </div>
-            </div>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <select id="pred_symbol_select" style="background:#0f172a; color:#fff; border:1px solid #334155; padding:6px 12px; border-radius:6px; font-size:12px;">
-                <option value="BTCUSDT">BTC/USDT</option>
-                <option value="ETHUSDT">ETH/USDT</option>
-                <option value="SOLUSDT">SOL/USDT</option>
-              </select>
-              <button id="btn_run_deep_prediction" class="btn sm" style="background:#2563eb; color:#fff; font-weight:700; padding:6px 14px; border:none; border-radius:6px; cursor:pointer;">⚡ Run Deep Prediction</button>
-            </div>
-          </div>
-
-          <!-- Section A: Live Market Prediction Cards -->
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin-bottom:16px;">
-            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
-              <div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Predicted Direction</div>
-              <div id="pred_direction_val" style="font-size:20px; font-weight:800; color:#10b981; margin-top:4px;">UP (BULLISH)</div>
-              <div id="pred_horizon_val" style="font-size:11px; color:#94a3b8; margin-top:2px;">Horizon: 15 to 45 mins</div>
-            </div>
-            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
-              <div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Confidence Calibration</div>
-              <div id="pred_confidence_val" style="font-size:20px; font-weight:800; color:#38bdf8; margin-top:4px;">78.5% (High)</div>
-              <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Brier Score: 0.14 (Well-Calibrated)</div>
-            </div>
-            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
-              <div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Market Regime &amp; Shock</div>
-              <div id="pred_regime_val" style="font-size:20px; font-weight:800; color:#eab308; margin-top:4px;">TRENDING_BULL</div>
-              <div id="pred_shock_val" style="font-size:11px; color:#10b981; margin-top:2px;">Shock Status: Normal (No Flash Anomaly)</div>
-            </div>
-            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
-              <div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Probabilities (Up / Down / Flat)</div>
-              <div id="pred_probs_val" style="font-size:16px; font-weight:700; color:#cbd5e1; margin-top:6px;">62.4% / 24.1% / 13.5%</div>
-              <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Breakout Prob: 58% · Reversal: 18%</div>
-            </div>
-          </div>
-
-          <!-- Section B: Live Position Deep Analysis -->
-          <div style="margin-top:18px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <b style="font-size:13px; color:#cbd5e1;">LIVE POSITION DEEP ANALYSIS &amp; THESIS MONITOR</b>
-              <span style="font-size:11px; color:var(--muted);">Continuous Health &amp; Invalidation Check</span>
-            </div>
-            <div id="deep_positions_container" style="display:flex; flex-direction:column; gap:8px;">
-              <div style="padding:16px; text-align:center; color:var(--muted); font-size:12px; background:rgba(0,0,0,0.2); border-radius:6px;">
-                No active open positions. Live positions will be continuously evaluated here with AI thesis monitoring.
-              </div>
-            </div>
-          </div>
-
-          <!-- Section C: Trade Learning & Loss Forensic Analysis -->
-          <div style="margin-top:22px; border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <b style="font-size:13px; color:#cbd5e1;">TRADE LEARNING &amp; LOSS FORENSICS (POST-TRADE AUDIT)</b>
-              <button id="btn_request_proposal" class="btn sm" style="background:rgba(147,51,234,0.2); border:1px solid rgba(147,51,234,0.5); color:#c084fc; font-weight:700; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer;">💡 Request Strategy Improvement Proposal</button>
-            </div>
-            <div id="trade_learning_summary" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:12px;">
-              <div style="background:rgba(0,0,0,0.25); border-radius:6px; padding:10px;"><div style="font-size:10px; color:var(--muted);">TOTAL CLOSED TRADES</div><div id="tl_total_trades" style="font-size:18px; font-weight:800; color:#fff;">--</div></div>
-              <div style="background:rgba(0,0,0,0.25); border-radius:6px; padding:10px;"><div style="font-size:10px; color:var(--muted);">WIN RATE</div><div id="tl_win_rate" style="font-size:18px; font-weight:800; color:#10b981;">--%</div></div>
-              <div style="background:rgba(0,0,0,0.25); border-radius:6px; padding:10px;"><div style="font-size:10px; color:var(--muted);">PROFIT FACTOR</div><div id="tl_profit_factor" style="font-size:18px; font-weight:800; color:#38bdf8;">--</div></div>
-              <div style="background:rgba(0,0,0,0.25); border-radius:6px; padding:10px;"><div style="font-size:10px; color:var(--muted);">NET REALIZED P&amp;L</div><div id="tl_net_pnl" style="font-size:18px; font-weight:800; color:#fff;">$--</div></div>
-            </div>
-            <div id="recent_loss_forensics" style="background:rgba(0,0,0,0.2); border-radius:6px; padding:12px; font-size:12px; color:#94a3b8;">
-              Awaiting confirmed completed trades for algorithmic root-cause loss analysis.
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============================ TAB: AUTO SCALPING V2.1 ============================ -->
-      <div id="tab_auto_scalping" class="tbody hide" style="padding:16px;">
-        <!-- Hero Header & Global Scalp Engine Controller -->
-        <div class="card" style="background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,41,59,0.9)); border:1px solid rgba(234,179,8,0.35); border-radius:12px; padding:18px; margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:14px;">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <span style="font-size:26px;">⚡</span>
-              <div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <b style="font-size:15px; color:#eab308; letter-spacing:0.5px;">ARAABOT V2.1 ADVANCED AUTO SCALPING ENGINE</b>
-                  <span id="scalp_engine_badge" style="background:rgba(234,179,8,0.15); border:1px solid rgba(234,179,8,0.4); color:#eab308; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">100% PYTHON RULES ENFORCED</span>
-                  <span id="scalp_coindcx_badge" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); color:#10b981; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">COINDCX FUTURES ACTIVE</span>
-                </div>
-                <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
-                  Araa AI Analyzes · Scalping Engine Identifies Opportunities · Python Rules Approve · Risk Engine Validates · CoinDCX Executes
-                </div>
-              </div>
-            </div>
-            <!-- Engine Action Controls -->
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-              <button id="btn_scalp_enable" class="btn sm primary" style="background:#10b981; color:#fff; font-weight:700; padding:6px 14px; border:none; border-radius:6px; cursor:pointer;">▶ Enable Auto Scalping</button>
-              <button id="btn_scalp_pause" class="btn sm" style="background:rgba(234,179,8,0.2); border:1px solid #eab308; color:#eab308; font-weight:600; padding:6px 12px; border-radius:6px; cursor:pointer;">⏸ Pause</button>
-              <button id="btn_scalp_resume" class="btn sm" style="background:rgba(59,130,246,0.2); border:1px solid #3b82f6; color:#3b82f6; font-weight:600; padding:6px 12px; border-radius:6px; cursor:pointer;">▶ Resume</button>
-              <button id="btn_scalp_stop" class="btn sm" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; font-weight:600; padding:6px 12px; border-radius:6px; cursor:pointer;">⏹ Stop</button>
-              <button id="btn_scalp_emergency" class="btn sm" style="background:#ef4444; color:#fff; font-weight:700; padding:6px 14px; border:none; border-radius:6px; cursor:pointer;">🚨 EMERGENCY STOP</button>
-              <button id="btn_scalp_trigger_cycle" class="btn sm ghost" style="border:1px solid rgba(255,255,255,0.2); padding:6px 10px; font-size:11px; border-radius:6px; cursor:pointer;">🔄 Run Cycle</button>
-            </div>
-          </div>
-
-          <!-- Configuration Strip -->
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; background:rgba(0,0,0,0.2); padding:12px; border-radius:8px;">
-            <div>
-              <span class="tiny" style="color:var(--muted); display:block;">SELECTED INSTRUMENT</span>
-              <select id="scalp_symbol_select" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
-                <option value="BTCUSDT" selected>BTCUSDT (Bitcoin Futures)</option>
-                <option value="ETHUSDT">ETHUSDT (Ethereum Futures)</option>
-                <option value="SOLUSDT">SOLUSDT (Solana Futures)</option>
-                <option value="XRPUSDT">XRPUSDT (Ripple Futures)</option>
-                <option value="DOGEUSDT">DOGEUSDT (Dogecoin Futures)</option>
-              </select>
-            </div>
-            <div>
-              <span class="tiny" style="color:var(--muted); display:block;">SCALPING STRATEGY</span>
-              <select id="scalp_strategy_select" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
-                <option value="ARAA_AI_SCALPING" selected>E. Araa AI Confluence Scalping</option>
-                <option value="EMA_MOMENTUM_SCALPING">A. EMA Momentum Scalping (9/21/50)</option>
-                <option value="RSI_MOMENTUM_SCALPING">B. RSI Momentum Scalping (RSI 14)</option>
-                <option value="MACD_SCALPING">C. MACD Crossover Scalping</option>
-                <option value="BREAKOUT_SCALPING">D. Breakout & Retest Scalping</option>
-              </select>
-            </div>
-            <div>
-              <span class="tiny" style="color:var(--muted); display:block;">ENTRY TIMEFRAME (TRIGGER)</span>
-              <select id="scalp_entry_tf" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
-                <option value="1m" selected>1-Minute (1M Entry Trigger)</option>
-                <option value="3m">3-Minute (3M Entry Trigger)</option>
-                <option value="5m">5-Minute (5M Entry Trigger)</option>
-              </select>
-            </div>
-            <div>
-              <span class="tiny" style="color:var(--muted); display:block;">SETUP TIMEFRAME (CONFIRMATION)</span>
-              <select id="scalp_setup_tf" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
-                <option value="3m">3-Minute Setup</option>
-                <option value="5m" selected>5-Minute Setup (Recommended)</option>
-                <option value="15m">15-Minute Setup</option>
-              </select>
-            </div>
-            <div>
-              <span class="tiny" style="color:var(--muted); display:block;">TREND TIMEFRAME (FILTER)</span>
-              <select id="scalp_trend_tf" style="width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:12px; font-weight:600; margin-top:3px;">
-                <option value="15m" selected>15-Minute Trend Filter</option>
-                <option value="1h">1-Hour Trend Filter</option>
-                <option value="4h">4-Hour Trend Filter</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Real-Time Market Analysis & Signal Confluence Strip -->
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:16px;">
-          <!-- Technical Indicators Box -->
-          <div class="card" style="padding:14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <b style="font-size:12.5px; color:var(--text);">📊 TECHNICAL INDICATORS</b>
-              <span id="scalp_trend_pill" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10b981;">BULLISH</span>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11.5px;">
-              <div><span class="tiny" style="color:var(--muted);">RSI 14:</span> <b id="scalp_val_rsi" style="color:#eab308;">54.20</b></div>
-              <div><span class="tiny" style="color:var(--muted);">EMA 9:</span> <b id="scalp_val_ema9">$0.00</b></div>
-              <div><span class="tiny" style="color:var(--muted);">EMA 21:</span> <b id="scalp_val_ema21">$0.00</b></div>
-              <div><span class="tiny" style="color:var(--muted);">EMA 50:</span> <b id="scalp_val_ema50">$0.00</b></div>
-              <div><span class="tiny" style="color:var(--muted);">MACD Hist:</span> <b id="scalp_val_macd" style="color:#10b981;">+0.0000</b></div>
-              <div><span class="tiny" style="color:var(--muted);">Relative Vol:</span> <b id="scalp_val_vol">1.25x</b></div>
-              <div><span class="tiny" style="color:var(--muted);">Volatility:</span> <b id="scalp_val_volatility">NORMAL</b></div>
-              <div><span class="tiny" style="color:var(--muted);">Regime:</span> <b id="scalp_val_regime">TRENDING_UP</b></div>
-            </div>
-          </div>
-
-          <!-- Signal & Rule Validation Box -->
-          <div class="card" style="padding:14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <b style="font-size:12.5px; color:var(--text);">🛡️ PYTHON RULE VALIDATION</b>
-              <span id="scalp_approval_badge" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10b981;">RULE APPROVED</span>
-            </div>
-            <div id="scalp_rules_panel_list" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px;">
-              <div>EMA Ribbon: <b id="rule_chk_ema" style="color:#10b981;">PASS</b></div>
-              <div>RSI Filter: <b id="rule_chk_rsi" style="color:#10b981;">PASS</b></div>
-              <div>MACD Cross: <b id="rule_chk_macd" style="color:#10b981;">PASS</b></div>
-              <div>Volume Conf: <b id="rule_chk_vol" style="color:#10b981;">PASS</b></div>
-              <div>Higher TF: <b id="rule_chk_htf" style="color:#10b981;">PASS</b></div>
-              <div>Risk Approval: <b id="rule_chk_risk" style="color:#10b981;">APPROVED</b></div>
-            </div>
-            <div style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06); font-size:11px;">
-              <span class="tiny" style="color:var(--muted);">Active Signal:</span>
-              <b id="scalp_active_signal_txt" style="color:#eab308; margin-left:4px;">Scanning 1M trigger...</b>
-            </div>
-          </div>
-
-          <!-- Scalping Risk Engine Box -->
-          <div class="card" style="padding:14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <b style="font-size:12.5px; color:var(--text);">⚙️ SCALPING RISK ENGINE</b>
-              <span style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(59,130,246,0.15); color:#3b82f6;">PROTECTIVE GUARDS ON</span>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px;">
-              <div>Risk Per Trade: <b style="color:var(--text);">0.25% Equity</b></div>
-              <div>Max Leverage: <b style="color:var(--text);">20x Futures</b></div>
-              <div>Daily Loss Limit: <b style="color:#ef4444;">1.5% Equity</b></div>
-              <div>Max Scalp Pos: <b style="color:var(--text);">1 Position</b></div>
-              <div>Max Consec Loss: <b style="color:var(--text);">3 Trades</b></div>
-              <div>Loss Cooldown: <b style="color:var(--text);">300s Active</b></div>
-            </div>
-            <div style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06); font-size:11px;">
-              <span class="tiny" style="color:var(--muted);">Smart TP Plan:</span>
-              <b style="color:#10b981;">TP1 1R (30%) · TP2 1.5R (30%) · Trail 40%</b>
-            </div>
-          </div>
-        </div>
-
-        <!-- Live Scalping Positions Table -->
-        <div class="card" style="margin-bottom:16px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
-          <div style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line);">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:14px;">🎯</span>
-              <b style="font-size:13px; color:var(--text);">LIVE SCALPING POSITIONS</b>
-              <span id="scalp_pos_count_badge" style="background:rgba(234,179,8,0.15); color:#eab308; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px;">0 OPEN</span>
-            </div>
-            <span class="tiny" style="color:var(--muted);">Real-Time Net P&L (Deducts Fees & Funding)</span>
-          </div>
-          <div style="overflow-x:auto;">
-            <table class="table" style="width:100%; border-collapse:collapse; font-size:11.5px;">
+            <table class="iva-tl" id="iva_structure_table">
               <thead>
-                <tr style="background:rgba(0,0,0,0.2); text-align:left; color:var(--muted);">
-                  <th style="padding:8px 12px;">Symbol</th>
-                  <th style="padding:8px 12px;">Direction</th>
-                  <th style="padding:8px 12px;">Entry Price</th>
-                  <th style="padding:8px 12px;">Mark Price</th>
-                  <th style="padding:8px 12px;">Quantity</th>
-                  <th style="padding:8px 12px;">Stop-Loss</th>
-                  <th style="padding:8px 12px;">Take-Profit</th>
-                  <th style="padding:8px 12px;">Trading Fees</th>
-                  <th style="padding:8px 12px;">Net P&amp;L</th>
-                  <th style="padding:8px 12px;">Partial Booking</th>
-                  <th style="padding:8px 12px;">Trailing Stop</th>
-                  <th style="padding:8px 12px; text-align:right;">Actions</th>
-                </tr>
+                <tr><th>Time</th><th>Symbol</th><th>TF</th><th>Structure Event</th><th style="text-align:right;">Price</th></tr>
               </thead>
-              <tbody id="scalp_positions_tbody">
-                <tr><td colspan="12" style="text-align:center; padding:20px; color:var(--muted);">No active scalping positions. Auto Scalper is actively monitoring triggers.</td></tr>
+              <tbody id="smc_timeline_tbody">
+                <!-- Dynamically populated rows from backend -->
+                <tr class="bull">
+                  <td>19 Nov 19:30</td>
+                  <td>BTCUSDT</td>
+                  <td>15M</td>
+                  <td>Liquidity grab confirmed: 1 × ATR move away from SSL</td>
+                  <td style="text-align:right;">92,150.00</td>
+                </tr>
+                <tr class="bull">
+                  <td>19 Nov 19:15</td>
+                  <td>BTCUSDT</td>
+                  <td>15M</td>
+                  <td>Bullish CHoCH confirmed with volume expansion</td>
+                  <td style="text-align:right;">92,380.00</td>
+                </tr>
+                <tr class="bull">
+                  <td>19 Nov 18:45</td>
+                  <td>BTCUSDT</td>
+                  <td>15M</td>
+                  <td>Bullish Order Block formed (strength 84 at formation)</td>
+                  <td style="text-align:right;">91,820.00</td>
+                </tr>
               </tbody>
             </table>
           </div>
-        </div>
 
-        <!-- Scalping Performance Dashboard Strip -->
-        <div class="card" style="background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:16px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:14px;">📈</span>
-              <b style="font-size:13px; color:var(--text);">SCALPING PERFORMANCE DASHBOARD</b>
-            </div>
-            <span class="tiny" style="color:var(--muted);">Historical Trade Records &amp; Net Verified Metrics</span>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">TOTAL TRADES</span>
-              <b id="perf_scalp_total" style="font-size:15px; color:var(--text);">0</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">WIN RATE</span>
-              <b id="perf_scalp_winrate" style="font-size:15px; color:#10b981;">0.00%</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">WINS / LOSSES</span>
-              <b id="perf_scalp_wl" style="font-size:15px; color:var(--text);">0 / 0</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">GROSS PROFIT</span>
-              <b id="perf_scalp_gross_win" style="font-size:15px; color:#10b981;">$0.00</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">GROSS LOSS</span>
-              <b id="perf_scalp_gross_loss" style="font-size:15px; color:#ef4444;">$0.00</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">NET PROFIT</span>
-              <b id="perf_scalp_net_profit" style="font-size:15px; color:#10b981;">$0.00</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">TOTAL FEES</span>
-              <b id="perf_scalp_fees" style="font-size:15px; color:#eab308;">$0.00</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">PROFIT FACTOR</span>
-              <b id="perf_scalp_pf" style="font-size:15px; color:var(--text);">0.00</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">MAX DRAWDOWN</span>
-              <b id="perf_scalp_max_dd" style="font-size:15px; color:#ef4444;">$0.00</b>
-            </div>
-            <div style="background:rgba(0,0,0,0.25); padding:10px; border-radius:8px; text-align:center;">
-              <span class="tiny" style="color:var(--muted); display:block;">TODAY'S P&amp;L</span>
-              <b id="perf_scalp_today" style="font-size:15px; color:#10b981;">+$0.00</b>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div id="tab_eod" class="tbody hide">
-        <div class="eod_wrap">
-          <div class="eod_header_card">
-            <div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <h3 id="eod_title_heading" style="margin:0;">24-HOUR &amp; EOD FINANCIAL REPORT</h3>
-                <span id="eod_timeframe_badge" style="background:rgba(var(--lime-rgb),.12); border:1px solid rgba(var(--lime-rgb),.4); color:var(--lime); font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px;">⚡ ROLLING 24 HOURS</span>
-              </div>
-              <p class="tiny" style="margin-top:4px;">Automated financial audit of trading P&amp;L, wallet deposits, payout withdrawals, turnover volume, and platform ledger.</p>
-            </div>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-              <div style="display:inline-flex; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:2px;">
-                <button id="eod_tf_24h" class="btn sm primary" style="padding:4px 10px; font-size:11px;">⚡ Past 24h</button>
-                <button id="eod_tf_today" class="btn sm ghost" style="padding:4px 10px; font-size:11px;">📅 Today (EOD)</button>
-              </div>
-              <button id="eod_download_btn" class="go slim">📥 Export Statement (CSV)</button>
-            </div>
-          </div>
-          <div class="eod_kpis">
-            <div class="card eod_stat">
-              <span class="k" id="eod_lbl_net_pnl">24H NET REALIZED P&amp;L</span>
-              <b id="eod_today_net" class="v big green">$0.00</b>
-              <span id="eod_today_pct" class="sub">+0.00%</span>
-            </div>
-            <div class="card eod_stat">
-              <span class="k">WIN RATE</span>
-              <b id="eod_win_rate" class="v big">0%</b>
-              <span id="eod_win_loss_count" class="sub">0 Wins / 0 Losses</span>
-            </div>
-            <div class="card eod_stat">
-              <span class="k">FUNDS DEPOSITED</span>
-              <b id="eod_total_deposits" class="v big green">$0.00</b>
-              <span id="eod_deposits_count" class="sub">0 Deposits confirmed</span>
-            </div>
-            <div class="card eod_stat">
-              <span class="k">WITHDRAWALS</span>
-              <b id="eod_total_withdrawals" class="v big red">$0.00</b>
-              <span id="eod_withdrawals_count" class="sub">0 Payouts recorded</span>
-            </div>
-          </div>
-
-          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
-            <div class="card" style="padding:10px 14px; background:var(--panel); border:1px solid var(--line); border-radius:8px;">
-              <span class="tiny" style="color:var(--muted); display:block;">TRADING TURNOVER</span>
-              <b id="eod_volume" style="font-size:15px; color:var(--text); font-family:var(--mono);">$0.00</b>
-              <span id="eod_trades_count" class="tiny" style="color:var(--muted); display:block;">0 Trades executed</span>
-            </div>
-            <div class="card" style="padding:10px 14px; background:var(--panel); border:1px solid var(--line); border-radius:8px;">
-              <span class="tiny" style="color:var(--muted); display:block;">ESTIMATED BROKERAGE / FEES</span>
-              <b id="eod_brokerage" style="font-size:15px; color:var(--amber); font-family:var(--mono);">$0.00</b>
-              <span class="tiny" style="color:var(--muted); display:block;">30% net realized profit deduction</span>
-            </div>
-            <div class="card" style="padding:10px 14px; background:var(--panel); border:1px solid var(--line); border-radius:8px;">
-              <span class="tiny" style="color:var(--muted); display:block;">NET CAPITAL DELTA</span>
-              <b id="eod_net_capital_delta" style="font-size:15px; font-family:var(--mono);">$0.00</b>
-              <span class="tiny" style="color:var(--muted); display:block;">(P&amp;L + Deposits - Withdrawals)</span>
-            </div>
-          </div>
-
-          <div class="card eod_table_card">
-            <div class="eod_subhead">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <b id="eod_table_title">PAST 24-HOUR ACTIVITY BREAKDOWN</b>
-                <div style="display:inline-flex; gap:4px; margin-left:8px;">
-                  <button id="eod_subfilter_all" class="btn sm primary" style="padding:2px 8px; font-size:10px;">All</button>
-                  <button id="eod_subfilter_trades" class="btn sm ghost" style="padding:2px 8px; font-size:10px;">Trades Only</button>
-                  <button id="eod_subfilter_cash" class="btn sm ghost" style="padding:2px 8px; font-size:10px;">Deposits &amp; Withdrawals</button>
+          <!-- Sessions & Killzones Tab -->
+          <div id="bt_tab_sessions" class="bt-tab-pane hide" style="padding:14px;">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; padding:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <b style="color:var(--s-syd, #4cc9ff);">Sydney Session</b>
+                  <span id="sess_syd_badge" class="tag sm">CLOSED</span>
                 </div>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">22:00 – 07:00 UTC (03:30 – 12:30 IST)</div>
               </div>
-              <span id="eod_date_tag" class="tiny"></span>
+              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; padding:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <b style="color:var(--s-tok, #ff6fb1);">Tokyo (Asia) Session</b>
+                  <span id="sess_tok_badge" class="tag sm">CLOSED</span>
+                </div>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">00:00 – 09:00 UTC (05:30 – 14:30 IST)</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; padding:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <b style="color:var(--s-lon, #9b7bff);">London Session (Killzone)</b>
+                  <span id="sess_lon_badge" class="tag sm" style="background:rgba(34,197,94,0.15); color:#22c55e;">OPEN</span>
+                </div>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">07:00 – 16:00 UTC (12:30 – 21:30 IST)</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; padding:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <b style="color:var(--s-ny, #2ee6a8);">New York Session (Killzone)</b>
+                  <span id="sess_ny_badge" class="tag sm" style="background:rgba(34,197,94,0.15); color:#22c55e;">OPEN</span>
+                </div>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">13:00 – 22:00 UTC (18:30 – 03:30 IST)</div>
+              </div>
             </div>
-            <div id="eod_trades_table"></div>
+          </div>
+
+          <!-- Open Positions Tab -->
+          <div id="bt_tab_positions" class="bt-tab-pane hide" style="padding:10px;">
+            <div id="tab_pos">
+              <div class="twrap">
+                <table class="tbl" id="tbl_pos" style="width:100%; border-collapse:collapse; font-size:12px;">
+                  <thead><tr style="border-bottom:1px solid var(--line); color:var(--muted);"><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>MARK</th><th>LEVERAGE</th><th>UNREAL P&amp;L</th><th>ACTION</th></tr></thead>
+                  <tbody id="pos_rows"><tr><td colspan="8" style="text-align:center; color:var(--muted); padding:16px;">No open positions. Use Quick Execute or let Araa AI Quant trade.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Committee Logs Tab -->
+          <div id="bt_tab_bot_logs" class="bt-tab-pane hide" style="padding:10px;">
+            <div id="ai_committee_feed_box" style="font-family:var(--mono, monospace); font-size:11px; max-height:180px; overflow-y:auto; line-height:1.6; color:#94a3b8;">
+              <div>[AI-ENGINE] Initialized Araa Quant Committee v4.0. Model agreement: 9/9 ready.</div>
+              <div>[RISK-CAP] Maximum leverage 500x enforced. 2% account equity hard stop active.</div>
+              <div>[SMC-SCAN] Order Blocks &amp; Liquidity Sweeps indexed across 20+ markets.</div>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="statusbar">
-    <span id="s_lat">LAT —ms</span><span id="s_syms">— SYMBOLS</span>
-    <span id="s_feed">FEED —</span><span id="s_footer_mode">SQLite · Paper</span>
-    <span id="s_clock" class="clock">IST —</span>
-  </footer>
+      </section>
     </div>
   </div>
-</div>
 
+  {legacy_bridge}
+</div>
 <!-- ============================ bot drawer ============================ -->
 <div id="drawer_bot" class="drawer">
   <div class="dcard wide">
@@ -6266,5 +5447,6 @@
 }
 </style>
 <script src="app.js?v=20261116_cdx_settle_v1"></script>
+<script src="vision_terminal.js" defer></script>
 </body>
 </html>

@@ -6164,6 +6164,16 @@ async function loadWatch() {
                          "&country=" + encodeURIComponent(S.country));
     S.markets = d.markets; S.quoteBy = S.quoteBy || {};
     d.markets.forEach(m => S.quoteBy[m.symbol] = m);
+    if (window.VT && typeof window.VT.renderWatchlist === "function" && Array.isArray(d.markets)) {
+      const vtList = d.markets.slice(0, 40).map(m => ({
+        sym: m.symbol,
+        name: m.name || m.symbol,
+        p: Number(m.price || 0),
+        chg: Number(m.change_pct || 0),
+        cat: (m.category || "CRYPTO").toUpperCase()
+      }));
+      window.VT.renderWatchlist(vtList);
+    }
     $("w_count").textContent = d.count + " SYMBOLS";
     if (d.countries) fillCountries(d.countries);
 
@@ -7322,6 +7332,9 @@ async function loadChart() {
     S.tvSymbol = d.tv_symbol || null;
     showChart(S.tvSymbol, d.candles);
     analyzeSelectedMarket(symbol, S.tf);
+    if (window.VT && typeof window.VT.syncFromBackend === "function") {
+      window.VT.syncFromBackend(q, S.smcDna, activeAnalysisData);
+    }
   } catch (err) {
     console.error("Error loading market data for", symbol, err);
     const src = $("t_source");
@@ -7424,6 +7437,25 @@ async function analyzeSelectedMarket(symbol, timeframe) {
       // 4. Timestamp & Expiration
       if ($("cp_timestamp")) {
         $("cp_timestamp").textContent = a.timestamp_str || "Updated Live";
+      }
+      // Sync into Araa Vision Terminal AI Market Strength card
+      const buyPct = Math.min(95, Math.max(5, Math.round(probs.up_pct || (a.decision === "BUY" ? 72 : (a.decision === "SELL" ? 28 : 50)))));
+      const sellPct = 100 - buyPct;
+      if ($("iva_buy_pct")) $("iva_buy_pct").textContent = `${buyPct}%`;
+      if ($("iva_sell_pct")) $("iva_sell_pct").textContent = `${sellPct}%`;
+      if ($("iva_buy_bar")) $("iva_buy_bar").style.width = `${buyPct}%`;
+      if ($("iva_sell_bar")) $("iva_sell_bar").style.width = `${sellPct}%`;
+      if ($("iva_bias_badge")) {
+        $("iva_bias_badge").textContent = buyPct >= 50 ? "BULLISH" : "BEARISH";
+        $("iva_bias_badge").className = buyPct >= 50 ? "pos" : "neg";
+      }
+      if ($("iva_conf_txt")) $("iva_conf_txt").textContent = `High · ${(a.confidence_score || 88)}%`;
+      if ($("iva_conf_bar")) $("iva_conf_bar").style.width = `${(a.confidence_score || 88)}%`;
+      if ($("iva_confluence_txt")) $("iva_confluence_txt").textContent = `${Math.round((a.confidence_score || 78) * 0.9)}/100`;
+      if ($("iva_confluence_bar")) $("iva_confluence_bar").style.width = `${Math.round((a.confidence_score || 78) * 0.9)}%`;
+      if ($("iva_regime_txt")) $("iva_regime_txt").textContent = a.market_regime || "Expansion";
+      if (window.VT && typeof window.VT.syncFromBackend === "function") {
+        window.VT.syncFromBackend(S.quote, S.smcDna, a);
       }
       if ($("cp_expires_txt")) {
         $("cp_expires_txt").textContent = `Expires ${a.expires_at_str ? a.expires_at_str.slice(11, 16) + " UTC" : "in 15m"}`;

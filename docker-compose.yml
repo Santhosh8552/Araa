@@ -63,6 +63,8 @@ services:
       - SECRETS_KEY=${SECRETS_KEY:-}
     volumes:
       - araabot_data:/app/data
+      - ./frontend:/app/frontend
+      - ./backend:/app/backend
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5050/api/v1/company/system/health"]
       interval: 30s
