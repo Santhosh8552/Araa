@@ -14,6 +14,21 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 
+env_file = os.path.join(ROOT, ".env")
+if os.path.isfile(env_file):
+    try:
+        with open(env_file, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith("#") and "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    _k = _k.strip()
+                    _v = _v.strip().strip("'").strip('"')
+                    if _k not in os.environ or not os.environ[_k]:
+                        os.environ[_k] = _v
+    except Exception:
+        pass
+
 
 def check_item(label: str, passed: bool, detail: str, blocker_for_live: bool = True) -> dict:
     status = "PASS" if passed else ("LIVE_BLOCKER" if blocker_for_live else "WARN")

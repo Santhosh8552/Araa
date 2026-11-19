@@ -438,7 +438,7 @@ class AICommitteeOrchestrator:
             f"Alpha ({alpha['score']}%): Spread {alpha['metrics']['spread_pct']}%, Vol Surge {alpha['metrics']['volume_surge_ratio']}x, DNA {alpha['metrics']['dna_bias']} ({alpha['metrics']['dna_similarity_pct']}%). "
             f"Beta ({beta['score']}%): {direction} SuperTrend={beta['indicators']['supertrend']}, Zone={beta['indicators']['smc_zone']}, RSI {beta['indicators']['rsi_14']}, T3 {beta['indicators']['tillson_t3']}, VWAP {beta['indicators']['vwap']}. "
             f"Gamma ({gamma['score']}%): R:R {gamma['risk_reward']}:1, SL {gamma['stop_price']}, TP {gamma['target_price']} "
-            f"({gamma['verdict']}). Note: Signal scores reflect indicator + SMC/DNA alignment."
+            f"({gamma['verdict']}). Note: Signal scores reflect indicator + SMC/DNA alignment and are not guaranteed win outcomes."
         )
 
         if persist:

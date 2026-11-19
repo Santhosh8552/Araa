@@ -1,0 +1,41 @@
+# Git and IDE
+.git
+.github
+.vscode
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Local virtual environments
+venv/
+.venv/
+env/
+
+# Databases and storage
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+backend/tradepro.db
+araabot.db
+database.db
+tradepro.db
+backups/
+
+# QA test reports, traces, recordings, logs
+reports/traces/*
+reports/videos/*
+reports/screenshots/*
+reports/*.log
+reports/*.zip
+reports/*.pdf
+reports/*.xlsx
+
+# Environment & Certificates
+.env
+deploy/certs/*
+node_modules/
+.DS_Store

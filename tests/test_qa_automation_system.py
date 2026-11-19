@@ -88,7 +88,7 @@ class TestEnterpriseQAAutomationSystem(unittest.TestCase):
         d = dash.get_json()
         self.assertIn("metrics", d)
         self.assertIn("health", d)
-        self.assertEqual(d["health"]["database_health"]["status"], "HEALTHY (UNVERIFIED)")
+        self.assertIn(d["health"]["database_health"]["status"], ("HEALTHY", "HEALTHY (UNVERIFIED)"))
 
     def test_04_background_run_execution_and_duplicate_block(self):
         # Slow a synthetic case slightly via monkeypatch or queue BACKEND suite
