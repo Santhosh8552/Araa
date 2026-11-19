@@ -1832,6 +1832,10 @@
             <button data-ivmode="standard" aria-pressed="false" title="Standard: Key zones and structure">Standard</button>
             <button data-ivmode="advanced" class="active" aria-pressed="true" title="Advanced: Everything you switch on">Advanced</button>
           </div>
+          <button class="ind-btn" id="btn_toggle_indicators" aria-pressed="false" title="Indicators & SMC Overlays" style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:6px; color:#e2e8f0; font-size:11px; font-weight:700; cursor:pointer;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg>
+            <span>Indicators</span>
+          </button>
           <button class="qv-btn active" data-qv="toggle" aria-pressed="true" title="Quantum Vision: simulate 1,000 possible future paths">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 17c4 0 5-10 9-10s5 6 9 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M3 13c4 0 5-4 9-4s5 8 9 8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".55"></path></svg>
             <span>QUANTUM VISION</span>
@@ -1900,6 +1904,83 @@
           <div class="t-chart" id="chartHost" style="position:relative; width:100%; height:100%; overflow:hidden;">
             <canvas id="chart" class="canvas" style="position:absolute; inset:0; width:100%; height:100%;"></canvas>
             <canvas id="smc_ov_canvas" class="canvas" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:auto; cursor:crosshair;"></canvas>
+            
+            <!-- Floating Indicators & SMC Overlays Drawer -->
+            <div id="smc_indicators_drawer" class="smc-drawer" style="display:none; position:absolute; top:0; right:0; width:340px; height:100%; background:rgba(10,12,20,0.96); backdrop-filter:blur(14px); border-left:1px solid rgba(255,255,255,0.12); z-index:40; flex-direction:column; box-shadow:-8px 0 32px rgba(0,0,0,0.7); overflow-y:auto; color:#f1f5f9;">
+              <!-- Header -->
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08);">
+                <b style="font-size:13px; font-weight:800; letter-spacing:0.5px;">Indicators</b>
+                <div style="display:flex; gap:8px;">
+                  <button class="mini" id="ind_clear_all" style="font-size:10.5px; padding:2px 8px;">Clear All</button>
+                  <button class="mini" id="ind_close" style="font-size:10.5px; padding:2px 8px;">Close</button>
+                </div>
+              </div>
+
+              <!-- Quick Presets -->
+              <div style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:8px;">
+                  <button class="mini" data-indpreset="clean" style="font-size:11px;">Clean</button>
+                  <button class="mini" data-indpreset="standard" style="font-size:11px;">Standard</button>
+                  <button class="mini" data-indpreset="advanced" style="font-size:11px; background:rgba(139,92,246,0.3); border-color:#8b5cf6;">Advanced</button>
+                </div>
+                <div style="display:flex; gap:6px;">
+                  <button class="ghost" id="ind_show_all" style="font-size:10px; color:#94a3b8; background:transparent; border:none; cursor:pointer;">Show all</button>
+                  <span style="color:#475569;">·</span>
+                  <button class="ghost" id="ind_hide_all" style="font-size:10px; color:#94a3b8; background:transparent; border:none; cursor:pointer;">Hide all</button>
+                  <span style="color:#475569;">·</span>
+                  <button class="ghost" id="ind_reset_def" style="font-size:10px; color:#94a3b8; background:transparent; border:none; cursor:pointer;">Reset to default</button>
+                </div>
+              </div>
+
+              <!-- Options List -->
+              <div style="padding:12px 16px; display:flex; flex-direction:column; gap:16px;">
+                <!-- 1. Market Structure -->
+                <div>
+                  <div style="font-size:11px; font-weight:800; letter-spacing:0.8px; color:#8b5cf6; margin-bottom:8px; text-transform:uppercase;">1. Market Structure</div>
+                  <div style="display:flex; flex-direction:column; gap:6px; font-size:11.5px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_swings" checked> Swing Points (HH / HL / LH / LL)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_bos" checked> Break of Structure (BOS)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_choch" checked> Change of Character (CHoCH)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_mss" checked> Market Structure Shift (MSS)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_sweeps" checked> Liquidity Sweeps</label>
+                  </div>
+                </div>
+
+                <!-- 2. Order Blocks & Imbalances -->
+                <div>
+                  <div style="font-size:11px; font-weight:800; letter-spacing:0.8px; color:#38bdf8; margin-bottom:8px; text-transform:uppercase;">2. Order Blocks &amp; FVGs</div>
+                  <div style="display:flex; flex-direction:column; gap:6px; font-size:11.5px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_bull_ob" checked> Bullish Order Blocks (OB+)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_bear_ob" checked> Bearish Order Blocks (OB-)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_fvg" checked> Fair Value Gaps (FVG)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_fvg_mit" checked> FVG Mitigation Tracking</label>
+                  </div>
+                </div>
+
+                <!-- 3. Liquidity & Dealing Ranges -->
+                <div>
+                  <div style="font-size:11px; font-weight:800; letter-spacing:0.8px; color:#f59e0b; margin-bottom:8px; text-transform:uppercase;">3. Liquidity &amp; Dealing Range</div>
+                  <div style="display:flex; flex-direction:column; gap:6px; font-size:11.5px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_bsl" checked> Buy-side Liquidity (BSL)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_ssl" checked> Sell-side Liquidity (SSL)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_eq" checked> Equal Highs &amp; Lows (EQH / EQL)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_pd" checked> Premium &amp; Discount Zones</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_eq50" checked> 50% Equilibrium Level</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_ote" checked> OTE Levels (61.8% – 79%)</label>
+                  </div>
+                </div>
+
+                <!-- 4. Advanced Intelligence -->
+                <div>
+                  <div style="font-size:11px; font-weight:800; letter-spacing:0.8px; color:#10b981; margin-bottom:8px; text-transform:uppercase;">4. AI &amp; Multi-Timeframe</div>
+                  <div style="display:flex; flex-direction:column; gap:6px; font-size:11.5px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_qv" checked> Quantum Vision (1,000 Paths)</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_mtf_dash" checked> Multi-TF Trend Dashboard HUD</label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ind_dna" checked> Market DNA Trajectory</label>
+                  </div>
+                </div>
+              </div>
+            </div>
             
             <!-- Quantum Vision Projection HUD -->
             <div id="qvPanel" class="qv-overlay" style="display:none; position:absolute; top:12px; left:16px; background:rgba(19,19,31,0.92); border:1px solid rgba(139,92,246,0.35); border-radius:10px; padding:12px 16px; width:300px; box-shadow:0 8px 24px rgba(0,0,0,0.5); backdrop-filter:blur(8px); z-index:20;">
@@ -5448,7 +5529,7 @@
   border-top-color: rgba(130, 180, 0, 0.25) !important;
 }
 </style>
-<script src="app.js?v=20261116_cdx_settle_v1"></script>
-<script src="vision_terminal.js" defer></script>
+<script src="app.js?v=20261119_smc_live_v2"></script>
+<script src="vision_terminal.js?v=20261119_smc_live_v2" defer></script>
 </body>
 </html>

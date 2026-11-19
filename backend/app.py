@@ -1186,6 +1186,9 @@ def markets_status():
 @api.route("/api/market/<symbol>")
 def market(symbol):
     symbol = symbol.upper()
+    if symbol == "INSTRUMENTS":
+        from smc_routes import market_instruments
+        return market_instruments()
     row = query_one("SELECT * FROM instruments WHERE symbol=?", (symbol,))
     if not row:
         # Check if symbol is a CoinDCX market

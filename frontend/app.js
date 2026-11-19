@@ -561,6 +561,15 @@ window.addEventListener("popstate", (e) => {
       if (land) land.style.display = "none";
       $("auth").classList.add("hide");
       $("app").classList.remove("hide");
+      if (window.VT) {
+        if (typeof window.VT.loadMarketData === "function") {
+          window.VT.loadMarketData(S.symbol || "BTCUSDT", S.tf || "15m");
+        }
+        if (typeof window.VT.resizeCanvas === "function") {
+          setTimeout(() => window.VT.resizeCanvas(), 100);
+          setTimeout(() => window.VT.resizeCanvas(), 500);
+        }
+      }
       if (hash === "#real-terminal") {
         setTimeout(() => { if (typeof showRealBotDevModal === "function") showRealBotDevModal(true); }, 150);
       }
@@ -768,9 +777,15 @@ async function enterApp(pushState = true) {
   const land = $("landing_gate");
   if (land) land.style.display = "none";
   $("auth").classList.add("hide"); $("app").classList.remove("hide");
-  if (window.VT && typeof window.VT.resizeCanvas === "function") {
-    setTimeout(() => window.VT.resizeCanvas(), 50);
-    setTimeout(() => window.VT.resizeCanvas(), 300);
+  if (window.VT) {
+    if (typeof window.VT.loadMarketData === "function") {
+      window.VT.loadMarketData(S.symbol || "BTCUSDT", S.tf || "15m");
+    }
+    if (typeof window.VT.resizeCanvas === "function") {
+      setTimeout(() => window.VT.resizeCanvas(), 50);
+      setTimeout(() => window.VT.resizeCanvas(), 300);
+      setTimeout(() => window.VT.resizeCanvas(), 800);
+    }
   }
   if (typeof hideRealBotDevModal === "function") hideRealBotDevModal();
   if (pushState) {
@@ -6772,6 +6787,16 @@ async function showChart(tvSymbol, candles) {
 }
 
 function drawChart(candles) {
+  if (window.VT && typeof window.VT.renderSMCChart === "function") {
+    if (candles && candles.length) {
+      window.VT.candles = candles;
+    }
+    if (typeof window.VT.resizeCanvas === "function") {
+      window.VT.resizeCanvas();
+    }
+    window.VT.renderSMCChart();
+    return;
+  }
   if (candles && candles.length && window.LightweightCharts && renderCoinDcxLightweightChart(candles)) return;
   const cv = $("chart"), dpr = devicePixelRatio || 1;
   if (!cv) return;
