@@ -18,6 +18,7 @@ from typing import Dict, Any, List, Optional
 from flask import Blueprint, request, jsonify
 
 import database as db
+import live_market
 from price_feed import feed
 from smc_engine import (
     normalize_candles,
@@ -50,8 +51,82 @@ def _get_user():
 
 
 def _get_candles(symbol: str, tf: str = "15m", limit: int = 120) -> List[Dict[str, float]]:
-    raw = feed.candles(symbol, interval=tf, limit=limit, allow_network=True)
+    raw = live_market.candles(symbol, tf=tf, limit=limit)
+    if not raw:
+        raw = feed.candles(symbol, interval=tf, limit=limit, allow_network=True)
     return normalize_candles(raw)
+
+
+def _bias_of(candles: List[Dict[str, float]]) -> str:
+    if len(candles) < 20:
+        return "NEUTRAL"
+    swings = MarketStructureEngine.detect_swings(candles, sensitivity=3)
+    breaks = MarketStructureEngine.detect_structure_breaks(candles, swings)
+    return breaks[-1].get("direction", "NEUTRAL") if breaks else "NEUTRAL"
+
+
+def _multi_timeframe(symbol: str, chart_tf: str, chart_candles: List[Dict[str, float]]) -> Dict[str, Any]:
+    tfs = ["5m", "15m", "1h", "4h", "1d"]
+    rows = []
+    for tf in tfs:
+        c = chart_candles if tf == live_market.norm_tf(chart_tf) else _get_candles(symbol, tf=tf, limit=120)
+        rows.append({"tf": tf, "bias": _bias_of(c)})
+    bulls = sum(r["bias"] == "BULLISH" for r in rows)
+    bears = sum(r["bias"] == "BEARISH" for r in rows)
+    htf = [r["bias"] for r in rows if r["tf"] in ("4h", "1d")]
+    if bulls >= 4 or htf == ["BULLISH", "BULLISH"]:
+        align = "BULLISH"
+    elif bears >= 4 or htf == ["BEARISH", "BEARISH"]:
+        align = "BEARISH"
+    else:
+        align = "MIXED"
+    return {"rows": rows, "alignment": align, "bull_votes": bulls, "bear_votes": bears}
+
+
+def _trade_plan(price: float, atr: float, ai: Dict[str, Any], mtf: Dict[str, Any]) -> Dict[str, Any]:
+    """Where to buy / where to sell: entry zone, stop and targets from the SMC scenarios."""
+    bias = ai.get("overall_bias", "NEUTRAL")
+    align = mtf.get("alignment", "MIXED")
+    if bias == "BULLISH" and align != "BEARISH":
+        side = "BUY"
+    elif bias == "BEARISH" and align != "BULLISH":
+        side = "SELL"
+    else:
+        side = "WAIT"
+    atr = atr or price * 0.002
+
+    def plan(direction: str) -> Dict[str, Any]:
+        sc = (ai.get("scenarios") or {}).get("bullish" if direction == "BUY" else "bearish") or {}
+        sgn = 1 if direction == "BUY" else -1
+        try:
+            lo, hi = sorted(float(x) for x in str(sc.get("entry_zone", "")).split(" - "))
+        except Exception:
+            lo, hi = sorted((price - sgn * 0.25 * atr, price - sgn * 0.75 * atr))
+        entry = (lo + hi) / 2
+        if sgn * (price - entry) < 0 or abs(price - entry) > 3 * atr:
+            lo, hi = sorted((price - sgn * 0.25 * atr, price - sgn * 0.75 * atr))
+            entry = (lo + hi) / 2
+        sl = float(sc.get("invalidation") or 0)
+        if sgn * (entry - sl) <= 0 or abs(entry - sl) > 4 * atr:
+            sl = (lo if sgn > 0 else hi) - sgn * 1.0 * atr
+        risk = abs(entry - sl) or atr
+        tps = [float(sc.get("target_1") or 0), float(sc.get("target_2") or 0)]
+        tps = sorted({t for t in tps if sgn * (t - entry) >= 0.8 * risk}, reverse=sgn < 0)
+        while len(tps) < 2:
+            tps.append(entry + sgn * risk * (1.5 if not tps else 3.0))
+        tps = sorted(tps, reverse=sgn < 0)
+        tp1, tp2 = tps[0], tps[1]
+        dp = 2 if price >= 100 else 5
+        return {
+            "side": direction,
+            "entry_low": round(lo, dp), "entry_high": round(hi, dp), "entry": round(entry, dp),
+            "stop_loss": round(sl, dp), "take_profit_1": round(tp1, dp), "take_profit_2": round(tp2, dp),
+            "risk_reward": round(abs(tp2 - entry) / risk, 2),
+            "trigger": sc.get("trigger", ""),
+        }
+
+    return {"decision": side, "buy": plan("BUY"), "sell": plan("SELL"),
+            "reason": f"{bias.title()} structure on the chart timeframe, higher timeframes {align.lower()}."}
 
 
 # ==============================================================================
@@ -74,6 +149,13 @@ def smc_analysis(symbol: str):
     fvgs = FVGEngine.detect_fvgs(candles, atr=atr)
     liquidity = LiquidityEngine.detect_liquidity_pools(candles, swings)
 
+    live_q = live_market.quote(symbol)
+    if live_q and live_q.get("price"):
+        current_price = float(live_q["price"])
+        candles[-1]["c"] = current_price
+        candles[-1]["h"] = max(candles[-1]["h"], current_price)
+        candles[-1]["l"] = min(candles[-1]["l"], current_price)
+
     ai_report = AraaAIMarketAdvisor.generate_report(
         symbol=symbol,
         timeframe=tf,
@@ -84,6 +166,7 @@ def smc_analysis(symbol: str):
         liquidity=liquidity,
         atr=atr
     )
+    mtf = _multi_timeframe(symbol, tf, candles)
 
     return jsonify({
         "success": True,
@@ -98,6 +181,9 @@ def smc_analysis(symbol: str):
         "fair_value_gaps": fvgs,
         "liquidity": liquidity,
         "ai_report": ai_report,
+        "mtf": mtf,
+        "trade_plan": _trade_plan(current_price, atr, ai_report, mtf),
+        "quote": live_q,
         "timestamp": int(time.time())
     })
 
@@ -105,8 +191,8 @@ def smc_analysis(symbol: str):
 @smc_bp.route("/api/market/candles/<symbol>", methods=["GET"])
 def market_candles(symbol: str):
     """Retrieve raw normalized OHLCV candles for any instrument and timeframe."""
-    tf = request.args.get("timeframe", "15m")
-    limit = int(request.args.get("limit", 140))
+    tf = request.args.get("interval") or request.args.get("timeframe") or "15m"
+    limit = int(request.args.get("limit") or request.args.get("candles") or 140)
     candles = _get_candles(symbol, tf=tf, limit=limit)
     return jsonify({
         "success": True,
@@ -120,6 +206,12 @@ def market_candles(symbol: str):
 @smc_bp.route("/api/market/quote/<symbol>", methods=["GET"])
 def market_quote(symbol: str):
     """Retrieve real-time ticker quote, bid, ask, and 24h change for any instrument."""
+    q = live_market.quote(symbol)
+    if q:
+        return jsonify({"success": True, "symbol": symbol.upper(), "price": q["price"], "bid": q["bid"],
+                        "ask": q["ask"], "spread": q["spread"], "high_24h": q["high"], "low_24h": q["low"],
+                        "change_pct": q["change_pct"], "market_state": q["market_state"],
+                        "timestamp": int(time.time())})
     candles = _get_candles(symbol, tf="1m", limit=2)
     cur = candles[-1]["c"] if candles else 0.0
     open_p = candles[-1]["o"] if candles else cur
@@ -138,6 +230,13 @@ def market_quote(symbol: str):
         "change_pct": round(change_pct, 2),
         "timestamp": int(time.time())
     })
+
+
+@smc_bp.route("/api/market/quotes", methods=["GET"])
+def market_quotes():
+    """Live quotes for the terminal watchlist (comma separated ?symbols=)."""
+    syms = [x.strip().upper() for x in (request.args.get("symbols") or "").split(",") if x.strip()]
+    return jsonify({"success": True, "quotes": live_market.quotes(syms), "timestamp": int(time.time())})
 
 
 @smc_bp.route("/api/market/instruments", methods=["GET"])
