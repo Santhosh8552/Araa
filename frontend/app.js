@@ -698,7 +698,7 @@ if (window.__pendingAuthMode === "signup" || window.__pendingAuthMode === "login
   setAuthMode(window.__pendingAuthMode);
 }
 
-$("auth_go").onclick = async () => {
+if ($("auth_go")) $("auth_go").onclick = async () => {
   $("auth_msg").textContent = "";
   let email = $("email").value.trim();
   const password = $("password").value;
@@ -728,7 +728,7 @@ if ($("password")) $("password").addEventListener("keydown", (e) => { if (e.key 
 if ($("su_name")) $("su_name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("auth_go").click(); });
 
 if ($("btn_google_signin")) {
-  $("btn_google_signin").onclick = async () => {
+  if ($("btn_google_signin")) $("btn_google_signin").onclick = async () => {
     $("auth_msg").textContent = "";
     // Universal 1-Click Fast Google Sign-In
     let emailVal = $("email") ? $("email").value.trim() : "";
@@ -765,7 +765,7 @@ if ($("btn_google_signin")) {
   };
 }
 
-$("logout").onclick = async () => {
+if ($("logout")) $("logout").onclick = async () => {
   try { await call("/api/auth/logout", {method: "POST"}); } catch (e) {}
   localStorage.removeItem("tp_token");
   localStorage.removeItem("tp_last_live_broker");
@@ -1523,7 +1523,7 @@ function renderCatDetail(k, agg) {
     </div>`;
 }
 
-$("cat_panel_back").onclick = catPanelBack;
+if ($("cat_panel_back")) $("cat_panel_back").onclick = catPanelBack;
 document.querySelectorAll("#cat_range .cat_range_btn").forEach(btn => {
   btn.onclick = () => {
     CAT_UI.range = btn.dataset.range;
@@ -2640,8 +2640,8 @@ function renderEOD(d) {
   if ($("eod_tf_24h") && $("eod_tf_today")) {
     $("eod_tf_24h").className = `btn sm ${_eodTimeframe === "24H" ? "primary" : "ghost"}`;
     $("eod_tf_today").className = `btn sm ${_eodTimeframe === "TODAY" ? "primary" : "ghost"}`;
-    $("eod_tf_24h").onclick = () => { _eodTimeframe = "24H"; renderEOD(S.acct); };
-    $("eod_tf_today").onclick = () => { _eodTimeframe = "TODAY"; renderEOD(S.acct); };
+    if ($("eod_tf_24h")) $("eod_tf_24h").onclick = () => { _eodTimeframe = "24H"; renderEOD(S.acct); };
+    if ($("eod_tf_today")) $("eod_tf_today").onclick = () => { _eodTimeframe = "TODAY"; renderEOD(S.acct); };
   }
 
   // Subfilter buttons
@@ -2650,9 +2650,9 @@ function renderEOD(d) {
     $("eod_subfilter_trades").className = `btn sm ${_eodSubFilter === "TRADES" ? "primary" : "ghost"}`;
     $("eod_subfilter_cash").className = `btn sm ${_eodSubFilter === "CASH" ? "primary" : "ghost"}`;
 
-    $("eod_subfilter_all").onclick = () => { _eodSubFilter = "ALL"; renderEOD(S.acct); };
-    $("eod_subfilter_trades").onclick = () => { _eodSubFilter = "TRADES"; renderEOD(S.acct); };
-    $("eod_subfilter_cash").onclick = () => { _eodSubFilter = "CASH"; renderEOD(S.acct); };
+    if ($("eod_subfilter_all")) $("eod_subfilter_all").onclick = () => { _eodSubFilter = "ALL"; renderEOD(S.acct); };
+    if ($("eod_subfilter_trades")) $("eod_subfilter_trades").onclick = () => { _eodSubFilter = "TRADES"; renderEOD(S.acct); };
+    if ($("eod_subfilter_cash")) $("eod_subfilter_cash").onclick = () => { _eodSubFilter = "CASH"; renderEOD(S.acct); };
   }
 
   // Compile unified items for the table
@@ -2774,7 +2774,7 @@ function renderEOD(d) {
   }
 }
 
-$("eod_download_btn").onclick = () => {
+if ($("eod_download_btn")) $("eod_download_btn").onclick = () => {
   const d = S.acct;
   if (!d) return;
   const pf = d.portfolio || {};
@@ -3337,18 +3337,18 @@ if ($("btn_choice_connect_existing")) $("btn_choice_connect_existing").onclick =
 if ($("btn_goto_connect_existing")) $("btn_goto_connect_existing").onclick = openConnectExistingView;
 
 if ($("btn_back_to_choice")) {
-  $("btn_back_to_choice").onclick = () => showOnboardingStep(1);
+  if ($("btn_back_to_choice")) $("btn_back_to_choice").onclick = () => showOnboardingStep(1);
 }
 if ($("btn_back_to_choice_2")) {
-  $("btn_back_to_choice_2").onclick = () => showOnboardingStep(1);
+  if ($("btn_back_to_choice_2")) $("btn_back_to_choice_2").onclick = () => showOnboardingStep(1);
 }
 if ($("btn_back_to_cfg")) {
-  $("btn_back_to_cfg").onclick = () => showOnboardingStep(3);
+  if ($("btn_back_to_cfg")) $("btn_back_to_cfg").onclick = () => showOnboardingStep(3);
 }
 
 // Submit New Demat Application
 if ($("btn_submit_demat_app")) {
-  $("btn_submit_demat_app").onclick = async () => {
+  if ($("btn_submit_demat_app")) $("btn_submit_demat_app").onclick = async () => {
     const prov = $("demat_provider_select").value;
     const pan = ($("demat_pan_input").value || "").trim();
     const aadhaar = ($("demat_aadhaar_input").value || "").trim();
@@ -3406,7 +3406,7 @@ if ($("btn_submit_demat_app")) {
 
 // Connect Existing Account
 if ($("btn_verify_existing_connect")) {
-  $("btn_verify_existing_connect").onclick = async () => {
+  if ($("btn_verify_existing_connect")) $("btn_verify_existing_connect").onclick = async () => {
     const prov = $("existing_provider_select").value;
     const key = ($("existing_api_key").value || "").trim();
     const secret = ($("existing_api_secret").value || "").trim();
@@ -3454,7 +3454,7 @@ if ($("btn_verify_existing_connect")) {
 
 // Provider Simulator Callback Controls (Allows testing provider states: Approve, Action Required, Reject)
 if ($("btn_sim_provider_approve")) {
-  $("btn_sim_provider_approve").onclick = async () => {
+  if ($("btn_sim_provider_approve")) $("btn_sim_provider_approve").onclick = async () => {
     if (!_onboardingState || !_onboardingState.demat_application) return;
     try {
       const res = await call("/api/real-bot/provider-verify-callback", {
@@ -3472,7 +3472,7 @@ if ($("btn_sim_provider_approve")) {
 }
 
 if ($("btn_sim_provider_action")) {
-  $("btn_sim_provider_action").onclick = async () => {
+  if ($("btn_sim_provider_action")) $("btn_sim_provider_action").onclick = async () => {
     if (!_onboardingState || !_onboardingState.demat_application) return;
     try {
       await call("/api/real-bot/provider-verify-callback", {
@@ -3490,7 +3490,7 @@ if ($("btn_sim_provider_action")) {
 }
 
 if ($("btn_sim_provider_reject")) {
-  $("btn_sim_provider_reject").onclick = async () => {
+  if ($("btn_sim_provider_reject")) $("btn_sim_provider_reject").onclick = async () => {
     if (!_onboardingState || !_onboardingState.demat_application) return;
     try {
       await call("/api/real-bot/provider-verify-callback", {
@@ -3509,7 +3509,7 @@ if ($("btn_sim_provider_reject")) {
 
 // Save Real Bot Configuration (Step 3 -> Step 4)
 if ($("btn_save_real_cfg")) {
-  $("btn_save_real_cfg").onclick = async () => {
+  if ($("btn_save_real_cfg")) $("btn_save_real_cfg").onclick = async () => {
     const strat = $("cfg_strategy_mode").value;
     const maxOrder = parseFloat($("cfg_max_order").value) || 25000;
     const maxLoss = parseFloat($("cfg_max_loss").value) || 10000;
@@ -3546,7 +3546,7 @@ if ($("btn_save_real_cfg")) {
 
 // Explicit Enable Real Bot Mode (Step 4 -> Step 5)
 if ($("btn_enable_real_bot")) {
-  $("btn_enable_real_bot").onclick = async () => {
+  if ($("btn_enable_real_bot")) $("btn_enable_real_bot").onclick = async () => {
     const riskCheck = $("rev_check_risk") ? $("rev_check_risk").checked : false;
     const noProfitCheck = $("rev_check_noprofit") ? $("rev_check_noprofit").checked : false;
     const pauseCheck = $("rev_check_pause") ? $("rev_check_pause").checked : false;
@@ -3590,7 +3590,7 @@ if ($("btn_enable_real_bot")) {
 
 // Live Controls (Step 5 Toolbar)
 if ($("ctrl_btn_start")) {
-  $("ctrl_btn_start").onclick = async () => {
+  if ($("ctrl_btn_start")) $("ctrl_btn_start").onclick = async () => {
     try {
       await call("/api/real-bot/toggle-state", {method: "POST", body: {action: "START", explicit_confirmation: true}});
       toast("▶ Real Bot is now RUNNING.", "green");
@@ -3600,7 +3600,7 @@ if ($("ctrl_btn_start")) {
 }
 
 if ($("ctrl_btn_pause")) {
-  $("ctrl_btn_pause").onclick = async () => {
+  if ($("ctrl_btn_pause")) $("ctrl_btn_pause").onclick = async () => {
     try {
       await call("/api/real-bot/toggle-state", {method: "POST", body: {action: "PAUSE"}});
       toast("⏸ Real Bot execution PAUSED.", "amber");
@@ -3610,7 +3610,7 @@ if ($("ctrl_btn_pause")) {
 }
 
 if ($("ctrl_btn_stop_flush")) {
-  $("ctrl_btn_stop_flush").onclick = async () => {
+  if ($("ctrl_btn_stop_flush")) $("ctrl_btn_stop_flush").onclick = async () => {
     if (!confirm("⚠️ Are you sure you want to STOP the Real Bot and CANCEL all open live orders & positions?")) return;
     try {
       const res = await call("/api/real-bot/toggle-state", {method: "POST", body: {action: "STOP_AND_CANCEL_ORDERS"}});
@@ -3622,7 +3622,7 @@ if ($("ctrl_btn_stop_flush")) {
 }
 
 if ($("ctrl_btn_disconnect")) {
-  $("ctrl_btn_disconnect").onclick = async () => {
+  if ($("ctrl_btn_disconnect")) $("ctrl_btn_disconnect").onclick = async () => {
     if (!confirm("Disconnect provider account and switch safely back to Paper Mode?")) return;
     try {
       await call("/api/real-bot/toggle-state", {method: "POST", body: {action: "DISCONNECT"}});
@@ -3639,7 +3639,7 @@ if ($("ctrl_btn_disconnect")) {
 }
 
 if ($("btn_goto_live_terminal")) {
-  $("btn_goto_live_terminal").onclick = () => {
+  if ($("btn_goto_live_terminal")) $("btn_goto_live_terminal").onclick = () => {
     hideBrokerModal();
     // Switch main tabs to positions view
     const posTabBtn = document.querySelector("#tabnav button[data-tab='positions']");
@@ -4591,10 +4591,10 @@ function openExnessNewWindow() {
 window.openExnessNewWindow = openExnessNewWindow;
 
 if ($("btn_exness_fullscreen")) {
-  $("btn_exness_fullscreen").onclick = toggleExnessFullscreen;
+  if ($("btn_exness_fullscreen")) $("btn_exness_fullscreen").onclick = toggleExnessFullscreen;
 }
 if ($("btn_exness_new_window")) {
-  $("btn_exness_new_window").onclick = openExnessNewWindow;
+  if ($("btn_exness_new_window")) $("btn_exness_new_window").onclick = openExnessNewWindow;
 }
 
 function hideRealBotDevModal() {
@@ -4713,7 +4713,7 @@ function updateCoinDcxIpMismatchNote() {
 }
 if ($("coindcx_inp_bound_ip") && !$("coindcx_inp_bound_ip").dataset.boundListener) {
   $("coindcx_inp_bound_ip").dataset.boundListener = "1";
-  $("coindcx_inp_bound_ip").addEventListener("input", () => {
+  if ($("coindcx_inp_bound_ip")) $("coindcx_inp_bound_ip").addEventListener("input", () => {
     $("coindcx_inp_bound_ip").dataset.userEdited = "1";
     updateCoinDcxIpMismatchNote();
   });
@@ -4762,7 +4762,7 @@ async function loadCoinDcxPublicIp(forceResetInput = false) {
 }
 
 if ($("btn_refresh_detected_ip")) {
-  $("btn_refresh_detected_ip").onclick = async () => {
+  if ($("btn_refresh_detected_ip")) $("btn_refresh_detected_ip").onclick = async () => {
     const ipValEl = $("coindcx_detected_ip_val");
     if (ipValEl) ipValEl.textContent = "Refreshing...";
     const ip = await loadCoinDcxPublicIp(true);
@@ -4772,7 +4772,7 @@ if ($("btn_refresh_detected_ip")) {
 }
 
 if ($("btn_copy_detected_ip")) {
-  $("btn_copy_detected_ip").onclick = () => {
+  if ($("btn_copy_detected_ip")) $("btn_copy_detected_ip").onclick = () => {
     const rawText = $("coindcx_detected_ip_val") ? $("coindcx_detected_ip_val").textContent.trim() : "";
     const ip = _cachedCoinDcxIp || (rawText && !rawText.includes("Detecting") && !rawText.includes("Unavailable") && !rawText.includes("Refreshing") ? rawText : "");
     if (ip) {
@@ -4798,7 +4798,7 @@ if ($("btn_copy_detected_ip")) {
 }
 
 if ($("btn_toggle_secret_vis")) {
-  $("btn_toggle_secret_vis").onclick = () => {
+  if ($("btn_toggle_secret_vis")) $("btn_toggle_secret_vis").onclick = () => {
     const inp = $("coindcx_inp_api_secret");
     const btn = $("btn_toggle_secret_vis");
     if (!inp) return;
@@ -4934,7 +4934,7 @@ window.jumpToTradingTerminal = async function(successMsg, connData) {
 
 // Connect CoinDCX API Handler
 if ($("btn_connect_coindcx")) {
-  $("btn_connect_coindcx").onclick = async () => {
+  if ($("btn_connect_coindcx")) $("btn_connect_coindcx").onclick = async () => {
     const apiKey = ($("coindcx_inp_api_key") ? $("coindcx_inp_api_key").value : "").trim();
     const apiSecret = ($("coindcx_inp_api_secret") ? $("coindcx_inp_api_secret").value : "").trim();
     const boundIp = ($("coindcx_inp_bound_ip") ? $("coindcx_inp_bound_ip").value : "").trim();
@@ -4997,7 +4997,7 @@ if ($("btn_connect_coindcx")) {
 
 // Connect CoinDCX Offline Mode Handler (Bypasses IP restrictions)
 if ($("btn_connect_coindcx_offline")) {
-  $("btn_connect_coindcx_offline").onclick = async () => {
+  if ($("btn_connect_coindcx_offline")) $("btn_connect_coindcx_offline").onclick = async () => {
     const apiKey = ($("coindcx_inp_api_key") ? $("coindcx_inp_api_key").value : "").trim();
     const apiSecret = ($("coindcx_inp_api_secret") ? $("coindcx_inp_api_secret").value : "").trim();
     const boundIp = ($("coindcx_inp_bound_ip") ? $("coindcx_inp_bound_ip").value : "").trim();
@@ -5292,14 +5292,14 @@ function hideRealBotConfirmation() {
 }
 
 if ($("close_real_bot_confirm_modal")) {
-  $("close_real_bot_confirm_modal").onclick = hideRealBotConfirmation;
+  if ($("close_real_bot_confirm_modal")) $("close_real_bot_confirm_modal").onclick = hideRealBotConfirmation;
 }
 if ($("btn_cancel_real_bot_confirm")) {
-  $("btn_cancel_real_bot_confirm").onclick = hideRealBotConfirmation;
+  if ($("btn_cancel_real_bot_confirm")) $("btn_cancel_real_bot_confirm").onclick = hideRealBotConfirmation;
 }
 
 if ($("btn_submit_real_bot_confirm")) {
-  $("btn_submit_real_bot_confirm").onclick = async () => {
+  if ($("btn_submit_real_bot_confirm")) $("btn_submit_real_bot_confirm").onclick = async () => {
     const chk = $("rbc_confirm_checkbox");
     if (!chk || !chk.checked) {
       toast("⚠️ Please check the authorization box to activate Real Bot Mode.", "amber");
@@ -5365,7 +5365,7 @@ function _bgSyncTerminal() {
 
 // Controls: Start Auto-Trader (Demo or Real based on current mode)
 if ($("ex_btn_start_bot")) {
-  $("ex_btn_start_bot").onclick = _withBtnBusy($("ex_btn_start_bot"), "⏳ Starting...", async () => {
+  if ($("ex_btn_start_bot")) $("ex_btn_start_bot").onclick = _withBtnBusy($("ex_btn_start_bot"), "⏳ Starting...", async () => {
     try {
       const lev = Number($("terminal_toolbar_leverage_select")?.value || $("terminal_leverage_select")?.value || 500);
       const dir = $("terminal_toolbar_direction_select")?.value || $("terminal_direction_select")?.value || "BOTH";
@@ -5431,18 +5431,18 @@ window.toggleTerminalMode = async function() {
 };
 
 if ($("ex_btn_toggle_exec_mode")) {
-  $("ex_btn_toggle_exec_mode").onclick = _withBtnBusy($("ex_btn_toggle_exec_mode"), "⏳ Switching...", window.toggleTerminalMode);
+  if ($("ex_btn_toggle_exec_mode")) $("ex_btn_toggle_exec_mode").onclick = _withBtnBusy($("ex_btn_toggle_exec_mode"), "⏳ Switching...", window.toggleTerminalMode);
 }
 if ($("btn_select_demo_mode")) {
-  $("btn_select_demo_mode").onclick = () => window.switchTerminalMode("DEMO");
+  if ($("btn_select_demo_mode")) $("btn_select_demo_mode").onclick = () => window.switchTerminalMode("DEMO");
 }
 if ($("btn_select_real_mode")) {
-  $("btn_select_real_mode").onclick = () => window.switchTerminalMode("REAL");
+  if ($("btn_select_real_mode")) $("btn_select_real_mode").onclick = () => window.switchTerminalMode("REAL");
 }
 
 // Controls: Pause Auto-Trader
 if ($("ex_btn_pause_bot")) {
-  $("ex_btn_pause_bot").onclick = _withBtnBusy($("ex_btn_pause_bot"), "⏳ Pausing...", async () => {
+  if ($("ex_btn_pause_bot")) $("ex_btn_pause_bot").onclick = _withBtnBusy($("ex_btn_pause_bot"), "⏳ Pausing...", async () => {
     try {
       await Promise.allSettled([
         call("/api/real-bot/toggle-state", {method: "POST", body: {action: "PAUSE"}}),
@@ -5463,7 +5463,7 @@ if ($("ex_btn_pause_bot")) {
 
 // Controls: EMERGENCY KILL SWITCH
 if ($("btn_emergency_kill_switch")) {
-  $("btn_emergency_kill_switch").onclick = _withBtnBusy($("btn_emergency_kill_switch"), "⏳ Halting...", async () => {
+  if ($("btn_emergency_kill_switch")) $("btn_emergency_kill_switch").onclick = _withBtnBusy($("btn_emergency_kill_switch"), "⏳ Halting...", async () => {
     if (!confirm("🚨 CONFIRM EMERGENCY KILL SWITCH?\n\nThis will IMMEDIATELY halt automated trading, cancel all resting CoinDCX orders, and lock execution.")) return;
     try {
       await Promise.allSettled([
@@ -5484,7 +5484,7 @@ if ($("btn_emergency_kill_switch")) {
 
 // Controls: Close / Cancel All on CoinDCX
 if ($("ex_btn_close_all")) {
-  $("ex_btn_close_all").onclick = _withBtnBusy($("ex_btn_close_all"), "⏳ Closing...", async () => {
+  if ($("ex_btn_close_all")) $("ex_btn_close_all").onclick = _withBtnBusy($("ex_btn_close_all"), "⏳ Closing...", async () => {
     if (!confirm("Are you sure you want to CLOSE ALL open positions and CANCEL ALL pending orders?")) return;
     try {
       const res = await call("/api/real-bot/coindcx/control", {method: "POST", body: {action: "CLOSE_ALL"}});
@@ -5496,7 +5496,7 @@ if ($("ex_btn_close_all")) {
 
 // Controls: Refresh Account
 if ($("ex_btn_refresh_acct")) {
-  $("ex_btn_refresh_acct").onclick = _withBtnBusy($("ex_btn_refresh_acct"), "⏳ Syncing...", async () => {
+  if ($("ex_btn_refresh_acct")) $("ex_btn_refresh_acct").onclick = _withBtnBusy($("ex_btn_refresh_acct"), "⏳ Syncing...", async () => {
     toast("↻ Refreshing CoinDCX balances & live positions...", "blue");
     await Promise.allSettled([
       refreshExnessTerminal(),
@@ -5508,7 +5508,7 @@ if ($("ex_btn_refresh_acct")) {
 
 // Controls: View Audit Logs
 if ($("ex_btn_view_audit")) {
-  $("ex_btn_view_audit").onclick = () => {
+  if ($("ex_btn_view_audit")) $("ex_btn_view_audit").onclick = () => {
     if (window.switchTerminalTab) window.switchTerminalTab("AUDIT");
     refreshCoinDcxAuditLogs();
     const auditEl = $("tab_content_audit");
@@ -5558,14 +5558,14 @@ window.disconnectCoinDCXBroker = async function() {
 
 // Controls: Logout CoinDCX Account
 if ($("ex_btn_logout_coindcx")) {
-  $("ex_btn_logout_coindcx").onclick = async () => {
+  if ($("ex_btn_logout_coindcx")) $("ex_btn_logout_coindcx").onclick = async () => {
     window.disconnectCoinDCXBroker();
   };
 }
 
 // Controls: Switch / Login Different CoinDCX Account
 if ($("ex_btn_switch_account")) {
-  $("ex_btn_switch_account").onclick = () => {
+  if ($("ex_btn_switch_account")) $("ex_btn_switch_account").onclick = () => {
     window.switchBrokerCenterTab("DASHBOARD");
     toast("Opening Institutional Multi-Broker Connection Center...", "blue");
   };
@@ -5975,7 +5975,7 @@ window.reconnectSpecificAccount = async function(accountId) {
 };
 
 if ($("ex_btn_reconnect")) {
-  $("ex_btn_reconnect").onclick = async () => {
+  if ($("ex_btn_reconnect")) $("ex_btn_reconnect").onclick = async () => {
     if ($("ex_btn_logout_coindcx")) {
       $("ex_btn_logout_coindcx").click();
       return;
@@ -5990,7 +5990,7 @@ if ($("ex_btn_reconnect")) {
 
 // Controls: Disconnect Exness
 if ($("ex_btn_disconnect")) {
-  $("ex_btn_disconnect").onclick = async () => {
+  if ($("ex_btn_disconnect")) $("ex_btn_disconnect").onclick = async () => {
     if (!confirm("Disconnect Exness MT4 terminal and revert to Paper Bot Mode?")) return;
     try {
       await call("/api/real-bot/exness/control", {method: "POST", body: {action: "DISCONNECT"}});
@@ -6007,7 +6007,7 @@ if ($("ex_btn_disconnect")) {
 
 // Controls: Remove Account
 if ($("ex_btn_remove_acct")) {
-  $("ex_btn_remove_acct").onclick = async () => {
+  if ($("ex_btn_remove_acct")) $("ex_btn_remove_acct").onclick = async () => {
     if (!confirm("Remove Exness MT4 account and revoke all terminal pairing tokens?")) return;
     try {
       const res = await call("/api/real-bot/exness/manage", {method: "POST", body: {action: "REMOVE_ACCOUNT"}});
@@ -6319,8 +6319,7 @@ function setCategory(cat) {
 document.querySelectorAll("#m_cats [data-cat], #w_chips [data-cat]").forEach(b =>
   b.onclick = () => setCategory(b.dataset.cat));
 
-$("m_search").oninput = () => {
-  clearTimeout(window._mt);
+if ($("m_search")) $("m_search").oninput = () => {  clearTimeout(window._mt);
   window._mt = setTimeout(() => {
     // If searching across all symbols, clear category to show matches everywhere
     if ($("m_search").value.trim().length > 1 && S.cat) {
@@ -6334,20 +6333,20 @@ $("m_search").oninput = () => {
 
 /* A country only exists on world stocks, so choosing one clears the market chip that would
    otherwise filter the list down to nothing. */
-$("m_country").onchange = () => {
+if ($("m_country")) $("m_country").onchange = () => {
   S.country = $("m_country").value;
   if (S.country && S.cat) { S.cat = ""; document.querySelectorAll("[data-cat]").forEach(x =>
     x.classList.toggle("active", x.dataset.cat === "")); }
   loadWatch();
 };
-$("w_all").onclick = () => {
+if ($("w_all")) $("w_all").onclick = () => {
   S.showAll = !S.showAll;
   $("w_all").classList.toggle("active", S.showAll);
   $("w_all").textContent = S.showAll ? "SHOW TOP 60" : "SHOW ALL";
   loadWatch();
 };
 if ($("w_sort_az")) {
-  $("w_sort_az").onclick = () => {
+  if ($("w_sort_az")) $("w_sort_az").onclick = () => {
     S.sortAZ = !S.sortAZ;
     $("w_sort_az").classList.toggle("active", S.sortAZ);
     $("w_sort_az").textContent = S.sortAZ ? "🔤 A–Z (ON)" : "🔤 A–Z";
@@ -7320,7 +7319,7 @@ window.switchToAraaChart = function() {
 
 async function loadChart() {
   const seq = ++chartSeq, symbol = S.symbol, tf = S.tf;
-  $("t_symbol").textContent = symbol;
+  if ($("t_symbol")) $("t_symbol").textContent = symbol;
   try {
     const d = await call(`/api/market/${symbol}?interval=${tf}&candles=120`);
     if (seq !== chartSeq) return;
@@ -7330,33 +7329,41 @@ async function loadChart() {
     S.smcDna = d.smc_dna || null;
     renderSmcDnaPanel(S.smcDna);
     S.quoteBy[symbol] = Object.assign(S.quoteBy[symbol] || {}, q);
-    $("t_symbol").textContent = symbol;
-    $("t_cat").textContent = d.category;
+    if ($("t_symbol")) $("t_symbol").textContent = symbol;
+    if ($("t_cat")) $("t_cat").textContent = d.category;
     const src = $("t_source");
-    src.className = "tag long";
-    src.textContent = "LIVE · " + (q.source || "TRADINGVIEW");
+    if (src) {
+      src.className = "tag long";
+      src.textContent = "LIVE · " + (q.source || "TRADINGVIEW");
+    }
     const isMktInr = symbol.endsWith("INR") || d.currency === "INR" || q.currency === "INR";
-    $("t_price").textContent = (isMktInr ? "$" : "") + priceFmt(q.price);
-    $("t_change").textContent = pct(q.change_pct);
-    $("t_change").className = "v small " + (q.change_pct >= 0 ? "green" : "red");
-    $("t_high").textContent = (isMktInr ? "$" : "") + priceFmt(q.high);
-    $("t_low").textContent = (isMktInr ? "$" : "") + priceFmt(q.low);
-    $("t_vol").textContent = short(q.volume);
+    if ($("t_price")) $("t_price").textContent = (isMktInr ? "$" : "") + priceFmt(q.price);
+    if ($("t_change")) {
+      $("t_change").textContent = pct(q.change_pct);
+      $("t_change").className = "v small " + (q.change_pct >= 0 ? "green" : "red");
+    }
+    if ($("t_high")) $("t_high").textContent = (isMktInr ? "$" : "") + priceFmt(q.high);
+    if ($("t_low")) $("t_low").textContent = (isMktInr ? "$" : "") + priceFmt(q.low);
+    if ($("t_vol")) $("t_vol").textContent = short(q.volume);
     const k = (d.candles && d.candles[d.candles.length - 1]) || {};
-    $("t_ohlc").textContent = isMktInr 
-      ? `O $${priceFmt(k.o)}  H $${priceFmt(k.h)}  L $${priceFmt(k.l)}  C $${priceFmt(k.c)}`
-      : `O ${priceFmt(k.o)}  H ${priceFmt(k.h)}  L ${priceFmt(k.l)}  C ${priceFmt(k.c)}`;
-    $("t_ohlc").className = "ohlc " + ((k.c || 0) >= (k.o || 0) ? "up" : "down");
-    $("t_buy").textContent = "BUY VOL " + (ind.buy_vol_pct || 0) + "%";
-    $("t_sell").textContent = "SELL VOL " + (ind.sell_vol_pct || 0) + "%";
-    $("t_ind").textContent = "VOL " + short(ind.vol_total) + " · MA(50) " +
+    if ($("t_ohlc")) {
+      $("t_ohlc").textContent = isMktInr 
+        ? `O $${priceFmt(k.o)}  H $${priceFmt(k.h)}  L $${priceFmt(k.l)}  C $${priceFmt(k.c)}`
+        : `O ${priceFmt(k.o)}  H ${priceFmt(k.h)}  L ${priceFmt(k.l)}  C ${priceFmt(k.c)}`;
+      $("t_ohlc").className = "ohlc " + ((k.c || 0) >= (k.o || 0) ? "up" : "down");
+    }
+    if ($("t_buy")) $("t_buy").textContent = "BUY VOL " + (ind.buy_vol_pct || 0) + "%";
+    if ($("t_sell")) $("t_sell").textContent = "SELL VOL " + (ind.sell_vol_pct || 0) + "%";
+    if ($("t_ind")) $("t_ind").textContent = "VOL " + short(ind.vol_total) + " · MA(50) " +
       (ind.ma50 === null ? "—" : priceFmt(ind.ma50)) + " · RSI " + (ind.rsi14 === null ? "—" : ind.rsi14);
-    $("t_count").textContent = (ind.candles_used || d.candles?.length || 0) + " candles · " +
+    if ($("t_count")) $("t_count").textContent = (ind.candles_used || d.candles?.length || 0) + " candles · " +
       (d.order_book && d.order_book.real ? "REAL DEPTH" : "SIM DEPTH");
-    if (S.otype === "MARKET") $("t_price_in").value = q.price ? Number(q.price).toFixed(6) : "";
+    if (S.otype === "MARKET" && $("t_price_in")) $("t_price_in").value = q.price ? Number(q.price).toFixed(6) : "";
     const tvLink = $("t_tv");
-    if (d.tv_chart) { tvLink.href = d.tv_chart; tvLink.classList.remove("hide"); }
-    else tvLink.classList.add("hide");
+    if (tvLink) {
+      if (d.tv_chart) { tvLink.href = d.tv_chart; tvLink.classList.remove("hide"); }
+      else tvLink.classList.add("hide");
+    }
     renderTicket();
     S.tvSymbol = d.tv_symbol || null;
     showChart(S.tvSymbol, d.candles);
@@ -7368,7 +7375,7 @@ async function loadChart() {
     console.error("Error loading market data for", symbol, err);
     const src = $("t_source");
     if (src) { src.className = "tag sim"; src.textContent = "OFFLINE"; }
-    drawChart([]);
+    if (!window.VT) drawChart([]);
   }
 }
 
@@ -7852,24 +7859,27 @@ document.querySelectorAll("#chart_mode [data-mode]").forEach(b => b.onclick = ()
 /* ================================ order ticket ================================ */
 S.ticketLev = 500;
 function renderTicket() {
+  if (!$("t_margin") && !$("t_price_in") && !$("t_total")) return;
   const isLive = S.broker && S.broker.is_live;
   const isCoinDcx = Boolean(S.broker && (S.broker.name === "COINDCX" || S.broker.is_coindcx || S.broker.broker_name === "COINDCX"));
   const rawLiveBal = parseFloat((S.broker && (S.broker.live_balance_usd || S.broker.live_balance)) || 0.0);
   const liveBal = (rawLiveBal > 15000) ? (rawLiveBal / 90.0) : rawLiveBal;
   const avail = (isLive && isCoinDcx) ? liveBal : Number(S.wallet ? S.wallet.deposit_balance : 0);
-  const price = Number($("t_price_in").value) || Number(S.quote.price) || 0;
+  const price = Number($("t_price_in") ? $("t_price_in").value : 0) || Number(S.quote?.price) || 0;
   const amount = Math.round(avail * S.size / 100 * 100) / 100;
-  if ($("t_margin").dataset.auto !== "off") $("t_margin").value = amount || 0;
-  const margin = Number($("t_margin").value) || 0;
+  if ($("t_margin")) {
+    if ($("t_margin").dataset.auto !== "off") $("t_margin").value = amount || 0;
+  }
+  const margin = Number($("t_margin") ? $("t_margin").value : 0) || 0;
   const lev = S.ticketLev || 10;
   const exposure = margin * lev;
-  $("t_size_lbl").textContent = S.size + "%";
-  $("t_total").textContent = inr(margin);
-  $("t_fee").textContent = inr(margin * 0.0005);
-  $("t_qty").textContent = price ? qtyFmt(exposure / price) : "—";
+  if ($("t_size_lbl")) $("t_size_lbl").textContent = S.size + "%";
+  if ($("t_total")) $("t_total").textContent = inr(margin);
+  if ($("t_fee")) $("t_fee").textContent = inr(margin * 0.0005);
+  if ($("t_qty")) $("t_qty").textContent = price ? qtyFmt(exposure / price) : "—";
   if ($("t_exposure")) $("t_exposure").textContent = inr(exposure);
   if ($("t_lev_lbl")) $("t_lev_lbl").textContent = lev + "x";
-  $("t_avail").textContent = "Available " + inr(avail) + " · locked " +
+  if ($("t_avail")) $("t_avail").textContent = "Available " + inr(avail) + " · locked " +
     inr((S.wallet ? S.wallet.locked_balance : 0) || 0);
 
   if ($("ticket_mode_desc")) {
@@ -7890,18 +7900,15 @@ document.querySelectorAll("#t_lev_pills [data-lev]").forEach(b => b.onclick = ()
   document.querySelectorAll("#t_lev_pills [data-lev]").forEach(x => x.classList.toggle("active", x === b));
   renderTicket();
 });
-$("t_size").oninput = () => { S.size = Number($("t_size").value);
-  document.querySelectorAll("[data-size]").forEach(x => x.classList.toggle("active", Number(x.dataset.size) === S.size));
+if ($("t_size")) $("t_size").oninput = () => { S.size = Number($("t_size").value);  document.querySelectorAll("[data-size]").forEach(x => x.classList.toggle("active", Number(x.dataset.size) === S.size));
   $("t_margin").dataset.auto = "on"; renderTicket(); };
 document.querySelectorAll("[data-size]").forEach(b => b.onclick = () => {
   S.size = Number(b.dataset.size); $("t_size").value = S.size;
   document.querySelectorAll("[data-size]").forEach(x => x.classList.toggle("active", x === b));
   $("t_margin").dataset.auto = "on"; renderTicket(); });
-$("t_margin").oninput = () => { $("t_margin").dataset.auto = "off"; renderTicket(); };
-$("t_price_in").oninput = renderTicket;
-$("t_price_in").disabled = true;
+if ($("t_margin")) $("t_margin").oninput = () => { $("t_margin").dataset.auto = "off"; renderTicket(); };if ($("t_price_in")) { $("t_price_in").oninput = renderTicket; $("t_price_in").disabled = true; }
 
-$("t_submit").onclick = async () => {
+if ($("t_submit")) $("t_submit").onclick = async () => {
   $("t_msg").className = "msg"; $("t_msg").textContent = "Sending…";
   try {
     let d;
@@ -8026,7 +8033,7 @@ function closeDrawers() {
 }
 document.querySelectorAll("[data-close-drawer]").forEach(b =>
   b.onclick = () => closeDrawers());
-$("open_bot").onclick = async () => {
+if ($("open_bot")) $("open_bot").onclick = async () => {
   openDrawer("drawer_bot");
   renderBot();
   renderAnalysis();
@@ -8038,7 +8045,7 @@ $("open_bot").onclick = async () => {
     console.warn("Scan trigger notice:", e);
   }
 };
-$("open_wallet").onclick = () => {
+if ($("open_wallet")) $("open_wallet").onclick = () => {
   try { renderWallet(); } catch (e) { console.error("renderWallet error:", e); }
   if (S.pf) { try { renderGoal(S.pf); } catch (e) {} }
   openDrawer("drawer_wallet");
@@ -8046,7 +8053,7 @@ $("open_wallet").onclick = () => {
 
 /* ---------------------------- notifications drawer ---------------------------- */
 if ($("open_notif_btn")) {
-  $("open_notif_btn").onclick = () => {
+  if ($("open_notif_btn")) $("open_notif_btn").onclick = () => {
     openDrawer("drawer_notifications");
     NOTIF_UNREAD = 0;
     updateNotifBadge();
@@ -8055,7 +8062,7 @@ if ($("open_notif_btn")) {
 }
 
 if ($("clear_all_notifs")) {
-  $("clear_all_notifs").onclick = () => {
+  if ($("clear_all_notifs")) $("clear_all_notifs").onclick = () => {
     NOTIF_HISTORY = [];
     saveNotifHistory();
     NOTIF_UNREAD = 0;
@@ -8110,7 +8117,7 @@ const _MODE_TP_SL_DEFAULTS = {
   AGGRESSIVE: [2.50, 1.20]
 };
 if ($("b_mode")) {
-  $("b_mode").addEventListener("change", () => {
+  if ($("b_mode")) $("b_mode").addEventListener("change", () => {
     const preset = _MODE_TP_SL_DEFAULTS[$("b_mode").value];
     if (!preset) return;
     const tpEl = $("b_tp_pct");
@@ -8186,12 +8193,10 @@ async function renderBot(d) {
   if ($("b_ticks")) $("b_ticks").textContent = (h.uptime_seconds || 0) + "s up";
   if (window.loadBotTrainingState) window.loadBotTrainingState(true);
 }
-$("b_max").oninput = () => {
-  const val = Number($("b_max").value);
+if ($("b_max")) $("b_max").oninput = () => {  const val = Number($("b_max").value);
   $("b_max_lbl").textContent = (val >= 999 || val <= 0) ? "∞ Unlimited" : val;
 };
-$("b_risk").oninput = () => $("b_risk_lbl").textContent = $("b_risk").value + "%";
-if ($("b_lev")) $("b_lev").oninput = () => {
+if ($("b_risk")) $("b_risk").oninput = () => $("b_risk_lbl").textContent = $("b_risk").value + "%";if ($("b_lev")) $("b_lev").oninput = () => {
   $("b_lev_lbl").textContent = $("b_lev").value + "x Multiplier";
   updateLevPresets($("b_lev").value);
 };
@@ -8358,7 +8363,7 @@ async function renderTabAZ() {
 }
 
 if ($("tab_az_refresh")) {
-  $("tab_az_refresh").onclick = async () => {
+  if ($("tab_az_refresh")) $("tab_az_refresh").onclick = async () => {
     const btn = $("tab_az_refresh");
     btn.disabled = true;
     btn.textContent = "⚡ Scanning...";
@@ -8487,8 +8492,8 @@ function showAiScanner() {
   }, 1000);
 }
 
-$("close_ai_overlay").onclick = () => $("ai_scan_overlay").classList.add("hide");
-$("ai_hide_overlay").onclick = () => {
+if ($("close_ai_overlay")) $("close_ai_overlay").onclick = () => $("ai_scan_overlay").classList.add("hide");
+if ($("ai_hide_overlay")) $("ai_hide_overlay").onclick = () => {
   $("ai_scan_overlay").classList.add("hide");
   toast("🧠 Araa AI 2-Min Market Scan continuing in background...", "blue");
 };
@@ -8553,7 +8558,7 @@ async function checkGeminiStatus() {
 }
 setTimeout(checkGeminiStatus, 1500);
 
-$("b_save").onclick = async () => {
+if ($("b_save")) $("b_save").onclick = async () => {
   try {
     const want = $("b_enabled") ? $("b_enabled").checked : true;
     const maxPosVal = window._bMaxUnlimited ? 999 : Number($("b_max") ? $("b_max").value : 20);
@@ -8616,7 +8621,7 @@ $("b_save").onclick = async () => {
   }
 };
 
-$("b_stop_all").onclick = async () => {
+if ($("b_stop_all")) $("b_stop_all").onclick = async () => {
   const btn = $("b_stop_all");
   btn.disabled = true;
   try {
@@ -8642,7 +8647,7 @@ $("b_stop_all").onclick = async () => {
 };
 
 /* top-bar bot switch */
-$("bot_switch").onclick = async () => {
+if ($("bot_switch")) $("bot_switch").onclick = async () => {
   const want = !S.user.bot_enabled, sw = $("bot_switch");
   sw.disabled = true;
   try {
@@ -8721,7 +8726,7 @@ function renderBankAccountPreview(b) {
 }
 
 if ($("btn_toggle_bank_form")) {
-  $("btn_toggle_bank_form").onclick = () => {
+  if ($("btn_toggle_bank_form")) $("btn_toggle_bank_form").onclick = () => {
     const form = $("bank_edit_form");
     if (!form) return;
     const isHidden = form.style.display === "none" || !form.style.display;
@@ -8731,7 +8736,7 @@ if ($("btn_toggle_bank_form")) {
 }
 
 if ($("btn_save_bank")) {
-  $("btn_save_bank").onclick = async () => {
+  if ($("btn_save_bank")) $("btn_save_bank").onclick = async () => {
     const bName = ($("ub_bank_name").value || "").trim();
     const accNum = ($("ub_account_num").value || "").trim();
     const ifsc = ($("ub_ifsc").value || "").trim().toUpperCase();
@@ -8830,7 +8835,7 @@ let _currentUpiOrderId = null;
 
 // Tab toggles between UPI and Bank Transfer
 if ($("tab_dep_upi")) {
-  $("tab_dep_upi").onclick = () => {
+  if ($("tab_dep_upi")) $("tab_dep_upi").onclick = () => {
     $("tab_dep_upi").classList.remove("ghost");
     $("tab_dep_upi").style.background = "#0284c7";
     $("tab_dep_upi").style.color = "#fff";
@@ -8843,7 +8848,7 @@ if ($("tab_dep_upi")) {
 }
 
 if ($("tab_dep_bank")) {
-  $("tab_dep_bank").onclick = () => {
+  if ($("tab_dep_bank")) $("tab_dep_bank").onclick = () => {
     $("tab_dep_bank").classList.remove("ghost");
     $("tab_dep_bank").style.background = "#0284c7";
     $("tab_dep_bank").style.color = "#fff";
@@ -9046,7 +9051,7 @@ async function launchRazorpayCheckout() {
 if ($("btn_pay_razorpay")) $("btn_pay_razorpay").onclick = launchRazorpayCheckout;
 
 if ($("btn_send_deposit")) {
-  $("btn_send_deposit").onclick = async () => {
+  if ($("btn_send_deposit")) $("btn_send_deposit").onclick = async () => {
     try {
       const amtInput = $("upi_dep_amount");
       const amt = Number(amtInput ? amtInput.value : 5000);
@@ -9093,7 +9098,7 @@ if ($("btn_send_deposit")) {
 }
 
 if ($("btn_close_upi_modal")) {
-  $("btn_close_upi_modal").onclick = () => {
+  if ($("btn_close_upi_modal")) $("btn_close_upi_modal").onclick = () => {
     const modal = $("modal_upi_qr");
     if (modal) {
       modal.classList.add("hide");
@@ -9103,7 +9108,7 @@ if ($("btn_close_upi_modal")) {
 }
 
 if ($("btn_confirm_upi_payment")) {
-  $("btn_confirm_upi_payment").onclick = async () => {
+  if ($("btn_confirm_upi_payment")) $("btn_confirm_upi_payment").onclick = async () => {
     const utr = ($("upi_utr_input").value || "").trim();
     if (!utr || utr.length < 8) {
       if ($("upi_verify_msg")) {
@@ -9163,7 +9168,7 @@ if ($("btn_confirm_upi_payment")) {
   };
 }
 
-$("dep_go").onclick = async () => {
+if ($("dep_go")) $("dep_go").onclick = async () => {
   try {
     const amt = Number($("dep_amount").value);
     if (!amt || amt <= 0) {
@@ -9205,17 +9210,16 @@ function withdrawPreview() {
     $("wd_net").textContent = inr(amt * 0.7);
   }
 }
-$("wd_amount").oninput = withdrawPreview;
-if ($("wd_source_type")) $("wd_source_type").onchange = withdrawPreview;
+if ($("wd_amount")) $("wd_amount").oninput = withdrawPreview;if ($("wd_source_type")) $("wd_source_type").onchange = withdrawPreview;
 
 if ($("wd_method")) {
-  $("wd_method").onchange = () => {
+  if ($("wd_method")) $("wd_method").onchange = () => {
     const isUpi = ($("wd_method").value || "").startsWith("UPI");
     if ($("wd_upi_box")) $("wd_upi_box").style.display = isUpi ? "block" : "none";
   };
 }
 
-$("wd_go").onclick = async () => {
+if ($("wd_go")) $("wd_go").onclick = async () => {
   try {
     const amt = Number($("wd_amount").value);
     if (!amt || amt <= 0) {
@@ -9254,7 +9258,7 @@ $("wd_go").onclick = async () => {
   }
 };
 
-$("goal_go").onclick = async () => {
+if ($("goal_go")) $("goal_go").onclick = async () => {
   try {
     const target = Number($("goal_target").value);
     if (!target || target <= 0) {
@@ -9273,27 +9277,38 @@ async function pingFeed() {
   try {
     const h = await fetch(API + "/api/health").then(r => r.json());
     const live = h.feed === "LIVE" && (h.market_feed || "").indexOf("LIVE") === 0;
-    $("live_dot").className = "dot" + (live ? "" : " off");
-    $("live_dot").title = "crypto " + h.feed + " · other markets " + h.market_feed;
+    if ($("live_dot")) {
+      $("live_dot").className = "dot" + (live ? "" : " off");
+      $("live_dot").title = "crypto " + h.feed + " · other markets " + h.market_feed;
+    }
     S.syms = h.symbols_tracked;
     const isRealLive = Boolean((S.pf && S.pf.is_live_mode) || (S.broker && S.broker.is_live));
     const modeTag = isRealLive
       ? ((S.broker && (S.broker.is_coindcx || S.broker.name === "COINDCX" || S.broker.broker_name === "COINDCX")) ? "COINDCX LIVE" : "LIVE")
       : "PAPER";
-    $("ws_badge").textContent = "● WS CONNECTED · " + h.symbols_tracked + " SYMBOLS · " + modeTag;
-    $("ws_badge").style.color = live ? "var(--green)" : "var(--amber)";
-    $("s_feed").textContent = "FEED " + (h.market_feed || h.feed);
+    if ($("ws_badge")) {
+      $("ws_badge").textContent = "● WS CONNECTED · " + h.symbols_tracked + " SYMBOLS · " + modeTag;
+      $("ws_badge").style.color = live ? "var(--green)" : "var(--amber)";
+    }
+    if ($("s_feed")) $("s_feed").textContent = "FEED " + (h.market_feed || h.feed);
     S.running = !!h.bot_running;
-    $("b_state").className = "ai_dot" + (S.running ? " on" : "");
+    if ($("b_state")) $("b_state").className = "ai_dot" + (S.running ? " on" : "");
     if (S.user) renderTopbar();
-  } catch (e) { $("ws_badge").textContent = "● API OFFLINE"; $("ws_badge").style.color = "var(--red)"; }
+  } catch (e) {
+    if ($("ws_badge")) {
+      $("ws_badge").textContent = "● API OFFLINE";
+      $("ws_badge").style.color = "var(--red)";
+    }
+  }
 }
 
 function tickClock() {
-  $("s_clock").textContent = "IST " + new Date().toLocaleTimeString("en-US",
-    {timeZone: "Asia/Kolkata", hour12: false});
-  $("s_lat").textContent = "LAT " + S.lat + "ms";
-  const timerEl = $("t_candle_timer");
+  if ($("s_clock")) {
+    $("s_clock").textContent = "IST " + new Date().toLocaleTimeString("en-US",
+      {timeZone: "Asia/Kolkata", hour12: false});
+  }
+  if ($("s_lat")) $("s_lat").textContent = "LAT " + S.lat + "ms";
+  const timerEl = $("t_candle_timer") || document.querySelector(".tv-cd, #subCountdown, .t-sub .mut:last-child");
   if (timerEl) {
     const tfMap = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400};
     const sec = tfMap[String(S.tf || "15m").toLowerCase()] || 900;
@@ -9679,13 +9694,13 @@ function toggleTheme() {
 window.toggleTheme = toggleTheme;
 
 if ($("theme_toggle")) {
-  $("theme_toggle").onclick = toggleTheme;
+  if ($("theme_toggle")) $("theme_toggle").onclick = toggleTheme;
 }
 if ($("themeBtn")) {
-  $("themeBtn").onclick = toggleTheme;
+  if ($("themeBtn")) $("themeBtn").onclick = toggleTheme;
 }
 if ($("modal_theme_toggle_btn")) {
-  $("modal_theme_toggle_btn").onclick = toggleTheme;
+  if ($("modal_theme_toggle_btn")) $("modal_theme_toggle_btn").onclick = toggleTheme;
 }
 window.toggleGlobalTheme = toggleTheme;
 initTheme();
@@ -9699,7 +9714,7 @@ function updateSoundButton() {
 
 if ($("sound_toggle")) {
   updateSoundButton();
-  $("sound_toggle").onclick = () => {
+  if ($("sound_toggle")) $("sound_toggle").onclick = () => {
     _soundEnabled = !_soundEnabled;
     localStorage.setItem("tp_sound_enabled", _soundEnabled);
     updateSoundButton();
@@ -9752,17 +9767,17 @@ function closeSettingsModal() {
 }
 
 if ($("open_settings_btn")) {
-  $("open_settings_btn").onclick = openSettingsModal;
+  if ($("open_settings_btn")) $("open_settings_btn").onclick = openSettingsModal;
 }
 if ($("close_settings_modal")) {
-  $("close_settings_modal").onclick = closeSettingsModal;
+  if ($("close_settings_modal")) $("close_settings_modal").onclick = closeSettingsModal;
 }
 if ($("done_settings_btn")) {
-  $("done_settings_btn").onclick = closeSettingsModal;
+  if ($("done_settings_btn")) $("done_settings_btn").onclick = closeSettingsModal;
 }
 // Dismiss modal if clicked outside
 if ($("settings_modal")) {
-  $("settings_modal").addEventListener("click", (e) => {
+  if ($("settings_modal")) $("settings_modal").addEventListener("click", (e) => {
     if (e.target === $("settings_modal")) closeSettingsModal();
   });
 }
@@ -9942,8 +9957,7 @@ if ($("drawer_mode_toggle")) $("drawer_mode_toggle").onclick = () => {
 if ($("close_feed_hub_modal")) $("close_feed_hub_modal").onclick = closeFeedHub;
 if ($("done_feed_hub_btn")) $("done_feed_hub_btn").onclick = closeFeedHub;
 if ($("hub_search_in")) {
-  $("hub_search_in").oninput = () => {
-    clearTimeout(window._hub_st);
+  if ($("hub_search_in")) $("hub_search_in").oninput = () => {    clearTimeout(window._hub_st);
     window._hub_st = setTimeout(renderHubSymbols, 150);
   };
 }
@@ -9972,7 +9986,7 @@ async function loadTelegramConfig() {
 }
 
 if ($("btn_test_telegram")) {
-  $("btn_test_telegram").onclick = async () => {
+  if ($("btn_test_telegram")) $("btn_test_telegram").onclick = async () => {
     const token = ($("inp_tg_token") ? $("inp_tg_token").value : "").trim();
     const chat = ($("inp_tg_chat_id") ? $("inp_tg_chat_id").value : "").trim();
     if (!token || !chat) {
@@ -9997,7 +10011,7 @@ if ($("btn_test_telegram")) {
 }
 
 if ($("btn_save_telegram")) {
-  $("btn_save_telegram").onclick = async () => {
+  if ($("btn_save_telegram")) $("btn_save_telegram").onclick = async () => {
     const token = ($("inp_tg_token") ? $("inp_tg_token").value : "").trim();
     const chat = ($("inp_tg_chat_id") ? $("inp_tg_chat_id").value : "").trim();
     if (!token || !chat) {

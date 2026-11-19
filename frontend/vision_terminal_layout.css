@@ -244,6 +244,9 @@
   pointer-events: none !important;
   background: #06060B !important;
   border: none !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 #chartHost > canvas#smc_ov_canvas,
@@ -258,6 +261,9 @@
   background: transparent !important;
   background-color: transparent !important;
   border: none !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .t-main .t-replay {

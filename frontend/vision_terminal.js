@@ -757,11 +757,23 @@
       ctx.fillStyle = "#06060b";
       ctx.fillRect(0, 0, w, h);
 
-      let candles = window.VT.candles || [];
-      if (!candles.length && window.S && window.S.candles && window.S.candles.length) {
-        candles = window.S.candles;
-        window.VT.candles = candles;
+      const rawCandles = window.VT.candles || (window.S && window.S.candles) || [];
+      const candles = [];
+      for (let i = 0; i < rawCandles.length; i++) {
+        const rc = rawCandles[i];
+        if (!rc) continue;
+        const o = Number(rc.o ?? rc.open ?? rc.c ?? rc.close);
+        const c = Number(rc.c ?? rc.close ?? o);
+        const h = Number(rc.h ?? rc.high ?? Math.max(o, c));
+        const l = Number(rc.l ?? rc.low ?? Math.min(o, c));
+        const t = Number(rc.t ?? rc.time ?? 0);
+        const v = Number(rc.v ?? rc.volume ?? 0);
+        if (!isNaN(c) && c > 0) {
+          candles.push({ o, h: Math.max(h, o, c), l: Math.min(l, o, c), c, t, v });
+        }
       }
+      window.VT.candles = candles;
+
       if (!candles.length) {
         ctx.fillStyle = "#64748b";
         ctx.font = `${13 * dpr}px Inter, sans-serif`;
@@ -771,24 +783,24 @@
       }
 
       const smc = window.VT.smcData || {};
-      const ind = window.VT.indicators;
+      const ind = window.VT.indicators || {};
       const isClean = window.VT.mode === "clean";
 
       // Chart Dimensions
-      const plotRight = w - 75 * dpr;
-      const plotBottom = h - 26 * dpr;
       const plotLeft = 16 * dpr;
       const plotTop = 16 * dpr;
-      const plotW = plotRight - plotLeft;
-      const plotH = plotBottom - plotTop;
+      const plotRight = Math.max(plotLeft + 100, w - 75 * dpr);
+      const plotBottom = Math.max(plotTop + 100, h - 26 * dpr);
+      const plotW = Math.max(50, plotRight - plotLeft);
+      const plotH = Math.max(50, plotBottom - plotTop);
 
       // Viewport calculation with Zoom and Pan (Anchored to right/latest candles)
       const baseCount = 65;
-      const visibleCount = Math.max(15, Math.min(candles.length, Math.round(baseCount / window.VT.zoomLevel)));
+      const visibleCount = Math.max(15, Math.min(candles.length, Math.round(baseCount / (window.VT.zoomLevel || 1.0))));
       const candleSpacing = plotW / Math.max(visibleCount, 1);
       
       const maxStart = Math.max(0, candles.length - visibleCount);
-      const panBars = Math.round((window.VT.panOffset * dpr) / candleSpacing);
+      const panBars = Math.round(((window.VT.panOffset || 0) * dpr) / candleSpacing);
       const startIndex = Math.max(0, Math.min(maxStart, maxStart - panBars));
       const endIndex = Math.min(candles.length, startIndex + visibleCount);
       const visibleCandles = candles.slice(startIndex, endIndex);
@@ -797,13 +809,22 @@
 
       let min = Math.min(...visibleCandles.map(k => k.l));
       let max = Math.max(...visibleCandles.map(k => k.h));
-      const diff = max - min;
-      const pad = diff > 0 ? diff * 0.14 : (max ? max * 0.002 : 0.01);
+      if (!isFinite(min) || !isFinite(max) || min <= 0) {
+        min = visibleCandles[0].l || 1;
+        max = visibleCandles[0].h || 2;
+      }
+      let diff = max - min;
+      if (diff <= 0 || !isFinite(diff)) diff = max * 0.005 || 1;
+      const pad = diff * 0.14;
       const lo = min - pad, hi = max + pad;
 
       // Math Coordinate Transforms
       const X = idx => (idx - startIndex) * candleSpacing + plotLeft + candleSpacing * 0.5;
-      const Y = p => plotBottom - ((p - lo) / (hi - lo)) * plotH;
+      const Y = p => {
+        const safeP = Number(p);
+        if (!isFinite(safeP)) return plotBottom;
+        return plotBottom - ((safeP - lo) / (hi - lo)) * plotH;
+      };
 
       // Attach coordinate readers for crosshair tooltips
       window.VT.calcPriceFromY = yCss => {
