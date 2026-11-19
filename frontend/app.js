@@ -563,7 +563,7 @@ window.addEventListener("popstate", (e) => {
       $("app").classList.remove("hide");
       if (window.VT) {
         if (typeof window.VT.loadMarketData === "function") {
-          window.VT.loadMarketData(window.VT.symbol, window.VT.timeframe);
+          window.VT.loadMarketData(S.symbol || "BTCUSDT", S.tf || "15m");
         }
         if (typeof window.VT.resizeCanvas === "function") {
           setTimeout(() => window.VT.resizeCanvas(), 100);
@@ -781,7 +781,7 @@ async function enterApp(pushState = true) {
   $("auth").classList.add("hide"); $("app").classList.remove("hide");
   if (window.VT) {
     if (typeof window.VT.loadMarketData === "function") {
-      window.VT.loadMarketData(window.VT.symbol, window.VT.timeframe);
+      window.VT.loadMarketData(S.symbol || "BTCUSDT", S.tf || "15m");
     }
     if (typeof window.VT.resizeCanvas === "function") {
       setTimeout(() => window.VT.resizeCanvas(), 50);
@@ -6185,7 +6185,7 @@ async function loadWatch() {
                          "&country=" + encodeURIComponent(S.country));
     S.markets = d.markets; S.quoteBy = S.quoteBy || {};
     d.markets.forEach(m => S.quoteBy[m.symbol] = m);
-    if (window.VT && !window.VT.liveWatch && typeof window.VT.renderWatchlist === "function" && Array.isArray(d.markets)) {
+    if (window.VT && typeof window.VT.renderWatchlist === "function" && Array.isArray(d.markets)) {
       const vtList = d.markets.slice(0, 40).map(m => ({
         sym: m.symbol,
         name: m.name || m.symbol,
@@ -6789,7 +6789,7 @@ async function showChart(tvSymbol, candles) {
 
 function drawChart(candles) {
   if (window.VT && typeof window.VT.renderSMCChart === "function") {
-    if (candles && candles.length && !window.VT.liveWatch) {
+    if (candles && candles.length) {
       window.VT.candles = candles;
     }
     if (typeof window.VT.resizeCanvas === "function") {
@@ -7321,7 +7321,7 @@ window.switchToAraaChart = function() {
 
 async function loadChart() {
   const seq = ++chartSeq, symbol = S.symbol, tf = S.tf;
-  if ($("t_symbol") && !(window.VT && window.VT.liveWatch)) $("t_symbol").textContent = symbol;
+  if ($("t_symbol")) $("t_symbol").textContent = symbol;
   try {
     const d = await call(`/api/market/${symbol}?interval=${tf}&candles=120`);
     if (seq !== chartSeq) return;
@@ -7331,7 +7331,7 @@ async function loadChart() {
     S.smcDna = d.smc_dna || null;
     renderSmcDnaPanel(S.smcDna);
     S.quoteBy[symbol] = Object.assign(S.quoteBy[symbol] || {}, q);
-    if ($("t_symbol") && !(window.VT && window.VT.liveWatch)) $("t_symbol").textContent = symbol;
+    if ($("t_symbol")) $("t_symbol").textContent = symbol;
     if ($("t_cat")) $("t_cat").textContent = d.category;
     const src = $("t_source");
     if (src) {
@@ -7476,7 +7476,6 @@ async function analyzeSelectedMarket(symbol, timeframe) {
       if ($("cp_timestamp")) {
         $("cp_timestamp").textContent = a.timestamp_str || "Updated Live";
       }
-      if (!(window.VT && window.VT.liveAnalysis)) {
       // Sync into Araa Vision Terminal AI Market Strength card
       const buyPct = Math.min(95, Math.max(5, Math.round(probs.up_pct || (a.decision === "BUY" ? 72 : (a.decision === "SELL" ? 28 : 50)))));
       const sellPct = 100 - buyPct;
@@ -7493,7 +7492,6 @@ async function analyzeSelectedMarket(symbol, timeframe) {
       if ($("iva_confluence_txt")) $("iva_confluence_txt").textContent = `${Math.round((a.confidence_score || 78) * 0.9)}/100`;
       if ($("iva_confluence_bar")) $("iva_confluence_bar").style.width = `${Math.round((a.confidence_score || 78) * 0.9)}%`;
       if ($("iva_regime_txt")) $("iva_regime_txt").textContent = a.market_regime || "Expansion";
-      }
       if (window.VT && typeof window.VT.syncFromBackend === "function") {
         window.VT.syncFromBackend(S.quote, S.smcDna, a);
       }
