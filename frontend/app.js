@@ -669,6 +669,8 @@ function setAuthMode(mode) {
 
   const suFields = $("signup_fields");
   if (suFields) suFields.classList.toggle("hide", mode !== "signup");
+  const authGate = $("auth");
+  if (authGate) authGate.setAttribute("data-mode", mode === "signup" ? "signup" : "login");
 
   const title = $("authTitle");
   const sub = $("authSubtitle");
@@ -678,19 +680,19 @@ function setAuthMode(mode) {
   const footerLink = $("authFooterLink");
 
   if (mode === "signup") {
-    if (title) title.textContent = "Create your account";
-    if (sub) sub.textContent = "Start trading with Araa AI 3.8 and unlock live 995-asset market terminal.";
-    if (go) go.textContent = "Create Account & Open Terminal";
+    if (title) title.textContent = "Create account";
+    if (sub) sub.textContent = "Create your free ARAA Vision account. Your bots, watchlists and trading history are saved to it.";
+    if (go) go.textContent = "Create account";
     if (hint) hint.textContent = "Already have an account? Sign in";
     if (footerText) footerText.textContent = "Already have an account?";
     if (footerLink) footerLink.textContent = "Sign in";
   } else {
-    if (title) title.textContent = "Welcome back!";
-    if (sub) sub.textContent = "Ready to get back into your workspace? Enter your email and password below.";
-    if (go) go.textContent = "Sign In to Bot";
+    if (title) title.textContent = "Sign in";
+    if (sub) sub.textContent = "Your ARAA Vision workspace, bots and trading history are saved to your account.";
+    if (go) go.textContent = "Sign in";
     if (hint) hint.textContent = "Need a new account? Sign up";
-    if (footerText) footerText.textContent = "Don't have an account?";
-    if (footerLink) footerLink.textContent = "Create account";
+    if (footerText) footerText.textContent = "New here?";
+    if (footerLink) footerLink.textContent = "Create an account";
   }
 }
 document.querySelectorAll("[data-auth]").forEach(b => b.onclick = () => setAuthMode(b.dataset.auth));
