@@ -813,6 +813,237 @@
   };
 
   /* ---------------------------- Boot ---------------------------- */
+  
+  /* ---------------------------- Module Modals (Scanner, Backtest, Alerts, Journal, Settings) ---------------------------- */
+  window.VT.openModal = function(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "flex";
+    if (id === "vt_modal_scanner") window.VT.loadScanner();
+    if (id === "vt_modal_alerts") window.VT.loadAlerts();
+    if (id === "vt_modal_journal") window.VT.loadJournal();
+  };
+
+  window.VT.closeModal = function(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  };
+
+  /* 1. Strategy Scanner */
+  window.VT.loadScanner = async function() {
+    const tbody = document.getElementById("scanner_tbody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:18px; color:#94a3b8;">Scanning institutional markets for SMC events...</td></tr>`;
+    try {
+      const tf = document.getElementById("scanner_tf_sel")?.value || "15m";
+      const res = await fetch(`/api/scanner?timeframe=${encodeURIComponent(tf)}`).then(r => r.json());
+      if (res && res.success && res.events) {
+        if (!res.events.length) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:18px; color:#64748b;">No active events found for ${tf.toUpperCase()}.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = res.events.map(ev => {
+          const isBull = ev.market_bias === "BULLISH";
+          const col = isBull ? "#22c55e" : (ev.market_bias === "BEARISH" ? "#f87171" : "#94a3b8");
+          const evCol = ev.latest_event.includes("BOS") ? "#38bdf8" : (ev.latest_event.includes("CHOCH") ? "#c084fc" : "#cbd5e1");
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); transition:background .15s ease;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+            <td style="padding:10px 12px; font-weight:800; color:#fff;">${ev.instrument}</td>
+            <td style="padding:10px 12px; font-family:monospace; color:#cbd5e1;">$${ev.current_price >= 100 ? ev.current_price.toFixed(2) : ev.current_price.toFixed(4)}</td>
+            <td style="padding:10px 12px; color:#38bdf8; font-weight:700;">${ev.timeframe}</td>
+            <td style="padding:10px 12px;"><span style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; background:${isBull ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)'}; color:${col};">${ev.market_bias}</span></td>
+            <td style="padding:10px 12px; font-weight:700; color:${evCol};">${ev.latest_event}</td>
+            <td style="padding:10px 12px;"><span style="font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.06); color:#cbd5e1;">${ev.dealing_zone}</span></td>
+            <td style="padding:10px 12px; text-align:right;">
+              <button onclick="window.VT.selectSymbolFromScanner('${ev.instrument}')" style="background:rgba(139,92,246,0.2); border:1px solid #8b5cf6; color:#c084fc; font-size:10px; font-weight:800; padding:4px 10px; border-radius:4px; cursor:pointer;">CHART ↗</button>
+            </td>
+          </tr>`;
+        }).join("");
+      }
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:18px; color:#ef4444;">Error loading scanner data.</td></tr>`;
+    }
+  };
+
+  window.VT.selectSymbolFromScanner = function(sym) {
+    if (window.S) {
+      window.S.symbol = sym;
+      const b = document.getElementById("symBtnS"); if (b) b.textContent = sym;
+      const t = document.getElementById("t_symbol"); if (t) t.textContent = sym;
+      if (typeof window.loadChart === "function") window.loadChart();
+    }
+    window.VT.closeModal("vt_modal_scanner");
+  };
+
+  /* 2. Historical Backtest Runner */
+  window.VT.runBacktest = async function() {
+    const sym = document.getElementById("bt_sym_sel")?.value || (window.S?.symbol || "BTCUSDT");
+    const tf = document.getElementById("bt_tf_sel")?.value || "15m";
+    const rr = parseFloat(document.getElementById("bt_rr_inp")?.value || "2.0");
+    const resBox = document.getElementById("bt_results_box");
+    if (!resBox) return;
+
+    resBox.innerHTML = `<div style="text-align:center; padding:20px; color:#94a3b8;">Running institutional no-lookahead SMC backtest on ${sym} (${tf.toUpperCase()})...</div>`;
+    try {
+      const res = await fetch("/api/backtest/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym, timeframe: tf, risk_reward: rr, candles: 300 })
+      }).then(r => r.json());
+
+      if (res && res.success && res.results) {
+        const r = res.results;
+        resBox.innerHTML = `
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:14px;">
+            <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+              <span style="font-size:10px; color:#94a3b8;">WIN RATE</span><br>
+              <b style="font-size:16px; color:${r.win_rate >= 50 ? '#22c55e' : '#f87171'};">${r.win_rate}%</b>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+              <span style="font-size:10px; color:#94a3b8;">PROFIT FACTOR</span><br>
+              <b style="font-size:16px; color:#38bdf8;">${r.profit_factor}</b>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+              <span style="font-size:10px; color:#94a3b8;">MAX DRAWDOWN</span><br>
+              <b style="font-size:16px; color:#ef4444;">${r.max_drawdown}%</b>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+              <span style="font-size:10px; color:#94a3b8;">TOTAL SETUPS</span><br>
+              <b style="font-size:16px; color:#fff;">${r.total_setups}</b>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+              <span style="font-size:10px; color:#94a3b8;">NET GAIN</span><br>
+              <b style="font-size:16px; color:${r.net_profit >= 0 ? '#22c55e' : '#f87171'};">${r.net_profit >= 0 ? '+' : ''}$${r.net_profit}</b>
+            </div>
+          </div>
+          <div style="font-size:11px; font-weight:800; color:#cbd5e1; margin-bottom:6px;">RESOLVED HISTORICAL TRADES (STRICT NO-LOOKAHEAD):</div>
+          <div style="max-height:220px; overflow-y:auto; border:1px solid rgba(255,255,255,0.06); border-radius:6px;">
+            <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left;">
+              <thead>
+                <tr style="background:rgba(0,0,0,0.4); color:#94a3b8;">
+                  <th style="padding:6px 8px;">Time</th>
+                  <th style="padding:6px 8px;">Side</th>
+                  <th style="padding:6px 8px;">Entry</th>
+                  <th style="padding:6px 8px;">Exit</th>
+                  <th style="padding:6px 8px;">Result</th>
+                  <th style="padding:6px 8px; text-align:right;">P&L ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(r.trades || []).map(t => `
+                  <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                    <td style="padding:5px 8px; color:#94a3b8; font-family:monospace;">${new Date(t.entry_time * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                    <td style="padding:5px 8px; font-weight:700; color:${t.direction === 'BULLISH' ? '#22c55e' : '#f87171'};">${t.direction}</td>
+                    <td style="padding:5px 8px; font-family:monospace;">$${t.entry_price}</td>
+                    <td style="padding:5px 8px; font-family:monospace;">$${t.exit_price}</td>
+                    <td style="padding:5px 8px; font-weight:800; color:${t.outcome === 'WIN' ? '#22c55e' : '#f87171'};">${t.outcome}</td>
+                    <td style="padding:5px 8px; text-align:right; font-family:monospace; color:${t.pnl_usd >= 0 ? '#22c55e' : '#f87171'};">${t.pnl_usd >= 0 ? '+' : ''}$${t.pnl_usd}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    } catch (e) {
+      resBox.innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Backtest failed: ${e.message}</div>`;
+    }
+  };
+
+  /* 3. Alerts Manager */
+  window.VT.loadAlerts = async function() {
+    const list = document.getElementById("alerts_list_tbody");
+    if (!list) return;
+    try {
+      const res = await fetch("/api/alerts").then(r => r.json());
+      if (res && res.success) {
+        if (!res.alerts.length) {
+          list.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:16px; color:#64748b;">No active alert triggers configured.</td></tr>`;
+          return;
+        }
+        list.innerHTML = res.alerts.map(a => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+            <td style="padding:8px 10px; font-weight:800; color:#fff;">${a.symbol}</td>
+            <td style="padding:8px 10px; color:#38bdf8;">${a.timeframe.toUpperCase()}</td>
+            <td style="padding:8px 10px; font-weight:700; color:#c084fc;">${a.alert_type}</td>
+            <td style="padding:8px 10px; font-family:monospace;">$${a.condition_price || 'Market'}</td>
+            <td style="padding:8px 10px; text-align:right;">
+              <button onclick="window.VT.deleteAlert(${a.id})" style="background:transparent; border:none; color:#ef4444; font-size:12px; cursor:pointer;">✕</button>
+            </td>
+          </tr>
+        `).join("");
+      }
+    } catch (e) {}
+  };
+
+  window.VT.createAlert = async function() {
+    const sym = document.getElementById("al_sym_inp")?.value || "BTCUSDT";
+    const tf = document.getElementById("al_tf_sel")?.value || "15m";
+    const at = document.getElementById("al_type_sel")?.value || "BOS_BULLISH";
+    const cp = parseFloat(document.getElementById("al_price_inp")?.value || "0");
+
+    try {
+      await fetch("/api/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym, timeframe: tf, alert_type: at, condition_price: cp })
+      });
+      if (typeof window.toast === "function") window.toast(`✅ Alert created for ${sym} (${at})`, "green");
+      window.VT.loadAlerts();
+    } catch (e) {}
+  };
+
+  window.VT.deleteAlert = async function(id) {
+    try {
+      await fetch(`/api/alerts/${id}`, { method: "DELETE" });
+      window.VT.loadAlerts();
+    } catch (e) {}
+  };
+
+  /* 4. Trading Journal */
+  window.VT.loadJournal = async function() {
+    const list = document.getElementById("journal_list_tbody");
+    if (!list) return;
+    try {
+      const res = await fetch("/api/journal").then(r => r.json());
+      if (res && res.success) {
+        if (!res.journal.length) {
+          list.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:16px; color:#64748b;">No journal entries logged yet.</td></tr>`;
+          return;
+        }
+        list.innerHTML = res.journal.map(j => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+            <td style="padding:8px 10px; color:#94a3b8; font-family:monospace;">${new Date(j.created_at * 1000).toLocaleDateString()}</td>
+            <td style="padding:8px 10px; font-weight:800; color:#fff;">${j.symbol}</td>
+            <td style="padding:8px 10px; font-weight:700; color:${j.trade_type === 'BUY' ? '#22c55e' : '#f87171'};">${j.trade_type}</td>
+            <td style="padding:8px 10px; font-family:monospace;">$${j.entry_price}</td>
+            <td style="padding:8px 10px; font-family:monospace;">$${j.exit_price || '—'}</td>
+            <td style="padding:8px 10px; font-family:monospace; font-weight:800; color:${j.pnl >= 0 ? '#22c55e' : '#f87171'};">${j.pnl >= 0 ? '+' : ''}$${j.pnl}</td>
+            <td style="padding:8px 10px; color:#cbd5e1; font-size:11px;">${j.notes || '—'}</td>
+          </tr>
+        `).join("");
+      }
+    } catch (e) {}
+  };
+
+  window.VT.addJournal = async function() {
+    const sym = document.getElementById("jr_sym_inp")?.value || (window.S?.symbol || "BTCUSDT");
+    const tf = document.getElementById("jr_tf_sel")?.value || "15m";
+    const tt = document.getElementById("jr_type_sel")?.value || "BUY";
+    const en = parseFloat(document.getElementById("jr_entry_inp")?.value || "0");
+    const ex = parseFloat(document.getElementById("jr_exit_inp")?.value || "0");
+    const pnl = parseFloat(document.getElementById("jr_pnl_inp")?.value || "0");
+    const notes = document.getElementById("jr_notes_inp")?.value || "";
+
+    try {
+      await fetch("/api/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym, timeframe: tf, trade_type: tt, entry_price: en, exit_price: ex, pnl: pnl, notes: notes })
+      });
+      if (typeof window.toast === "function") window.toast(`✅ Trade logged in journal!`, "green");
+      window.VT.loadJournal();
+    } catch (e) {}
+  };
+
   function boot() {
     initResizers();
     initPanelToggles();

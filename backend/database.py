@@ -1171,6 +1171,105 @@ CREATE TABLE IF NOT EXISTS position_protections(
   UNIQUE(user_id, position_id)
 );
 CREATE INDEX IF NOT EXISTS ix_pos_prot_user ON position_protections(user_id, protection_status);
+
+CREATE TABLE IF NOT EXISTS smc_market_structure(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  price REAL NOT NULL,
+  confirmed_at REAL NOT NULL,
+  invalidation_price REAL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_ms_sym_tf ON smc_market_structure(symbol, timeframe);
+
+CREATE TABLE IF NOT EXISTS smc_order_blocks(
+  id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  block_type TEXT NOT NULL,
+  high_price REAL NOT NULL,
+  low_price REAL NOT NULL,
+  strength INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_ob_sym_tf ON smc_order_blocks(symbol, timeframe);
+
+CREATE TABLE IF NOT EXISTS smc_fair_value_gaps(
+  id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  gap_type TEXT NOT NULL,
+  top_price REAL NOT NULL,
+  bottom_price REAL NOT NULL,
+  midpoint REAL NOT NULL,
+  fill_pct REAL DEFAULT 0.0,
+  status TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_fvg_sym_tf ON smc_fair_value_gaps(symbol, timeframe);
+
+CREATE TABLE IF NOT EXISTS smc_scanner_events(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  bias TEXT NOT NULL,
+  price REAL NOT NULL,
+  event_time REAL NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_scanner_ev ON smc_scanner_events(symbol, timeframe);
+
+CREATE TABLE IF NOT EXISTS smc_user_alerts(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  alert_type TEXT NOT NULL,
+  condition_price REAL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_alerts_user ON smc_user_alerts(user_id, active);
+
+CREATE TABLE IF NOT EXISTS smc_alert_history(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  alert_type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  triggered_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_alert_hist ON smc_alert_history(user_id);
+
+CREATE TABLE IF NOT EXISTS smc_trading_journal(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  trade_type TEXT NOT NULL,
+  entry_price REAL NOT NULL,
+  exit_price REAL,
+  pnl REAL DEFAULT 0.0,
+  notes TEXT,
+  screenshot_url TEXT,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_journal_user ON smc_trading_journal(user_id);
+
+CREATE TABLE IF NOT EXISTS smc_backtest_jobs(
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  metrics_json TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_smc_backtest_user ON smc_backtest_jobs(user_id);
 """
 
 
