@@ -106,8 +106,6 @@ def firewall_guard():
 
 
 _SAAS_CUSTODY_PREFIXES = (
-    "/api/deposit",
-    "/api/withdraw",
     "/api/upi/",
     "/api/razorpay/",
     "/api/v1/wallet/",
