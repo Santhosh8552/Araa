@@ -82,12 +82,6 @@ try:
 except ImportError:
     from backend.enterprise_v1_api import v1_api
 api.register_blueprint(v1_api, url_prefix="/api/v1")
-
-try:
-    from smc_routes import smc_bp
-except ImportError:
-    from backend.smc_routes import smc_bp
-api.register_blueprint(smc_bp)
 # Note: /api alias for enterprise_v1_api is registered after core @api.route handlers so native /api/admin/overview is not shadowed.
 user_app = Flask(__name__, static_folder=FRONTEND_DIR)
 admin_app = Flask(__name__, static_folder=ADMIN_DIR)
@@ -1186,9 +1180,6 @@ def markets_status():
 @api.route("/api/market/<symbol>")
 def market(symbol):
     symbol = symbol.upper()
-    if symbol == "INSTRUMENTS":
-        from smc_routes import market_instruments
-        return market_instruments()
     row = query_one("SELECT * FROM instruments WHERE symbol=?", (symbol,))
     if not row:
         # Check if symbol is a CoinDCX market

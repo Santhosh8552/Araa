@@ -331,7 +331,7 @@ canvas.spark { display: block; }
 }
 
 /* ---------------- terminal grid ---------------- */
-.term:not([data-mount="smc"]) { display: grid; grid-template-columns: 310px minmax(0, 1fr) 268px; gap: 12px; }
+.term { display: grid; grid-template-columns: 310px minmax(0, 1fr) 268px; gap: 12px; }
 .panel { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .phead { display: flex; align-items: center; justify-content: space-between; }
 .phead b, .dhead b { font-size: 12px; letter-spacing: .06em; }
