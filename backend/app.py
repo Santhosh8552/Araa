@@ -2273,28 +2273,41 @@ def broker_connect():
 
 @api.route("/api/broker/mode", methods=["POST"])
 def broker_mode_toggle():
-    u = current_user()
+    u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
-    target_mode = (data.get("mode") or "PAPER").upper()
-    is_live = 1 if target_mode == "LIVE" else 0
-    b = query_one("SELECT * FROM broker_connections WHERE user_id=?", (u["id"],))
+    target_mode = str(data.get("mode") or "PAPER").strip().upper()
+    is_live = 1 if target_mode in ("LIVE", "REAL") else 0
+    b = query_one(
+        "SELECT * FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+        (u["id"],),
+    )
     if is_live:
         if not b:
             return fail("Please connect and verify your broker account first before activating Live Real Bot Mode.", 400)
-    
+
     if b:
-        write("UPDATE broker_connections SET is_live_active=? WHERE user_id=?", (is_live, u["id"]))
+        status_str = "CONNECTED" if is_live else "CONNECTED_OFFLINE"
+        write(
+            "UPDATE broker_connections SET is_live_active=?, status=?, last_synced_at=? WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+            (is_live, status_str, time.time(), u["id"]),
+        )
         try:
             from database import set_state
             set_state("trading_mode", "LIVE" if is_live else "PAPER")
             os.environ["ENABLE_REAL_TRADING"] = "true" if is_live else "false"
         except Exception:
             pass
-    
+
     bot._log(u["id"], "MODE_SWITCH", f"User switched trading mode to {'LIVE (Real-Money Broker Gateway)' if is_live else 'PAPER (Virtual Capital)'}")
-    return ok(mode="LIVE" if is_live else "PAPER", is_live=bool(is_live), broker=b["broker_name"] if b else None)
+    return ok(
+        mode="LIVE" if is_live else "PAPER",
+        is_live=bool(is_live),
+        is_live_mode=bool(is_live),
+        broker=b["broker_name"] if b else None,
+        portfolio=portfolio(u["id"]),
+    )
 
 
 # ==============================================================================
@@ -3352,22 +3365,38 @@ def coindcx_state():
 
 @api.route("/api/real-bot/coindcx/set-mode", methods=["POST"])
 def coindcx_set_mode():
-    """Toggles execution between DEMO (Zero Risk Paper Trading) and REAL (Live Money Execution)."""
+    """Toggles execution between DEMO/PAPER (Zero Risk Paper Trading) and REAL/LIVE (Live Money Execution)."""
     u = resolve_user()
     if not u:
         return fail("Not logged in", 401)
     data = request.get_json(silent=True) or {}
     mode = str(data.get("mode") or "DEMO").strip().upper()
-    is_live = 1 if mode == "REAL" else 0
+    is_live = 1 if mode in ("REAL", "LIVE") else 0
     status_str = "CONNECTED" if is_live else "CONNECTED_OFFLINE"
     now = time.time()
     existing = query_one("SELECT id FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'", (u["id"],))
     if existing:
-        write("UPDATE broker_connections SET broker_name='COINDCX', is_live_active=?, status=?, last_synced_at=? WHERE user_id=?", (is_live, status_str, now, u["id"]))
+        write(
+            "UPDATE broker_connections SET broker_name='COINDCX', is_live_active=?, status=?, last_synced_at=? WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+            (is_live, status_str, now, u["id"]),
+        )
+        try:
+            from database import set_state
+            set_state("trading_mode", "LIVE" if is_live else "PAPER")
+            os.environ["ENABLE_REAL_TRADING"] = "true" if is_live else "false"
+        except Exception:
+            pass
     else:
         return fail("Please connect your CoinDCX API Key first before switching execution mode.", 400)
     bot._log(u["id"], "MODE_SWITCH", f"AraaBot execution mode switched to: {'🔴 REAL MONEY' if is_live else '🧪 DEMO PAPER (ZERO RISK)'}")
-    return ok(success=True, mode=mode, is_live_mode=bool(is_live), message=f"Switched to {'REAL MONEY' if is_live else 'DEMO (ZERO RISK)'} mode successfully.")
+    return ok(
+        success=True,
+        mode="REAL" if is_live else "DEMO",
+        is_live=bool(is_live),
+        is_live_mode=bool(is_live),
+        portfolio=portfolio(u["id"]),
+        message=f"Switched to {'REAL MONEY' if is_live else 'DEMO (ZERO RISK)'} mode successfully.",
+    )
 
 
 @api.route("/api/real-bot/coindcx/connect", methods=["POST"])
@@ -6523,12 +6552,22 @@ def manual_trade():
         return fail("Side must be LONG or SHORT")
     if margin < 1.0:
         return fail("Trade size must be at least $1.00")
-    b_conn = query_one("SELECT is_live_active FROM broker_connections WHERE user_id=?", (u["id"],))
-    is_live_flag = 1 if (b_conn and b_conn["is_live_active"]) else 0
+    b_conn = query_one(
+        "SELECT is_live_active, status, broker_name, live_balance, free_margin, api_key_masked "
+        "FROM broker_connections WHERE user_id=? AND COALESCE(api_key_masked, '') != 'DEMO_SIM'",
+        (u["id"],),
+    )
+    is_live_flag = 1 if (b_conn and b_conn.get("is_live_active") and b_conn.get("status") == "CONNECTED") else 0
+    is_coindcx_live = bool(is_live_flag and str(b_conn.get("broker_name") or "").upper() == "COINDCX")
 
-    w = wallet_of(u["id"])
-    if float(w.get("deposit_balance") or 0.0) < margin:
-        return fail(f"Not enough trading capital (${float(w.get('deposit_balance') or 0.0):.2f}) - deposit funds or connect CoinDCX first")
+    if is_live_flag:
+        live_avail = float(b_conn.get("free_margin") if b_conn.get("free_margin") is not None else (b_conn.get("live_balance") or 0.0))
+        if live_avail < margin:
+            return fail(f"Not enough live broker margin (${live_avail:.2f}) for ${margin:.2f} real trade")
+    else:
+        w = wallet_of(u["id"])
+        if float(w.get("deposit_balance") or 0.0) < margin:
+            return fail(f"Not enough paper trading capital (${float(w.get('deposit_balance') or 0.0):.2f}) - deposit paper funds first")
 
     price = feed.live_price(symbol) or feed.price(symbol)
     if not price:
@@ -6597,14 +6636,17 @@ def manual_trade():
         except Exception:
             pass
 
+    if is_coindcx_live:
+        feed_src = "COINDCX_LIVE"
     pid = write("INSERT INTO positions(user_id,symbol,source,side,qty,entry_price,margin,target_pct,"
                 "stop_pct,status,current_price,unrealized_pnl,opened_at,leverage,category,feed_source,is_live,"
                 "ai_win_prob,signal_reason) "
                 "VALUES(?,?,?,?,?,?,?,?,?,'OPEN',?,0,?,?,?,?,?,?,?)",
-                (u["id"], symbol, "MANUAL", side, qty, price, margin, target_pct or 0.40, stop_pct or 0.20, price, now,
+                (u["id"], symbol, "COINDCX LIVE" if is_coindcx_live else "MANUAL", side, qty, price, margin, target_pct or 0.40, stop_pct or 0.20, price, now,
                  leverage, category, feed_src, is_live_flag, win_p, pred.get("rationale") or "Araa AI Pre-Entry Approved"))
-    write("UPDATE wallets SET deposit_balance=deposit_balance-?, locked_balance=locked_balance+? "
-          "WHERE user_id=?", (margin, margin, u["id"]))
+    if not is_live_flag:
+        write("UPDATE wallets SET deposit_balance=deposit_balance-?, locked_balance=locked_balance+? "
+              "WHERE user_id=?", (margin, margin, u["id"]))
     # Link confirmed Araa AI prediction to position
     write("INSERT INTO ai_predictions(user_id,symbol,category,direction,action,entry_price,target_price,"
           "stop_price,target_pct,stop_pct,risk_reward,win_probability,confidence,rationale,mode,"

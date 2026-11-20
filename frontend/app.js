@@ -1658,7 +1658,7 @@ window.calcPositionMetrics = calcPositionMetrics;
 window.switchExecutionMode = async function(targetMode) {
   const wantReal = String(targetMode || "").toUpperCase() === "REAL" || String(targetMode || "").toUpperCase() === "LIVE";
   const isCoinDcx = Boolean(S.broker && (S.broker.name === "COINDCX" || S.broker.is_coindcx || S.broker.broker_name === "COINDCX"));
-  const isConnected = Boolean(S.broker && (S.broker.connected || isCoinDcx || S.broker.mt4_login));
+  const isConnected = Boolean(S.broker && (S.broker.is_connected || S.broker.connected || isCoinDcx || S.broker.mt4_login));
 
   if (wantReal) {
     if (!isConnected) {
@@ -1672,10 +1672,13 @@ window.switchExecutionMode = async function(targetMode) {
       } else {
         await call("/api/broker/mode", { method: "POST", body: { mode: "LIVE" } });
       }
+      S.live = true;
       if (S.broker) S.broker.is_live = true;
+      if (S.pf) S.pf.is_live_mode = true;
       toast("🔴 Switched to REAL MODE · Live Exchange Execution Active!", "green");
       await refreshAccount();
       renderTopbar();
+      if (typeof renderTicket === "function") renderTicket();
     } catch (e) {
       if (typeof showRealBotDevModal === "function") showRealBotDevModal(false);
       toast(e.message || "Open Real Broker Terminal to activate Real Mode", "amber");
@@ -1686,10 +1689,14 @@ window.switchExecutionMode = async function(targetMode) {
         await call("/api/real-bot/coindcx/set-mode", { method: "POST", body: { mode: "DEMO" } }).catch(() => {});
       }
       await call("/api/broker/mode", { method: "POST", body: { mode: "PAPER" } }).catch(() => {});
+      try { localStorage.removeItem("tp_last_live_broker"); } catch (_) {}
+      S.live = false;
       if (S.broker) S.broker.is_live = false;
+      if (S.pf) S.pf.is_live_mode = false;
       toast("🧪 Switched to PAPER MODE · Virtual Capital with 100% Real-Time Live Prices!", "green");
       await refreshAccount();
       renderTopbar();
+      if (typeof renderTicket === "function") renderTicket();
     } catch (e) {
       toast(e.message || "Failed to switch to Paper Mode", "red");
     }
@@ -6086,15 +6093,9 @@ if (modeBtn) {
 const paperModeBtn = $("btn_paper_mode");
 if (paperModeBtn) {
   paperModeBtn.onclick = async () => {
-    if (S.broker && S.broker.is_live) {
-      try {
-        await call("/api/broker/mode", {method: "POST", body: {mode: "PAPER"}});
-        if (S.broker) S.broker.is_live = false;
-        toast("🟢 Switched to PAPER BOT MODE (Virtual Capital, 100% Free Live Prices)", "green");
-        await refreshAccount();
-      } catch (e) {
-        toast(e.message, "red");
-      }
+    const currentlyLive = Boolean(S.live || (S.broker && S.broker.is_live) || (S.pf && S.pf.is_live_mode));
+    if (currentlyLive) {
+      await window.switchExecutionMode("PAPER");
     } else {
       toast("🟢 Already in PAPER BOT MODE (Virtual Capital, Real Live Prices Active)", "green");
       openDrawer("bot");
